@@ -1,0 +1,217 @@
+// synesis.lark v1.1 — Gramática LALR(1) para linguagem Synesis
+//
+// Propósito:
+//   Define a sintaxe formal de blocos PROJECT, SOURCE, ITEM, ONTOLOGY,
+//   TEMPLATE e FIELD, com indentacao significativa para valores multilinha.
+//
+// Decisões de design:
+//   - LALR(1) para parsing linear
+//   - Keywords case-insensitive (via regex /keyword/i)
+//   - Indentacao significativa (_INDENT/_DEDENT) para blocos de texto
+//
+// Changelog v1.1 (2026-01-01):
+//   - Mudança #1: Permite linhas vazias entre blocos via (block | NEWLINE)*
+//   - Mudança #2: Documentação explícita de símbolos em TEXT_LINE
+//   - Mudança #3: Keywords case-insensitive via regex /keyword/i
+//
+// Gerado conforme: Especificação Synesis v1.1
+
+// ============================================
+// REGRA DE RAIZ (MUDANÇA #1)
+// ============================================
+
+start: (block | NEWLINE)* block (block | NEWLINE)*
+
+block: project_block
+     | source_block
+     | item_block
+     | ontology_block
+     | template_header
+     | field_spec_block
+     | field_def_block
+
+// ============================================
+// KEYWORDS (MUDANÇA #3: CASE INSENSITIVE)
+// ============================================
+
+KW_PROJECT.5: /project/i
+KW_SOURCE.5: /source/i
+KW_ITEM.5: /item/i
+KW_ONTOLOGY.5: /ontology/i
+KW_TEMPLATE.5: /template/i
+KW_FIELD.5: /field/i
+KW_END.5: /end/i
+KW_INCLUDE.5: /include/i
+KW_BIBLIOGRAPHY.5: /bibliography/i
+KW_ANNOTATIONS.5: /annotations/i
+KW_FIELDS.5: /fields/i
+KW_REQUIRED.5: /required/i
+KW_OPTIONAL.5: /optional/i
+KW_FORBIDDEN.5: /forbidden/i
+KW_BUNDLE.5: /bundle/i
+KW_TYPE.5: /type/i
+KW_SCOPE.5: /scope/i
+KW_FORMAT.5: /format/i
+KW_DESCRIPTION.5: /description/i
+KW_ARITY.5: /arity/i
+KW_VALUES.5: /values/i
+KW_RELATIONS.5: /relations/i
+KW_METADATA.5: /metadata/i
+KW_QUOTATION.5: /quotation/i
+KW_MEMO.5: /memo/i
+KW_CODE.5: /code/i
+KW_CHAIN.5: /chain/i
+KW_TEXT.5: /text/i
+KW_DATE.5: /date/i
+KW_SCALE.5: /scale/i
+KW_ENUMERATED.5: /enumerated/i
+KW_ORDERED.5: /ordered/i
+KW_TOPIC.5: /topic/i
+
+// ============================================
+// BLOCO PROJECT
+// ============================================
+
+project_block: KW_PROJECT IDENTIFIER NEWLINE project_body KW_END KW_PROJECT
+
+project_body: _INDENT project_items _DEDENT
+            | project_items
+
+project_items: (include_stmt | metadata | description | NEWLINE)+
+
+include_stmt: KW_TEMPLATE STRING NEWLINE
+            | KW_INCLUDE include_type STRING NEWLINE
+include_type: KW_BIBLIOGRAPHY | KW_ANNOTATIONS | KW_ONTOLOGY
+
+metadata: KW_METADATA NEWLINE _INDENT (metadata_line | NEWLINE)+ _DEDENT KW_END KW_METADATA NEWLINE
+metadata_line: TEXT_LINE NEWLINE
+description: KW_DESCRIPTION NEWLINE description_lines KW_END KW_DESCRIPTION NEWLINE?
+description_lines: (TEXT_LINE NEWLINE | NEWLINE)+
+
+// ============================================
+// BLOCOS DE ANOTACAO
+// ============================================
+
+source_block: KW_SOURCE BIBREF NEWLINE _INDENT (field_entry | NEWLINE)* _DEDENT KW_END KW_SOURCE
+item_block: KW_ITEM BIBREF NEWLINE _INDENT (field_entry | NEWLINE)* _DEDENT KW_END KW_ITEM
+ontology_block: KW_ONTOLOGY concept_name NEWLINE _INDENT (field_entry | NEWLINE)* _DEDENT KW_END KW_ONTOLOGY
+
+concept_name: CONCEPT_NAME
+
+// ============================================
+// BLOCO TEMPLATE
+// ============================================
+
+template_header: KW_TEMPLATE IDENTIFIER template_meta*
+template_meta: IDENTIFIER ":" value
+
+field_spec_block: scope_type KW_FIELDS NEWLINE _INDENT field_list _DEDENT KW_END scope_type KW_FIELDS
+scope_type: KW_SOURCE | KW_ITEM | KW_ONTOLOGY
+
+field_list: (requirement_clause | NEWLINE)*
+requirement_clause: KW_REQUIRED bundle_modifier? field_names
+                  | KW_OPTIONAL field_names
+                  | KW_FORBIDDEN field_names
+
+bundle_modifier: KW_BUNDLE
+field_key: FIELD_NAME
+         | KW_TOPIC
+         | KW_DESCRIPTION
+         | KW_CODE
+         | KW_CHAIN
+         | KW_TEXT
+         | KW_MEMO
+         | KW_QUOTATION
+         | KW_DATE
+         | KW_SCALE
+         | KW_ENUMERATED
+         | KW_ORDERED
+
+field_names: field_key ("," field_key)*
+
+// ============================================
+// DEFINICAO DE FIELD
+// ============================================
+
+field_def_block: KW_FIELD field_key KW_TYPE type_spec (field_props | NEWLINE)* (_INDENT (field_props | NEWLINE)* _DEDENT)? KW_END KW_FIELD
+
+type_spec: simple_type | KW_CHAIN | KW_ENUMERATED | KW_ORDERED | KW_TOPIC
+simple_type: KW_QUOTATION | KW_MEMO | KW_CODE | KW_TEXT | KW_DATE | KW_SCALE
+
+field_props: KW_SCOPE scope_type
+           | KW_FORMAT format_spec
+           | KW_DESCRIPTION TEXT_LINE
+           | KW_ARITY COMPARATOR NUMBER
+           | KW_VALUES value_list KW_END KW_VALUES
+           | KW_RELATIONS relation_list KW_END KW_RELATIONS
+
+format_spec: IDENTIFIER | scale_format
+scale_format: "[" NUMBER ".." NUMBER "]"
+
+value_list: (value_entry | NEWLINE)+
+          | NEWLINE _INDENT (value_entry | NEWLINE)+ _DEDENT
+          | _INDENT (value_entry | NEWLINE)+ _DEDENT
+value_entry: index_prefix? IDENTIFIER ":" TEXT_LINE
+index_prefix: "[" NUMBER "]"
+
+relation_list: (relation_entry | NEWLINE)+
+             | NEWLINE _INDENT (relation_entry | NEWLINE)+ _DEDENT
+             | _INDENT (relation_entry | NEWLINE)+ _DEDENT
+relation_entry: IDENTIFIER ":" TEXT_LINE
+
+// ============================================
+// CAMPOS E VALORES
+// ============================================
+
+field_entry: field_key ":" value NEWLINE continuation_block?
+           | field_key ":" NEWLINE _INDENT text_block _DEDENT NEWLINE?
+
+value: STRING
+     | NUMBER TEXT_LINE
+     | NUMBER
+     | chain_expr
+     | code_list
+     | TEXT_LINE
+
+code_list: CODE_ELEMENT ("," CODE_ELEMENT)*
+
+continuation_block: _INDENT text_block _DEDENT
+text_block: TEXT_LINE (NEWLINE TEXT_LINE)* NEWLINE?
+
+chain_expr: CHAIN_ELEMENT ("->" CHAIN_ELEMENT)+
+
+// ============================================
+// TOKENS
+// ============================================
+
+BIBREF: "@" /[a-zA-Z][a-zA-Z0-9_-]*/
+
+// Permite espaços em conceitos até encontrar ->
+CHAIN_ELEMENT.2: /[\p{L}_](?:(?!->)[\p{L}\p{N}_\- ])*/u
+
+// Permite espaços em codigos até encontrar virgula
+CODE_ELEMENT.2: /[\p{L}_](?:(?!,)[\p{L}\p{N}_\- ])*/u
+
+// IDENTIFIER estrito (SEM espacos) para contextos determinísticos
+IDENTIFIER.1: /[\p{L}_][\p{L}\p{N}_\-]*/u
+
+// FIELD_NAME evita colisao com END
+FIELD_NAME.1: /(?![eE][nN][dD]\b)[\p{L}_][\p{L}\p{N}_\-]*/u
+
+// Captura ate comentario ou EOL
+CONCEPT_NAME.0: /[^\s#\n\r][^#\n\r]*/u
+STRING: /"[^"]*"/
+NUMBER.4: /[0-9]+(\.[0-9]+)?/
+COMPARATOR: ">=" | "<=" | "=" | ">" | "<"
+
+// MUDANCA #2: Documentacao explicita - captura todos os caracteres exceto quebras
+// Permite simbolos cientificos: n=2383, p<0.05, ratio=3/4, etc.
+TEXT_LINE.3: /[^\s\n\r:][^\n\r]*/
+
+COMMENT: "#" /[^\n]*/
+
+NEWLINE: /(\r?\n[ \t]*)+/
+%declare _INDENT _DEDENT
+
+%ignore /[ \t]+/
+%ignore COMMENT

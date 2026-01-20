@@ -1,0 +1,20 @@
+# Include license and documentation
+include LICENSE
+include README.md
+include CHANGELOG.md
+include CONTRIBUTING.md
+include PUBLISHING.md
+include DEVELOPERS.md
+include SETUP_SUMMARY.md
+
+# Include grammar files
+recursive-include synesis/grammar *.lark
+
+# Include test fixtures
+recursive-include tests/fixtures *.synp *.syn *.synt *.syno *.bib
+
+# Exclude bytecode and cache
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .pytest_cache
+global-exclude *.egg-info

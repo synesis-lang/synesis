@@ -1,0 +1,12 @@
+SOURCE @ref2020
+    description: Source description
+END SOURCE
+
+ITEM @ref2020
+    quote: "Example quote"
+    note: First note
+    chain: A -> INFLUENCES -> B
+    note: Second note
+    chain: B -> ENABLES -> C
+    code: A, B, C
+END ITEM
