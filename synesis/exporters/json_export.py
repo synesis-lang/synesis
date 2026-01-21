@@ -231,6 +231,50 @@ def _build_indices_section(
     }
 
 
+def build_json_payload(
+    linked: LinkedProject,
+    template: Optional[TemplateNode] = None,
+    bibliography: Optional[Dict[str, BibEntry]] = None,
+) -> Dict[str, Any]:
+    """
+    Constroi payload JSON v2.0 em memoria (sem I/O).
+
+    Ideal para uso em Jupyter Notebooks, LSP e integracao com APIs.
+    Retorna dicionario Python que pode ser serializado ou manipulado.
+
+    Args:
+        linked: Projeto vinculado com indices construidos
+        template: Template opcional (None = modo legado)
+        bibliography: Entradas BibTeX opcionais
+
+    Returns:
+        Dict com estrutura JSON v2.0 contendo:
+        - version: "2.0"
+        - export_metadata: timestamp, estatisticas
+        - project: dados do ProjectNode
+        - template: esquema completo (field_specs, relations, arity)
+        - bibliography: entradas BibTeX
+        - indices: hierarquia, triplas, topicos, frequencias
+        - ontology: conceitos enriquecidos
+        - corpus: items com metadados
+
+    Example:
+        >>> payload = build_json_payload(linked, template, bib)
+        >>> import json
+        >>> print(json.dumps(payload, indent=2))
+    """
+    return {
+        "version": "2.0",
+        "export_metadata": _build_export_metadata(linked),
+        "project": _build_project_section(linked),
+        "template": _build_template_section(template),
+        "bibliography": _build_bibliography_section(bibliography),
+        "indices": _build_indices_section(linked, template),
+        "ontology": _build_ontology_schema(linked, template),
+        "corpus": _build_corpus(linked, template, bibliography),
+    }
+
+
 def export_json(
     linked: LinkedProject,
     path: Path,
@@ -239,6 +283,8 @@ def export_json(
 ) -> None:
     """
     Exporta o projeto Synesis em JSON analitico v2.0.
+
+    Usa build_json_payload() para construir os dados e escreve em disco.
 
     Mudanças em relação a v1.0:
         - Adiciona seção 'version' com valor "2.0"
@@ -260,17 +306,7 @@ def export_json(
         path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    data = {
-        "version": "2.0",
-        "export_metadata": _build_export_metadata(linked),
-        "project": _build_project_section(linked),
-        "template": _build_template_section(template),
-        "bibliography": _build_bibliography_section(bibliography),
-        "indices": _build_indices_section(linked, template),
-        "ontology": _build_ontology_schema(linked, template),
-        "corpus": _build_corpus(linked, template, bibliography),
-    }
-
+    data = build_json_payload(linked, template, bibliography)
     payload = json.dumps(data, indent=2, ensure_ascii=False)
     path.write_text(payload, encoding="utf-8")
 

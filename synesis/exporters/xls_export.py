@@ -51,18 +51,36 @@ from synesis.ast.nodes import (
 from synesis.semantic.linker import LinkedProject
 
 
-def export_xls(linked: LinkedProject, template: Optional[TemplateNode], output_path: Path) -> None:
+def build_xls_workbook(
+    linked: LinkedProject,
+    template: Optional[TemplateNode],
+) -> "Workbook":
     """
-    Exporta projeto Synesis para arquivo XLS unico com multiplas abas.
-    Cada aba corresponde a um arquivo CSV que seria gerado pela exportacao CSV.
+    Constroi Workbook Excel em memoria (sem salvar em disco).
+
+    Ideal para manipulacao programatica, streaming ou integracao com APIs.
+    O Workbook retornado pode ser salvo posteriormente com wb.save(path).
+
+    Args:
+        linked: Projeto vinculado com indices construidos
+        template: Template opcional (None = modo legado)
+
+    Returns:
+        Workbook (openpyxl) com abas:
+        - sources: Fontes bibliograficas
+        - items: Items anotados
+        - ontologies: Conceitos de ontologia
+        - chains: Triplas relacionais
+        - codes: Frequencia de codigos (modo legado)
+
+    Example:
+        >>> wb = build_xls_workbook(linked, template)
+        >>> wb.save("output.xlsx")  # Salva quando quiser
+        >>> # Ou manipula programaticamente
+        >>> ws = wb["items"]
+        >>> for row in ws.iter_rows(min_row=2):
+        ...     print(row[0].value)  # bibref
     """
-    if not isinstance(output_path, Path):
-        output_path = Path(output_path)
-
-    # Garante extensao .xlsx
-    if output_path.suffix.lower() not in ['.xlsx', '.xls']:
-        output_path = output_path.with_suffix('.xlsx')
-
     wb = Workbook()
     # Remove a aba padrao criada automaticamente
     if 'Sheet' in wb.sheetnames:
@@ -72,7 +90,6 @@ def export_xls(linked: LinkedProject, template: Optional[TemplateNode], output_p
     if template and _has_fields_for_scope(template, Scope.SOURCE):
         _write_sources_sheet(wb, linked, template)
     elif not template:
-        # Sem template, usa comportamento legado
         _write_sources_sheet(wb, linked, None)
 
     # Exporta items se houver campos ITEM no template
@@ -100,7 +117,24 @@ def export_xls(linked: LinkedProject, template: Optional[TemplateNode], output_p
     if len(wb.sheetnames) == 0:
         wb.create_sheet("Empty")
 
-    # Salva o arquivo
+    return wb
+
+
+def export_xls(linked: LinkedProject, template: Optional[TemplateNode], output_path: Path) -> None:
+    """
+    Exporta projeto Synesis para arquivo XLS unico com multiplas abas.
+
+    Usa build_xls_workbook() para construir os dados e salva em disco.
+    Cada aba corresponde a um arquivo CSV que seria gerado pela exportacao CSV.
+    """
+    if not isinstance(output_path, Path):
+        output_path = Path(output_path)
+
+    # Garante extensao .xlsx
+    if output_path.suffix.lower() not in ['.xlsx', '.xls']:
+        output_path = output_path.with_suffix('.xlsx')
+
+    wb = build_xls_workbook(linked, template)
     wb.save(output_path)
 
 

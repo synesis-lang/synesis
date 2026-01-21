@@ -84,6 +84,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling documentation
 - LSP adapter documentation
 
+## [0.2.0] - 2026-01-21
+
+### Added
+- `synesis.load()` API para compilacao em memoria (sem I/O em disco)
+- `synesis.compile_string()` para parsing de arquivos unicos
+- `MemoryCompilationResult` com metodos `to_json_dict()`, `to_csv_tables()`, `to_dataframe()`
+- `load_template_from_string()` em template_loader.py
+- `load_bibliography_from_string()` em bib_loader.py
+- `build_json_payload()` em json_export.py para construcao de JSON em memoria
+- `build_csv_tables()` em csv_export.py para construcao de tabelas em memoria
+- `build_xls_workbook()` em xls_export.py para construcao de Workbook em memoria
+- Integracao com Pandas via `to_dataframe()` e `to_dataframes()`
+- Testes para nova API em tests/test_api.py
+
+### Changed
+- Dependencias `click` e `openpyxl` agora sao opcionais
+- Reorganizacao de dependencias em pyproject.toml: `[cli]`, `[excel]`, `[full]`, `[dev]`
+- Exportadores refatorados para separar construcao de dados de escrita em disco
+
+### Migration
+- Para uso da biblioteca importavel: `pip install synesis`
+- Para CLI: `pip install synesis[cli]`
+- Para exportacao Excel: `pip install synesis[excel]`
+- Para todos os recursos: `pip install synesis[full]`
+
 ## [Unreleased]
 
 ### Planned Features

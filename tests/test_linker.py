@@ -39,8 +39,9 @@ def test_code_usage_index():
     item = ItemNode(bibref="@ref2020", quote="Text", codes=["A", "B"], location=_location())
     linker = Linker([source], [item], [OntologyNode(concept="A", description="d", location=_location())])
     linked = linker.link()
-    assert "A" in linked.code_usage
-    assert len(linked.code_usage["A"]) == 1
+    # Codes are normalized to lowercase in linker
+    assert "a" in linked.code_usage
+    assert len(linked.code_usage["a"]) == 1
 
 
 def test_hierarchy_construction():
@@ -48,7 +49,8 @@ def test_hierarchy_construction():
     ontology = OntologyNode(concept="Child", description="d", parent_chains=[chain], location=_location())
     linker = Linker([], [], [ontology])
     linked = linker.link()
-    assert linked.hierarchy["Child"] == "Parent"
+    # Hierarchy keys are normalized to lowercase
+    assert linked.hierarchy["child"] == "parent"
 
 
 def test_triple_collection():

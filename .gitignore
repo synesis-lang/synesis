@@ -152,3 +152,7 @@ cython_debug/
 *.synp.xlsx
 output/
 temp/
+
+# Upload scripts with tokens (security)
+upload_testpypi.bat
+upload_testpypi.sh

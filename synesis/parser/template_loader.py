@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from synesis.ast.nodes import FieldSpec, FieldType, Scope, SourceLocation, TemplateNode
-from synesis.parser.lexer import parse_file
+from synesis.parser.lexer import parse_file, parse_string
 from synesis.parser.transformer import SynesisTransformer
 
 
@@ -47,15 +47,62 @@ class TemplateLoadError(Exception):
 
 def load_template(path: Path | str) -> TemplateNode:
     """
-    Carrega e valida arquivo .synt.
+    Carrega e valida arquivo .synt do disco.
 
     - Parseia usando a gramatica Lark
     - Construi dicionario de FieldSpec
     - Processa REQUIRED/OPTIONAL/FORBIDDEN e BUNDLE
     - Valida referencias a campos inexistentes
+
+    Args:
+        path: Caminho para o arquivo .synt
+
+    Returns:
+        TemplateNode validado e pronto para uso
+
+    Raises:
+        TemplateLoadError: Se houver erro de validacao no template
+        SynesisSyntaxError: Se houver erro de sintaxe no arquivo
     """
     file_path = Path(path)
-    tree = parse_file(file_path)
+    content = file_path.read_text(encoding="utf-8")
+    return _load_template_impl(content, str(file_path))
+
+
+def load_template_from_string(content: str, filename: str = "<template>") -> TemplateNode:
+    """
+    Carrega e valida template a partir de string em memoria.
+
+    Reutiliza a logica de load_template() sem dependencia de I/O em disco.
+    Ideal para uso em Jupyter Notebooks, LSP e testes.
+
+    Args:
+        content: Conteudo do arquivo .synt como string
+        filename: Nome virtual para mensagens de erro (default: "<template>")
+
+    Returns:
+        TemplateNode validado e pronto para uso
+
+    Raises:
+        TemplateLoadError: Se houver erro de validacao no template
+        SynesisSyntaxError: Se houver erro de sintaxe no conteudo
+
+    Example:
+        >>> template = load_template_from_string('''
+        ...     TEMPLATE Demo
+        ...     SOURCE FIELDS
+        ...         REQUIRED date
+        ...     END SOURCE FIELDS
+        ...     FIELD date TYPE DATE SCOPE SOURCE END FIELD
+        ... ''')
+    """
+    return _load_template_impl(content, filename)
+
+
+def _load_template_impl(content: str, filename: str) -> TemplateNode:
+    """Implementacao compartilhada para load_template e load_template_from_string."""
+    file_path = Path(filename)
+    tree = parse_string(content, filename)
     transformer = SynesisTransformer(file_path)
     nodes = transformer.transform(tree)
 

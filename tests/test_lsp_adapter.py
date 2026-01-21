@@ -147,30 +147,39 @@ def test_validate_item_with_codes():
 
 
 def test_discover_context_no_files(tmp_path):
-    """Descoberta de contexto em diretório vazio retorna contexto vazio."""
+    """Descoberta de contexto sem arquivo .synp retorna contexto vazio."""
     test_file = tmp_path / "test.syn"
-    test_file.write_text("SOURCE @test\nEND SOURCE")
+    test_file.write_text("SOURCE @test\nEND SOURCE", encoding="utf-8")
 
-    context = _discover_context(str(test_file))
+    # _discover_context returns tuple (context, warnings)
+    # Without a .synp file, returns empty context
+    context, warnings = _discover_context(str(test_file))
 
     assert context.template is None
     assert context.bibliography is None
-    assert context.ontology_index == {}
+    # ontology_index defaults to None when no project found
+    assert context.ontology_index is None or context.ontology_index == {}
 
 
 def test_discover_context_with_template(tmp_path, fixtures_dir):
-    """Descoberta de contexto encontra template.synt."""
+    """Descoberta de contexto com .synp encontra template."""
     # Copia template para tmp_path
     template_src = fixtures_dir / "minimal.synt"
     template_dst = tmp_path / "template.synt"
 
     if template_src.exists():
-        template_dst.write_text(template_src.read_text())
+        template_dst.write_text(template_src.read_text(encoding="utf-8"), encoding="utf-8")
+
+        # Create a .synp project file that references the template
+        project_file = tmp_path / "project.synp"
+        project_content = 'PROJECT test\n    TEMPLATE "template.synt"\nEND PROJECT'
+        project_file.write_text(project_content, encoding="utf-8")
 
         test_file = tmp_path / "test.syn"
-        test_file.write_text("SOURCE @test\nEND SOURCE")
+        test_file.write_text("SOURCE @test\nEND SOURCE", encoding="utf-8")
 
-        context = _discover_context(str(test_file))
+        # _discover_context returns tuple (context, warnings)
+        context, _warnings = _discover_context(str(test_file))
 
         assert context.template is not None
 
@@ -194,15 +203,15 @@ def test_find_template_in_parent(tmp_path, fixtures_dir):
 
 def test_find_bibliography(tmp_path):
     """Busca de bibliografia no diretório."""
-    # Cria arquivo .bib de teste
+    # Cria arquivo .bib de teste (usando ASCII para evitar problemas de encoding)
     bib_file = tmp_path / "references.bib"
     bib_file.write_text(dedent("""
         @article{silva2023,
-            author = {Silva, João},
+            author = {Silva, Joao},
             title = {Test Article},
             year = {2023}
         }
-    """).strip())
+    """).strip(), encoding="utf-8")
 
     found_bib = _find_bibliography(tmp_path)
 

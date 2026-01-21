@@ -30,7 +30,12 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-import click
+try:
+    import click
+except ImportError:
+    raise ImportError(
+        "click nao encontrado. CLI requer instalacao com: pip install synesis[cli]"
+    )
 
 from synesis.compiler import SynesisCompiler
 from synesis.exporters.csv_export import export_csv
@@ -39,7 +44,7 @@ from synesis.exporters.xls_export import export_xls
 from synesis.parser.lexer import SynesisSyntaxError, parse_file
 from synesis.parser.template_loader import TemplateLoadError, load_template
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 
 HELP_EPILOG = (

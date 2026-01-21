@@ -48,10 +48,43 @@ class BibEntry(TypedDict, total=False):
 
 def load_bibliography(path: Path | str) -> Dict[str, BibEntry]:
     """
-    Carrega arquivo .bib e retorna dicionario com chaves normalizadas.
+    Carrega arquivo .bib do disco e retorna dicionario com chaves normalizadas.
+
+    Args:
+        path: Caminho para o arquivo .bib
+
+    Returns:
+        Dict mapeando chave normalizada (lowercase) para BibEntry
     """
     file_path = Path(path)
     content = file_path.read_text(encoding="utf-8")
+    return load_bibliography_from_string(content)
+
+
+def load_bibliography_from_string(content: str) -> Dict[str, BibEntry]:
+    """
+    Carrega bibliografia a partir de string em memoria.
+
+    Reutiliza a logica de load_bibliography() sem dependencia de I/O em disco.
+    Ideal para uso em Jupyter Notebooks, LSP e testes.
+
+    Args:
+        content: Conteudo do arquivo .bib como string
+
+    Returns:
+        Dict mapeando chave normalizada (lowercase) para BibEntry
+
+    Example:
+        >>> bib = load_bibliography_from_string('''
+        ...     @article{silva2023,
+        ...         author = {Silva, Maria},
+        ...         title = {Estudo sobre energia},
+        ...         year = {2023}
+        ...     }
+        ... ''')
+        >>> bib["silva2023"]["author"]
+        'Silva, Maria'
+    """
     bib_database = bibtexparser.loads(content)
 
     normalized: Dict[str, BibEntry] = {}
