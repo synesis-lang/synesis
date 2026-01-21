@@ -72,10 +72,8 @@ PROJECT MyResearch
     INCLUDE ANNOTATIONS "annotations.syn"
     INCLUDE ONTOLOGY "ontologies.syno"
 
-    METADATA
-        title: Climate Change Perception Study
-        author: Research Team
-        date: 2026-01-19
+    DESCRIPTION
+        Climate Change Perception Study
     END METADATA
 END PROJECT
 ```
