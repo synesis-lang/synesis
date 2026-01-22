@@ -440,7 +440,7 @@ class TestModuleImports:
     def test_version_available(self):
         """Versao esta disponivel."""
         assert hasattr(synesis, "__version__")
-        assert synesis.__version__ == "0.2.0"
+        assert synesis.__version__ == "0.2.1"
 
 
 # =============================================================================

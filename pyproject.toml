@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synesis"
-version = "0.2.0"
+version = "0.2.1"
 description = "The confluence of information into intelligence - A DSL compiler that transforms qualitative research annotations into canonical knowledge structures"
 readme = "README.md"
 requires-python = ">=3.10"

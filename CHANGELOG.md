@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-01-22
+
 ### Fixed
 - CI: correct Codecov v4 inputs and add optional token support
 - Add regex dependency required by Lark when regex=True
@@ -113,5 +115,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LSP adapter documentation
 ---
 
+[0.2.1]: https://github.com/synesis-lang/synesis/releases/tag/v0.2.1
 [0.2.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.2.0
 [0.1.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.1.0
