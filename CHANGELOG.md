@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - CI: correct Codecov v4 inputs and add optional token support
+- Add regex dependency required by Lark when regex=True
 
 ## [0.2.0] - 2026-01-21
 

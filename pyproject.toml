@@ -43,6 +43,7 @@ classifiers = [
 dependencies = [
     "lark >= 1.1",
     "bibtexparser >= 1.4",
+    "regex >= 2023.0.0",
 ]
 
 [project.optional-dependencies]
