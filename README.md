@@ -220,6 +220,62 @@ Initialize a new Synesis project with example files.
 synesis init [PROJECT_NAME]
 ```
 
+## Python API
+
+Use Synesis directly in Python scripts and Jupyter Notebooks without file I/O.
+
+### Quick Example
+
+```python
+import synesis
+
+result = synesis.load(
+    project_content='PROJECT Demo TEMPLATE "t.synt" END PROJECT',
+    template_content='''
+        TEMPLATE Demo
+        SOURCE FIELDS
+            OPTIONAL date
+        END SOURCE FIELDS
+        ITEM FIELDS
+            REQUIRED quote
+        END ITEM FIELDS
+        FIELD date TYPE DATE SCOPE SOURCE END FIELD
+        FIELD quote TYPE QUOTATION SCOPE ITEM END FIELD
+        END TEMPLATE
+    ''',
+    annotation_contents={
+        "data.syn": '''
+            SOURCE @ref2024
+                date: 2024-01-15
+                ITEM
+                    quote: Technology shows promising results.
+                END ITEM
+            END SOURCE
+        '''
+    },
+    bibliography_content='@article{ref2024, author={Silva}, year={2024}}'
+)
+
+if result.success:
+    # Export to pandas DataFrame
+    df = result.to_dataframe("items")
+
+    # Export to dict (JSON-serializable)
+    data = result.to_json_dict()
+
+    # Get all tables as DataFrames
+    dfs = result.to_dataframes()
+```
+
+### Available Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `to_dataframe(table)` | `pd.DataFrame` | Single table as DataFrame |
+| `to_dataframes()` | `Dict[str, DataFrame]` | All tables as DataFrames |
+| `to_json_dict()` | `Dict` | Full JSON structure as dict |
+| `to_csv_tables()` | `Dict[str, tuple]` | Tables as (headers, rows) |
+
 ## Output Formats
 
 ### JSON Export
@@ -357,7 +413,7 @@ If you use Synesis in your research, please cite:
   author = {{De Britto, Christian Maciel}},
   year = {2026},
   url = {https://github.com/synesis-lang/synesis},
-  version = {0.1.0}
+  version = {0.2.0}
 }
 ```
 

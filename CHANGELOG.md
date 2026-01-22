@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-21
+
+### Added
+- `synesis.load()` in-memory compilation API (no disk I/O)
+- `synesis.compile_string()` for single file parsing
+- `MemoryCompilationResult` with `to_json_dict()`, `to_csv_tables()`, `to_dataframe()` methods
+- `load_template_from_string()` in template_loader.py
+- `load_bibliography_from_string()` in bib_loader.py
+- `build_json_payload()` in json_export.py for in-memory JSON construction
+- `build_csv_tables()` in csv_export.py for in-memory table construction
+- `build_xls_workbook()` in xls_export.py for in-memory Workbook construction
+- Pandas integration via `to_dataframe()` and `to_dataframes()`
+- Tests for new API in tests/test_api.py
+- In-memory API documentation: synesis_load.qmd (Quarto)
+
+### Changed
+- Dependencies `click` and `openpyxl` are now optional
+- Reorganized dependencies in pyproject.toml: `[cli]`, `[excel]`, `[full]`, `[dev]`
+- Exporters refactored to separate data construction from disk writing
+
+### Migration
+- For importable library usage: `pip install synesis`
+- For CLI: `pip install synesis[cli]`
+- For Excel export: `pip install synesis[excel]`
+- For all features: `pip install synesis[full]`
+  
+
 ## [0.1.0] - 2026-01-19
 
 ### Added
@@ -83,42 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Implementation guides and coding patterns
 - Error handling documentation
 - LSP adapter documentation
-
-## [0.2.0] - 2026-01-21
-
-### Added
-- `synesis.load()` API para compilacao em memoria (sem I/O em disco)
-- `synesis.compile_string()` para parsing de arquivos unicos
-- `MemoryCompilationResult` com metodos `to_json_dict()`, `to_csv_tables()`, `to_dataframe()`
-- `load_template_from_string()` em template_loader.py
-- `load_bibliography_from_string()` em bib_loader.py
-- `build_json_payload()` em json_export.py para construcao de JSON em memoria
-- `build_csv_tables()` em csv_export.py para construcao de tabelas em memoria
-- `build_xls_workbook()` em xls_export.py para construcao de Workbook em memoria
-- Integracao com Pandas via `to_dataframe()` e `to_dataframes()`
-- Testes para nova API em tests/test_api.py
-
-### Changed
-- Dependencias `click` e `openpyxl` agora sao opcionais
-- Reorganizacao de dependencias em pyproject.toml: `[cli]`, `[excel]`, `[full]`, `[dev]`
-- Exportadores refatorados para separar construcao de dados de escrita em disco
-
-### Migration
-- Para uso da biblioteca importavel: `pip install synesis`
-- Para CLI: `pip install synesis[cli]`
-- Para exportacao Excel: `pip install synesis[excel]`
-- Para todos os recursos: `pip install synesis[full]`
-
-## [Unreleased]
-
-### Planned Features
-- LSP server integration for IDE support
-- VSCode extension
-- Additional export formats (GraphML, DOT)
-- Performance optimizations for large corpora
-- Incremental compilation support
-- Watch mode for continuous validation
-
 ---
 
+[0.2.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.2.0
 [0.1.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.1.0
