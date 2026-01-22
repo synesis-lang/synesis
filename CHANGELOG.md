@@ -18,18 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `build_xls_workbook()` in xls_export.py for in-memory Workbook construction
 - Pandas integration via `to_dataframe()` and `to_dataframes()`
 - Tests for new API in tests/test_api.py
-- In-memory API documentation: synesis_load.qmd (Quarto)
+- In-memory API documentation
 
 ### Changed
 - Dependencies `click` and `openpyxl` are now optional
 - Reorganized dependencies in pyproject.toml: `[cli]`, `[excel]`, `[full]`, `[dev]`
 - Exporters refactored to separate data construction from disk writing
 
-### Migration
-- For importable library usage: `pip install synesis`
-- For CLI: `pip install synesis[cli]`
-- For Excel export: `pip install synesis[excel]`
-- For all features: `pip install synesis[full]`
   
 
 ## [0.1.0] - 2026-01-19
