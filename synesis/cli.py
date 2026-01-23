@@ -44,7 +44,7 @@ from synesis.exporters.xls_export import export_xls
 from synesis.parser.lexer import SynesisSyntaxError, parse_file
 from synesis.parser.template_loader import TemplateLoadError, load_template
 
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 
 
 HELP_EPILOG = (

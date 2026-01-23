@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synesis"
-version = "0.2.1"
+version = "0.2.2"
 description = "The confluence of information into intelligence - A DSL compiler that transforms qualitative research annotations into canonical knowledge structures"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,26 +44,16 @@ dependencies = [
     "lark >= 1.1",
     "bibtexparser >= 1.4",
     "regex >= 2023.0.0",
+    "click >= 8.0",
+    "openpyxl >= 3.0",
 ]
 
 [project.optional-dependencies]
-cli = [
-    "click >= 8.0",
-]
-excel = [
-    "openpyxl >= 3.0",
-]
-full = [
-    "click >= 8.0",
-    "openpyxl >= 3.0",
-]
 dev = [
     "pytest >= 7.0",
     "pytest-cov >= 4.0",
     "build >= 0.10",
     "twine >= 4.0",
-    "click >= 8.0",
-    "openpyxl >= 3.0",
 ]
 
 [project.urls]
