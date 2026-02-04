@@ -58,6 +58,7 @@ class LinkedProject:
     hierarchy: Dict[str, str]
     all_triples: List[Tuple[str, str, str]]
     topic_index: Dict[str, List[str]]
+    relation_index: Dict[Tuple[str, str, str], Dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass
@@ -103,6 +104,7 @@ class Linker:
         ontology_index = {self._norm_code(o.concept): o for o in self.ontologies}
         code_usage: Dict[str, List[ItemNode]] = {}
         all_triples: List[Tuple[str, str, str]] = []
+        relation_index: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
 
         for item in self.items:
             for code in self._collect_item_codes(item):
@@ -121,7 +123,17 @@ class Linker:
             for chain in item.chains:
                 # Detecta se template define RELATIONS (chain qualificada)
                 has_relations = self._has_chain_relations()
-                all_triples.extend(chain.to_triples(has_relations=has_relations))
+                triples = chain.to_triples(has_relations=has_relations)
+                all_triples.extend(triples)
+
+                relation_type = "qualified" if has_relations else "simple"
+                chain_location = chain.location or item.location or SourceLocation(Path("<unknown>"), 1, 1)
+                for triple in triples:
+                    if triple not in relation_index:
+                        relation_index[triple] = {
+                            "location": chain_location,
+                            "type": relation_type,
+                        }
 
         hierarchy: Dict[str, str] = {}
         for ontology in self.ontologies:
@@ -145,6 +157,7 @@ class Linker:
             hierarchy=hierarchy,
             all_triples=all_triples,
             topic_index=topic_index,
+            relation_index=relation_index,
         )
 
     def _is_a_pairs(self, chain: ChainNode) -> List[Tuple[str, str]]:

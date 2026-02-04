@@ -64,7 +64,7 @@ from synesis.ast.results import (
 # Semantic
 from synesis.semantic.linker import LinkedProject
 
-__version__ = "0.2.1"
+__version__ = "0.2.3"
 __all__ = [
     # API em memoria
     "load",
