@@ -32,7 +32,7 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest --cov=synesis --cov-report=xml --cov-report=term --allow-no-tests
+        python -c "import sys, pytest; code = pytest.main(['--cov=synesis','--cov-report=xml','--cov-report=term']); sys.exit(0 if code == 5 else code)"
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
