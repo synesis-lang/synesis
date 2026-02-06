@@ -41,16 +41,10 @@ The result is true **σύνεσις** (sýnesis): the convergence of information
 
 ## Installation
 
-### From PyPI (Coming Soon)
+### From PyPI
 
 ```bash
 pip install synesis
-```
-
-### From TestPyPI
-
-```bash
-pip install -i https://test.pypi.org/simple/ synesis
 ```
 
 ### From Source
@@ -192,32 +186,7 @@ Options:
   --json PATH       Export to JSON format
   --csv PATH        Export to CSV directory (creates multiple tables)
   --xls PATH        Export to Excel workbook
-  --force           Generate outputs even with validation errors
-  --verbose         Show detailed compilation progress
-```
-
-### `synesis check`
-
-Validate syntax of a single file without full compilation.
-
-```bash
-synesis check FILE.syn
-```
-
-### `synesis validate-template`
-
-Validate a template file structure.
-
-```bash
-synesis validate-template TEMPLATE.synt
-```
-
-### `synesis init`
-
-Initialize a new Synesis project with example files.
-
-```bash
-synesis init [PROJECT_NAME]
+  --stats           Show project basic statistics
 ```
 
 ## Python API
@@ -360,19 +329,6 @@ Full language specification available at: [https://synesis-lang.github.io/synesi
 | TOPIC | ONTOLOGY | Dynamic category grouping |
 
 ## Development
-
-### Running Tests
-
-```bash
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=synesis --cov-report=html
-```
 
 ### Project Structure
 
