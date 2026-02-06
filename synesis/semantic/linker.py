@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from lark import Token
+
 from synesis.ast.nodes import (
     ChainNode,
     FieldType,
@@ -47,6 +49,121 @@ from synesis.ast.results import (
     UndefinedCode,
     ValidationResult,
 )
+
+
+def _token_location(file_path: Path, token: Token, offset: int = 0) -> SourceLocation:
+    return SourceLocation(
+        file=file_path,
+        line=getattr(token, "line", 1),
+        column=max(1, getattr(token, "column", 1) + offset),
+    )
+
+
+def _split_codes_from_line(file_path: Path, token: Token) -> Tuple[List[str], List[SourceLocation]]:
+    text = str(token)
+    values: List[str] = []
+    locations: List[SourceLocation] = []
+    start = 0
+    while start <= len(text):
+        comma_idx = text.find(",", start)
+        if comma_idx == -1:
+            segment = text[start:]
+        else:
+            segment = text[start:comma_idx]
+        trimmed = segment.strip()
+        if trimmed:
+            leading_ws = len(segment) - len(segment.lstrip())
+            offset = start + leading_ws
+            values.append(trimmed)
+            locations.append(_token_location(file_path, token, offset))
+        if comma_idx == -1:
+            break
+        start = comma_idx + 1
+    return values, locations
+
+
+def _split_chain_from_line(file_path: Path, token: Token) -> Tuple[List[str], List[SourceLocation]]:
+    text = str(token)
+    nodes: List[str] = []
+    locations: List[SourceLocation] = []
+    start = 0
+    while start <= len(text):
+        arrow_idx = text.find("->", start)
+        if arrow_idx == -1:
+            segment = text[start:]
+        else:
+            segment = text[start:arrow_idx]
+        trimmed = segment.strip()
+        if trimmed:
+            leading_ws = len(segment) - len(segment.lstrip())
+            offset = start + leading_ws
+            nodes.append(trimmed)
+            locations.append(_token_location(file_path, token, offset))
+        if arrow_idx == -1:
+            break
+        start = arrow_idx + 2
+    return nodes, locations
+
+
+def _parse_code_lines(file_path: Path, lines: List[Any]) -> Tuple[List[str], List[SourceLocation]]:
+    values: List[str] = []
+    locations: List[SourceLocation] = []
+    for line in lines:
+        if isinstance(line, Token):
+            parsed_values, parsed_locations = _split_codes_from_line(file_path, line)
+            values.extend(parsed_values)
+            locations.extend(parsed_locations)
+        else:
+            for part in str(line).split(","):
+                part = part.strip()
+                if part:
+                    values.append(part)
+    return values, locations
+
+
+def _parse_chain_lines(file_path: Path, lines: List[Any], location: SourceLocation) -> ChainNode:
+    nodes: List[str] = []
+    locations: List[SourceLocation] = []
+    for line in lines:
+        if isinstance(line, Token):
+            parsed_nodes, parsed_locations = _split_chain_from_line(file_path, line)
+            nodes.extend(parsed_nodes)
+            locations.extend(parsed_locations)
+        else:
+            for part in str(line).split("->"):
+                part = part.strip()
+                if part:
+                    nodes.append(part)
+    return ChainNode(
+        nodes=nodes,
+        relations=[],
+        location=location,
+        node_locations=locations if locations else None,
+    )
+
+
+def _merge_code_values(extra_fields: Dict[str, Any], field_name: str, values: List[str]) -> None:
+    if not values:
+        return
+    existing = extra_fields.get(field_name)
+    if existing is None or isinstance(existing, str):
+        extra_fields[field_name] = list(values)
+        return
+    if isinstance(existing, list):
+        existing.extend(values)
+        return
+    extra_fields[field_name] = [existing, *values]
+
+
+def _merge_chain_value(extra_fields: Dict[str, Any], field_name: str, chain: ChainNode) -> None:
+    existing = extra_fields.get(field_name)
+    if existing is None or isinstance(existing, str):
+        extra_fields[field_name] = chain
+        return
+    if isinstance(existing, list):
+        existing.append(chain)
+        return
+    extra_fields[field_name] = [existing, chain]
 
 
 @dataclass
@@ -75,6 +192,8 @@ class Linker:
         items_by_bibref: Dict[str, List[ItemNode]] = {}
 
         for item in self.items:
+            if self.template:
+                self._augment_item_field_locations(item)
             key = self._norm_bibref(item.bibref)
             items_by_bibref.setdefault(key, []).append(item)
 
@@ -218,6 +337,48 @@ class Linker:
             raw = self._get_item_field_value(item, name)
             codes.extend(self._extract_code_values(raw))
         return codes
+
+    def _augment_item_field_locations(self, item: ItemNode) -> None:
+        if not self.template:
+            return
+        field_specs = self.template.field_specs or {}
+        line_tokens = getattr(item, "field_line_tokens", None) or {}
+        if not line_tokens:
+            return
+
+        if item.location and getattr(item.location, "file", None):
+            file_path = item.location.file
+        else:
+            file_path = Path("<unknown>")
+
+        for field_name, spec in field_specs.items():
+            if spec.scope != Scope.ITEM:
+                continue
+            if spec.type not in {FieldType.CODE, FieldType.CHAIN}:
+                continue
+            raw_lines = line_tokens.get(field_name)
+            if not raw_lines:
+                continue
+
+            for lines in raw_lines:
+                if spec.type == FieldType.CODE:
+                    values, locations = _parse_code_lines(file_path, lines)
+                    if values:
+                        _merge_code_values(item.extra_fields, field_name, values)
+                    if locations:
+                        # Deduplicar localizações antes de estender (previne duplicatas do transformer)
+                        existing = item.code_locations.get(field_name, [])
+                        existing_keys = {(loc.file, loc.line, loc.column) for loc in existing}
+                        new_locs = [loc for loc in locations
+                                   if (loc.file, loc.line, loc.column) not in existing_keys]
+                        if new_locs:
+                            item.code_locations.setdefault(field_name, []).extend(new_locs)
+                    continue
+
+                chain_location = item.location or SourceLocation(file_path, 1, 1)
+                chain_node = _parse_chain_lines(file_path, lines, chain_location)
+                if chain_node.nodes:
+                    _merge_chain_value(item.extra_fields, field_name, chain_node)
 
     def _extract_code_values(self, value: Any) -> List[str]:
         if value is None:

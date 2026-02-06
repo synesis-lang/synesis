@@ -117,6 +117,7 @@ class ChainNode:
     nodes: List[str]
     relations: List[str]
     location: SourceLocation
+    node_locations: Optional[List[SourceLocation]] = None
 
     def to_triples(self, has_relations: bool = False) -> List[Tuple[str, str, str]]:
         """
@@ -213,6 +214,8 @@ class ItemNode:
     notes: List[str] = field(default_factory=list)
     chains: List[ChainNode] = field(default_factory=list)
     extra_fields: Dict[str, Any] = field(default_factory=dict)
+    code_locations: Dict[str, List[SourceLocation]] = field(default_factory=dict)
+    field_line_tokens: Dict[str, List[List[Any]]] = field(default_factory=dict)
     field_names: List[str] = field(default_factory=list)
     location: Optional[SourceLocation] = None
 

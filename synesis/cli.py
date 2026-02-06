@@ -37,15 +37,13 @@ except ImportError:
         "click nao encontrado. CLI requer instalacao com: pip install synesis[cli]"
     )
 
+from synesis import __version__ as VERSION
 from synesis.compiler import SynesisCompiler
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
 from synesis.parser.lexer import SynesisSyntaxError, parse_file
 from synesis.parser.template_loader import TemplateLoadError, load_template
-
-VERSION = "0.2.3"
-
 
 HELP_EPILOG = (
     "Examples:\n"

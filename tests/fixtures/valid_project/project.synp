@@ -1,6 +1,0 @@
-PROJECT demo
-    TEMPLATE "template.synt"
-    INCLUDE BIBLIOGRAPHY "references.bib"
-    INCLUDE ANNOTATIONS "annotations/*.syn"
-    INCLUDE ONTOLOGY "ontologies/*.syno"
-END PROJECT

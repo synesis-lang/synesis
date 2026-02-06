@@ -27,8 +27,9 @@ Gerado conforme: Especificacao Synesis v1.1
 from __future__ import annotations
 
 import textwrap
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from lark import Token, Transformer, v_args
 
@@ -71,6 +72,10 @@ def _ensure_non_empty(value: str, location: SourceLocation, field_name: str) -> 
 
 
 def _add_field(fields: Dict[str, Any], name: str, value: Any) -> None:
+    if isinstance(value, CodeListValue):
+        value = value.values
+    if isinstance(value, TextBlockValue):
+        value = value.text
     if name in fields:
         existing = fields[name]
         if isinstance(existing, list):
@@ -114,6 +119,123 @@ def _normalize_field_name(name: str) -> str:
     return name
 
 
+@dataclass
+class CodeListValue:
+    values: List[str]
+    locations: List[SourceLocation]
+
+
+@dataclass
+class TextBlockValue:
+    text: str
+    lines: List[Any]
+
+
+def _token_location(file_path: Path, token: Token, offset: int = 0) -> SourceLocation:
+    return SourceLocation(
+        file=file_path,
+        line=getattr(token, "line", 1),
+        column=max(1, getattr(token, "column", 1) + offset),
+    )
+
+
+def _split_codes_from_line(file_path: Path, token: Token) -> CodeListValue:
+    text = str(token)
+    values: List[str] = []
+    locations: List[SourceLocation] = []
+    start = 0
+    while start <= len(text):
+        comma_idx = text.find(",", start)
+        if comma_idx == -1:
+            segment = text[start:]
+        else:
+            segment = text[start:comma_idx]
+        trimmed = segment.strip()
+        if trimmed:
+            leading_ws = len(segment) - len(segment.lstrip())
+            offset = start + leading_ws
+            values.append(trimmed)
+            locations.append(_token_location(file_path, token, offset))
+        if comma_idx == -1:
+            break
+        start = comma_idx + 1
+    return CodeListValue(values=values, locations=locations)
+
+
+def _split_chain_from_line(file_path: Path, token: Token) -> Tuple[List[str], List[SourceLocation]]:
+    text = str(token)
+    nodes: List[str] = []
+    locations: List[SourceLocation] = []
+    start = 0
+    while start <= len(text):
+        arrow_idx = text.find("->", start)
+        if arrow_idx == -1:
+            segment = text[start:]
+        else:
+            segment = text[start:arrow_idx]
+        trimmed = segment.strip()
+        if trimmed:
+            leading_ws = len(segment) - len(segment.lstrip())
+            offset = start + leading_ws
+            nodes.append(trimmed)
+            locations.append(_token_location(file_path, token, offset))
+        if arrow_idx == -1:
+            break
+        start = arrow_idx + 2
+    return nodes, locations
+
+
+def _line_texts(lines: List[Any]) -> List[str]:
+    return [str(line) for line in lines]
+
+
+def _parse_code_lines(file_path: Path, lines: List[Any]) -> CodeListValue:
+    values: List[str] = []
+    locations: List[SourceLocation] = []
+    for line in lines:
+        if isinstance(line, Token):
+            parsed = _split_codes_from_line(file_path, line)
+            values.extend(parsed.values)
+            locations.extend(parsed.locations)
+        else:
+            for part in str(line).split(","):
+                part = part.strip()
+                if part:
+                    values.append(part)
+    return CodeListValue(values=values, locations=locations)
+
+
+def _parse_chain_lines(
+    file_path: Path, lines: List[Any], location: SourceLocation
+) -> ChainNode:
+    nodes: List[str] = []
+    locations: List[SourceLocation] = []
+    for line in lines:
+        if isinstance(line, Token):
+            parsed_nodes, parsed_locations = _split_chain_from_line(file_path, line)
+            nodes.extend(parsed_nodes)
+            locations.extend(parsed_locations)
+        else:
+            for part in str(line).split("->"):
+                part = part.strip()
+                if part:
+                    nodes.append(part)
+    return ChainNode(
+        nodes=nodes,
+        relations=[],
+        location=location,
+        node_locations=locations if locations else None,
+    )
+
+
+def _is_code_field_name(name: str) -> bool:
+    return name.lower() in {"code", "codes"}
+
+
+def _is_chain_field_name(name: str) -> bool:
+    return name.lower() in {"chain", "chains"}
+
+
 class SynesisTransformer(Transformer):
     def __init__(self, filename: str | Path):
         super().__init__()
@@ -143,7 +265,7 @@ class SynesisTransformer(Transformer):
         return int(value) if value.isdigit() else float(value)
 
     def TEXT_LINE(self, token: Token) -> str:  # noqa: N802
-        return token.value
+        return token
 
     def CONCEPT_NAME(self, token: Token) -> str:  # noqa: N802
         return token.value
@@ -152,10 +274,10 @@ class SynesisTransformer(Transformer):
         return token.value
 
     def CHAIN_ELEMENT(self, token: Token) -> str:  # noqa: N802
-        return token.value
+        return token
 
     def CODE_ELEMENT(self, token: Token) -> str:  # noqa: N802
-        return token.value
+        return token
 
     def KW_PROJECT(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
@@ -414,6 +536,8 @@ class SynesisTransformer(Transformer):
             if not isinstance(entry, tuple):
                 continue
             name, value, _location = entry
+            if isinstance(value, TextBlockValue):
+                value = value.text
             _add_field(fields, name, value)
         return SourceNode(
             bibref=bibref,
@@ -431,6 +555,8 @@ class SynesisTransformer(Transformer):
         notes: List[str] = []
         chains: List[ChainNode] = []
         extra_fields: Dict[str, Any] = {}
+        code_locations: Dict[str, List[SourceLocation]] = {}
+        field_line_tokens: Dict[str, List[List[Any]]] = {}
         field_names: List[str] = []
         for entry in field_entries:
             if isinstance(entry, Token) and entry.type == "NEWLINE":
@@ -438,13 +564,20 @@ class SynesisTransformer(Transformer):
             if not isinstance(entry, tuple):
                 continue
             name, value, _location = entry
+            if isinstance(value, TextBlockValue):
+                field_line_tokens.setdefault(name, []).append(list(value.lines))
+                value = value.text
             field_names.append(name)
             lname = name.lower()
             if lname in {"quote", "quotation"}:
                 quote = str(value)
                 continue
             if lname in {"code", "codes"}:
-                if isinstance(value, list):
+                if isinstance(value, CodeListValue):
+                    codes.extend(value.values)
+                    if value.locations:
+                        code_locations.setdefault(name, []).extend(value.locations)
+                elif isinstance(value, list):
                     codes.extend([str(v) for v in value])
                 else:
                     codes.append(str(value))
@@ -461,7 +594,12 @@ class SynesisTransformer(Transformer):
                 elif isinstance(value, ChainNode):
                     chains.append(value)
                 continue
-            _add_field(extra_fields, name, value)
+            if isinstance(value, CodeListValue):
+                _add_field(extra_fields, name, value.values)
+                if value.locations:
+                    code_locations.setdefault(name, []).extend(value.locations)
+            else:
+                _add_field(extra_fields, name, value)
         return ItemNode(
             bibref=bibref,
             quote=quote,
@@ -469,6 +607,8 @@ class SynesisTransformer(Transformer):
             notes=notes,
             chains=chains,
             extra_fields=extra_fields,
+            code_locations=code_locations,
+            field_line_tokens=field_line_tokens,
             field_names=field_names,
             location=_source_location(self.file_path, meta),
         )
@@ -487,6 +627,8 @@ class SynesisTransformer(Transformer):
             if not isinstance(entry, tuple):
                 continue
             name, value, _location = entry
+            if isinstance(value, TextBlockValue):
+                value = value.text
             field_names.append(name)
             lname = name.lower()
             if lname == "description":
@@ -699,33 +841,75 @@ class SynesisTransformer(Transformer):
                 location=location,
             )
         if len(cleaned) == 1 and isinstance(cleaned[0], list):
-            text = "\n".join(cleaned[0])
+            lines = cleaned[0]
+            if _is_code_field_name(name):
+                value = _parse_code_lines(self.file_path, lines)
+                return (name, value, location)
+            if _is_chain_field_name(name):
+                value = _parse_chain_lines(self.file_path, lines, location)
+                return (name, value, location)
+            text = "\n".join(_line_texts(lines))
             text = _ensure_non_empty(_dedent_text(text), location, name)
-            return (name, text, location)
+            return (name, TextBlockValue(text=text, lines=lines), location)
         value = cleaned[0]
         if len(cleaned) > 1 and isinstance(cleaned[1], list):
-            if not isinstance(value, str):
+            if not isinstance(value, (str, Token)):
                 raise SynesisSyntaxError(
                     message=f"Invalid multiline value for field '{name}'",
                     location=location,
                 )
-            merged = "\n".join([value] + cleaned[1])
+            lines = [value] + cleaned[1]
+            if _is_code_field_name(name):
+                value = _parse_code_lines(self.file_path, lines)
+                return (name, value, location)
+            if _is_chain_field_name(name):
+                value = _parse_chain_lines(self.file_path, lines, location)
+                return (name, value, location)
+            merged = "\n".join(_line_texts(lines))
             merged = _ensure_non_empty(_dedent_text(merged), location, name)
-            return (name, merged, location)
-        if isinstance(value, str):
-            value = _ensure_non_empty(value, location, name)
+            return (name, TextBlockValue(text=merged, lines=lines), location)
+        if isinstance(value, CodeListValue):
+            return (name, value, location)
+        if isinstance(value, (str, Token)):
+            token_value = value if isinstance(value, Token) else None
+            value_str = _ensure_non_empty(str(value), location, name)
             lname = name.lower()
-            if lname in {"code", "codes"} and "," in value:
-                value = [part.strip() for part in value.split(",") if part.strip()]
-            if lname in {"chain", "chains"} and "->" in value:
-                elements = [part.strip() for part in value.split("->") if part.strip()]
-                value = ChainNode(nodes=elements, relations=[], location=location)
+            if lname in {"code", "codes"}:
+                if isinstance(value, Token):
+                    value = _split_codes_from_line(self.file_path, value)
+                elif "," in value_str:
+                    parts = [part.strip() for part in value_str.split(",") if part.strip()]
+                    value = CodeListValue(values=parts, locations=[])
+                else:
+                    value = value_str
+            elif lname in {"chain", "chains"} and "->" in value_str:
+                if isinstance(value, Token):
+                    nodes, locations = _split_chain_from_line(self.file_path, value)
+                    value = ChainNode(
+                        nodes=nodes,
+                        relations=[],
+                        location=location,
+                        node_locations=locations if locations else None,
+                    )
+                else:
+                    elements = [part.strip() for part in value_str.split("->") if part.strip()]
+                    value = ChainNode(nodes=elements, relations=[], location=location)
+            else:
+                if token_value is not None:
+                    value = TextBlockValue(text=value_str, lines=[token_value])
+                else:
+                    value = value_str
         return (name, value, location)
 
     def value(self, items: List[Any]) -> Any:
         if len(items) == 2 and isinstance(items[0], (int, float)) and isinstance(items[1], str):
             return f"{items[0]}{items[1]}".strip()
         value = items[0]
+        if isinstance(value, CodeListValue):
+            return value
+        # Token is a subclass of str, so check Token FIRST to preserve location metadata
+        if isinstance(value, Token):
+            return value
         if isinstance(value, str):
             value = _strip_quotes(value).strip()
             return value
@@ -733,12 +917,22 @@ class SynesisTransformer(Transformer):
             return [str(v).strip() for v in value]
         return value
 
-    def code_list(self, items: List[Any]) -> List[str]:
-        return [str(item).strip() for item in items]
+    def code_list(self, items: List[Any]) -> CodeListValue:
+        values: List[str] = []
+        locations: List[SourceLocation] = []
+        for item in items:
+            if isinstance(item, Token):
+                values.append(str(item).strip())
+                locations.append(_token_location(self.file_path, item))
+            else:
+                text = str(item).strip()
+                if text:
+                    values.append(text)
+        return CodeListValue(values=values, locations=locations)
 
-    def text_block(self, items: List[Any]) -> List[str]:
+    def text_block(self, items: List[Any]) -> List[Any]:
         return [
-            str(item)
+            item
             for item in items
             if not (isinstance(item, Token) and item.type == "NEWLINE")
         ]
@@ -758,9 +952,17 @@ class SynesisTransformer(Transformer):
         Por ora, armazenamos todos os elementos em nodes e deixamos relations vazio.
         O validator.validate_chain() faz a separacao correta.
         """
-        elements = [str(item).strip() for item in items]
+        elements: List[str] = []
+        locations: List[SourceLocation] = []
+        for item in items:
+            if isinstance(item, Token):
+                elements.append(str(item).strip())
+                locations.append(_token_location(self.file_path, item))
+            else:
+                elements.append(str(item).strip())
         return ChainNode(
             nodes=elements,
             relations=[],
             location=_source_location(self.file_path, meta),
+            node_locations=locations if locations else None,
         )

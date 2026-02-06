@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-02-04
+
+### Fixed
+- Deduplicação de `code_locations` no linker para prevenir localizações duplicadas de CODE/CHAIN (transformer + linker)
+- Tree views do VSCode Explorer agora mostram apenas 1 ocorrência por CODE/CHAIN (não mais duplicatas ITEM + CODE)
+- Correção definitiva do bug de duplicação em campos CODE/CHAIN no Explorer
+
+## [0.2.8] - 2026-02-04
+
+### Changed
+- Versão de consolidação das correções de localização CODE/CHAIN
+
+## [0.2.7] - 2026-02-04
+
+### Fixed
+- `code_locations` agora acumula localizações de múltiplas linhas CODE em vez de sobrescrever
+- Função `value()` preserva Token (subclasse de str) para manter metadata de localização (fix navegação no Code Explorer)
+
+## [0.2.6] - 2026-02-04
+
+### Added
+- Pós-processamento com template para gerar localizações exatas em campos TYPE CODE/CHAIN com nome customizado.
+
+### Changed
+- Preservação de tokens de linha para campos single-line, permitindo cálculo de colunas exatas após o parse.
+
+## [0.2.5] - 2026-02-04
+
+### Added
+- Localização exata para campos TYPE CODE/CHAIN com nome customizado, usando o template após o parse.
+
+### Changed
+- Itens agora carregam tokens de linhas multiline para permitir cálculo de posições em CODE/CHAIN definidos no template.
+
+## [0.2.4] - 2026-02-04
+
+### Added
+- AST agora armazena `code_locations` (ItemNode) e `node_locations` (ChainNode) para posições exatas de CODE/CHAIN, inclusive em valores multiline.
+
+### Changed
+- Transformer preserva tokens `TEXT_LINE` para calcular colunas exatas em campos CODE/CHAIN multiline.
+- Versão do pacote centralizada no `pyproject.toml` (fallback via metadata/pyproject).
 
 ## [0.2.3] - 2026-02-03
 

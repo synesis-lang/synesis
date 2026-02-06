@@ -1,4 +1,0 @@
-ITEM @ref2020
-    quote: "Quote"
-    chain: A -> UNKNOWN -> B
-END ITEM
