@@ -369,7 +369,7 @@ If you use Synesis in your research, please cite:
   author = {{De Britto, Christian Maciel}},
   year = {2026},
   url = {https://github.com/synesis-lang/synesis},
-  version = {0.2.0}
+  version = {0.2.9}
 }
 ```
 
