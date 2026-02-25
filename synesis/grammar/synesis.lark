@@ -92,9 +92,9 @@ description_lines: (TEXT_LINE NEWLINE | NEWLINE)+
 // BLOCOS DE ANOTACAO
 // ============================================
 
-source_block: KW_SOURCE BIBREF NEWLINE _INDENT (field_entry | NEWLINE)* _DEDENT KW_END KW_SOURCE
-item_block: KW_ITEM BIBREF NEWLINE _INDENT (field_entry | NEWLINE)* _DEDENT KW_END KW_ITEM
-ontology_block: KW_ONTOLOGY concept_name NEWLINE _INDENT (field_entry | NEWLINE)* _DEDENT KW_END KW_ONTOLOGY
+source_block: KW_SOURCE BIBREF NEWLINE (_INDENT (field_entry | NEWLINE)* _DEDENT)? KW_END KW_SOURCE
+item_block: KW_ITEM BIBREF NEWLINE (_INDENT (field_entry | NEWLINE)* _DEDENT)? KW_END KW_ITEM
+ontology_block: KW_ONTOLOGY concept_name NEWLINE (_INDENT (field_entry | NEWLINE)* _DEDENT)? KW_END KW_ONTOLOGY
 
 concept_name: CONCEPT_NAME
 

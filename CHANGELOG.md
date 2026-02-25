@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2026-02-24
+
+### Fixed
+- Grammar now accepts empty SOURCE, ITEM, and ONTOLOGY blocks (no fields required for parsing).
+  Previously, blocks with no fields caused a syntax error because the `_INDENT`/`_DEDENT` tokens
+  were not emitted by the indentation lexer, failing before semantic validation.
+  Empty blocks are now valid syntax; required-field enforcement is delegated to the semantic validator.
+
+### Changed
+- `synesis init`: renamed generated field `code_description` to `definition` in template and ontology
+  files to avoid collision with the `KW_CODE` keyword token in the Lark lexer.
+
 ## [0.2.9] - 2026-02-04 - Consolidates changes since version 0.2.2
 
 ### Fixed

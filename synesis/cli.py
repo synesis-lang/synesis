@@ -47,10 +47,11 @@ from synesis.parser.template_loader import TemplateLoadError, load_template
 
 HELP_EPILOG = (
     "Examples:\n"
-    "  python -m synesis.cli compile projeto.synp --json saida.json\n"
-    "  python -m synesis.cli compile projeto.synp --csv saida_csv/\n"
-    "  python -m synesis.cli compile projeto.synp --xls resultado.xlsx\n"
-    "  python -m synesis.cli compile projeto.synp --json saida.json --csv saida_csv/ --xls saida.xlsx\n"
+    "\n"
+    "  synesis compile projeto.synp --json saida.json\n"
+    "  synesis compile projeto.synp --csv saida_csv/\n"
+    "  synesis compile projeto.synp --xls resultado.xlsx\n"
+    "  synesis compile projeto.synp --json saida.json --csv saida_csv/ --xls saida.xlsx\n"
 )
 
 
@@ -58,7 +59,7 @@ HELP_EPILOG = (
 @click.option("--version", is_flag=True, help="Show version and exit")
 @click.pass_context
 def main(ctx, version: bool) -> None:
-    """Synesis - Compiler for qualitative research corpora"""
+    """Synesis - Compile yout thinking"""
     if version:
         click.echo(f"Synesis Compiler v{VERSION}")
         raise SystemExit(0)
@@ -150,39 +151,131 @@ def init() -> None:
     cwd = Path.cwd()
     project_path = cwd / "project.synp"
     template_path = cwd / "template.synt"
-    annotations_dir = cwd / "annotations"
-    ontology_dir = cwd / "ontologies"
     bibliography_path = cwd / "references.bib"
-
-    annotations_dir.mkdir(exist_ok=True)
-    ontology_dir.mkdir(exist_ok=True)
+    annotations_path = cwd / "annotations.syn"
+    ontology_path = cwd / "ontology.syno"
 
     if not project_path.exists():
         project_path.write_text(
             "PROJECT demo\n"
             '    TEMPLATE "template.synt"\n'
             '    INCLUDE BIBLIOGRAPHY "references.bib"\n'
-            '    INCLUDE ANNOTATIONS "annotations/*.syn"\n'
-            '    INCLUDE ONTOLOGY "ontologies/*.syno"\n'
+            '    INCLUDE ANNOTATIONS "annotations.syn"\n'
+            '    INCLUDE ONTOLOGY "ontology.syno"\n'
             "END PROJECT\n",
             encoding="utf-8",
         )
 
     if not template_path.exists():
         template_path.write_text(
-            "TEMPLATE demo\n"
+            "# =================================================================\n"
+            "# DATA SOURCES (Interviews, Articles, Field Notes, etc.)\n"
+            "# =================================================================\n"
+            "\n"
+            "SOURCE FIELDS\n"
+            "    OPTIONAL description\n"
+            "END SOURCE FIELDS\n"
+            "\n"
+            "FIELD description TYPE TEXT\n"
+            "    SCOPE SOURCE\n"
+            "    DESCRIPTION General context, summary, or bibliographic details of the data source\n"
+            "END FIELD\n"
+            "\n"
+            "\n"
+            "# =================================================================\n"
+            "# DATA EXCERPTS & ANALYSIS (Quotes, Memos, and Codes)\n"
+            "# =================================================================\n"
+            "\n"
             "ITEM FIELDS\n"
-            "    REQUIRED quote\n"
+            "    REQUIRED citation, note, code\n"
             "END ITEM FIELDS\n"
-            "FIELD quote TYPE QUOTATION SCOPE ITEM\n"
+            "\n"
+            "FIELD citation TYPE QUOTATION\n"
+            "    SCOPE ITEM\n"
+            "    DESCRIPTION Direct quote or selected excerpt from the data source\n"
+            "END FIELD\n"
+            "\n"
+            "FIELD note TYPE MEMO\n"
+            "    SCOPE ITEM\n"
+            "    DESCRIPTION Analytical memo recording interpretations, emerging patterns, or causal reasoning\n"
+            "END FIELD\n"
+            "\n"
+            "FIELD code TYPE CODE\n"
+            "    SCOPE ITEM\n"
+            "    DESCRIPTION Codes or descriptors applied to this specific excerpt (tags)\n"
+            "END FIELD\n"
+            "\n"
+            "\n"
+            "# =================================================================\n"
+            "# CODEBOOK & THEMES (Coding Framework and Thematic Categories)\n"
+            "# =================================================================\n"
+            "\n"
+            "ONTOLOGY FIELDS\n"
+            "    REQUIRED definition, group\n"
+            "END ONTOLOGY FIELDS\n"
+            "\n"
+            "FIELD definition TYPE TEXT\n"
+            "    SCOPE ONTOLOGY\n"
+            "    DESCRIPTION Clear definition of the code, indicating inclusion/exclusion criteria for when to apply it\n"
+            "END FIELD\n"
+            "\n"
+            "FIELD group TYPE TOPIC\n"
+            "    SCOPE ONTOLOGY\n"
+            "    DESCRIPTION Broader theme, category, or thematic domain that groups these codes together\n"
             "END FIELD\n",
             encoding="utf-8",
         )
 
     if not bibliography_path.exists():
-        bibliography_path.write_text("", encoding="utf-8")
+        bibliography_path.write_text(
+            "@article{smith2024,\n"
+            "    author = {Smith, Jane},\n"
+            "    title = {Understanding Community Resilience},\n"
+            "    journal = {Journal of Social Research},\n"
+            "    year = {2024},\n"
+            "    volume = {12},\n"
+            "    pages = {45--67}\n"
+            "}\n",
+            encoding="utf-8",
+        )
 
-    click.echo(click.style("Project initialized.", fg="green"))
+    if not annotations_path.exists():
+        annotations_path.write_text(
+            "SOURCE @smith2024\n"
+            "    description: Qualitative study on community resilience strategies in urban contexts.\n"
+            "END SOURCE\n"
+            "\n"
+            "ITEM @smith2024\n"
+            "    citation: \"People here look out for each other. When the flood came, nobody waited\n"
+            "        for official help — neighbors just organized themselves.\"\n"
+            "\n"
+            "    note: Participant describes spontaneous collective action as a primary resilience\n"
+            "        mechanism, bypassing formal institutions. Suggests strong bonding social capital.\n"
+            "\n"            
+            "    code: Social_Cohesion, Collective_Action\n"
+            "END ITEM\n",
+            encoding="utf-8",
+        )
+
+    if not ontology_path.exists():
+        ontology_path.write_text(
+            "ONTOLOGY Social_Cohesion\n"
+            "    definition: The degree to which community members trust, support, and cooperate\n"
+            "        with one another. Applies when participants describe solidarity, mutual aid,\n"
+            "        or a shared sense of belonging.\n"
+            "    group: Community_Resilience\n"
+            "END ONTOLOGY\n"
+            "\n"
+            "ONTOLOGY Collective_Action\n"
+            "    definition: Coordinated efforts by community members to address shared challenges\n"
+            "        without formal institutional direction. Applies when groups self-organize in\n"
+            "        response to a problem or crisis.\n"
+            "    group: Community_Resilience\n"
+            "END ONTOLOGY\n",
+            encoding="utf-8",
+        )
+
+    click.echo(click.style("Basic project initialized.", fg="green"))
 
 
 def _print_diagnostics(errors: Iterable, severity_label: str) -> None:
