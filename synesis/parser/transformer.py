@@ -381,8 +381,10 @@ class SynesisTransformer(Transformer):
     def COMPARATOR(self, token: Token) -> str:  # noqa: N802
         return token.value
 
-    @v_args(meta=True)
-    def project_block(self, meta: Any, items: List[Any]) -> ProjectNode:
+    @v_args(tree=True)
+    def project_block(self, tree: Any) -> ProjectNode:
+        meta = tree.meta
+        items = tree.children
         name = items[1]
         template_path: Optional[Path] = None
         include_nodes: List[IncludeNode] = []
@@ -458,13 +460,15 @@ class SynesisTransformer(Transformer):
 
         return (template_path, include_nodes)
 
-    @v_args(meta=True)
-    def include_stmt(self, meta: Any, items: List[Any]) -> Any:
+    @v_args(tree=True)
+    def include_stmt(self, tree: Any) -> Any:
         """
         Grammar: include_stmt: KW_TEMPLATE STRING NEWLINE | KW_INCLUDE include_type STRING NEWLINE
         For TEMPLATE: items = [KW_TEMPLATE, STRING, NEWLINE] = ["TEMPLATE", string, newline]
         For INCLUDE: items = [KW_INCLUDE, include_type, STRING, NEWLINE] = ["INCLUDE", type_str, string, newline]
         """
+        meta = tree.meta
+        items = tree.children
         if items[0] == "TEMPLATE":
             return ("TEMPLATE", _strip_quotes(items[1]), _source_location(self.file_path, meta))
         # items = ["INCLUDE", include_type_result, STRING]
@@ -525,8 +529,10 @@ class SynesisTransformer(Transformer):
     def description_lines(self, items: List[Any]) -> List[Any]:
         return items
 
-    @v_args(meta=True)
-    def source_block(self, meta: Any, items: List[Any]) -> SourceNode:
+    @v_args(tree=True)
+    def source_block(self, tree: Any) -> SourceNode:
+        meta = tree.meta
+        items = tree.children
         bibref = items[1]
         field_entries = items[2:-2]
         fields: Dict[str, Any] = {}
@@ -546,8 +552,10 @@ class SynesisTransformer(Transformer):
             location=_source_location(self.file_path, meta),
         )
 
-    @v_args(meta=True)
-    def item_block(self, meta: Any, items: List[Any]) -> ItemNode:
+    @v_args(tree=True)
+    def item_block(self, tree: Any) -> ItemNode:
+        meta = tree.meta
+        items = tree.children
         bibref = items[1]
         field_entries = items[2:-2]
         quote = ""
@@ -613,8 +621,10 @@ class SynesisTransformer(Transformer):
             location=_source_location(self.file_path, meta),
         )
 
-    @v_args(meta=True)
-    def ontology_block(self, meta: Any, items: List[Any]) -> OntologyNode:
+    @v_args(tree=True)
+    def ontology_block(self, tree: Any) -> OntologyNode:
+        meta = tree.meta
+        items = tree.children
         concept = items[1].strip()
         field_entries = items[2:-2]
         description = ""
@@ -653,8 +663,10 @@ class SynesisTransformer(Transformer):
     def concept_name(self, items: List[Any]) -> str:
         return str(items[0]).strip()
 
-    @v_args(meta=True)
-    def template_header(self, meta: Any, items: List[Any]) -> Dict[str, Any]:
+    @v_args(tree=True)
+    def template_header(self, tree: Any) -> Dict[str, Any]:
+        meta = tree.meta
+        items = tree.children
         name = items[1]
         metadata: Dict[str, Any] = {}
         for item in items[2:]:
@@ -720,8 +732,10 @@ class SynesisTransformer(Transformer):
     def field_key(self, items: List[Any]) -> str:
         return items[0]
 
-    @v_args(meta=True)
-    def field_def_block(self, meta: Any, items: List[Any]) -> FieldSpec:
+    @v_args(tree=True)
+    def field_def_block(self, tree: Any) -> FieldSpec:
+        meta = tree.meta
+        items = tree.children
         name = _normalize_field_name(items[1])
         type_spec = next(item for item in items if isinstance(item, FieldType))
         props = [item for item in items if isinstance(item, tuple)]
@@ -794,8 +808,10 @@ class SynesisTransformer(Transformer):
             if not (isinstance(item, Token) and item.type in {"NEWLINE", "_INDENT", "_DEDENT"})
         ]
 
-    @v_args(meta=True)
-    def value_entry(self, meta: Any, items: List[Any]) -> OrderedValue:
+    @v_args(tree=True)
+    def value_entry(self, tree: Any) -> OrderedValue:
+        meta = tree.meta
+        items = tree.children
         index = -1
         if len(items) == 3:
             index = int(items[0])
@@ -826,8 +842,10 @@ class SynesisTransformer(Transformer):
     def relation_entry(self, items: List[Any]) -> Tuple[str, str]:
         return items[0], items[1]
 
-    @v_args(meta=True)
-    def field_entry(self, meta: Any, items: List[Any]) -> Tuple[str, Any, SourceLocation]:
+    @v_args(tree=True)
+    def field_entry(self, tree: Any) -> Tuple[str, Any, SourceLocation]:
+        meta = tree.meta
+        items = tree.children
         name = _normalize_field_name(items[0])
         location = _source_location(self.file_path, meta)
         cleaned = [
@@ -937,8 +955,8 @@ class SynesisTransformer(Transformer):
             if not (isinstance(item, Token) and item.type == "NEWLINE")
         ]
 
-    @v_args(meta=True)
-    def chain_expr(self, meta: Any, items: List[Any]) -> ChainNode:
+    @v_args(tree=True)
+    def chain_expr(self, tree: Any) -> ChainNode:
         """
         Parseia chain_expr da gramatica.
 
@@ -952,6 +970,8 @@ class SynesisTransformer(Transformer):
         Por ora, armazenamos todos os elementos em nodes e deixamos relations vazio.
         O validator.validate_chain() faz a separacao correta.
         """
+        meta = tree.meta
+        items = tree.children
         elements: List[str] = []
         locations: List[SourceLocation] = []
         for item in items:

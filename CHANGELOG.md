@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.11] - 2026-03-06
+
+### Fixed
+- `transformer.py`: replaced `@v_args(meta=True)` with `@v_args(tree=True)` in all 10
+  Transformer methods to fix cross-platform incompatibility. Different Lark builds (e.g.
+  Homebrew on macOS vs pip on Windows) pass arguments to `_vargs_meta` in opposite orders
+  (`f(children, meta)` vs `f(meta, children)`). `@v_args(tree=True)` passes a single
+  `Tree` object whose `.meta` and `.children` attributes are always stable, eliminating the
+  build-dependent argument-order ambiguity that caused `'Meta' object is not subscriptable`
+  on macOS.
+
 ## [0.2.10] - 2026-02-24
 
 ### Fixed
