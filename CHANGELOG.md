@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-06
+
+### Added
+- `grammar/synesis.lark`: keyword `KW_GUIDELINES` e regras `guidelines_block` / `guidelines_lines`
+  para suporte ao bloco `GUIDELINES...END GUIDELINES` dentro de `FIELD...END FIELD`.
+- `ast/nodes.py`: campo `guidelines: Optional[str] = None` em `FieldSpec`; serializado
+  automaticamente via `to_dict()` como `"guidelines"` no JSON exportado.
+- `parser/transformer.py`: handler `KW_GUIDELINES`, transformers `guidelines_lines` e
+  `guidelines_block`, detecção em `field_props()`, extração em `field_def_block()`.
+
+### Notes
+- Adição aditiva: templates sem `GUIDELINES` continuam compilando sem alteração.
+- Semântica pass-through: o compilador armazena e exporta o conteúdo sem interpretá-lo.
+- Consumidores (MCP Server, agentes de IA) lêem `guidelines` via `synesis.load()` → JSON.
+
 ## [0.2.11] - 2026-03-06
 
 ### Fixed

@@ -96,6 +96,7 @@ class FieldSpec:
     values: Optional[List[OrderedValue]] = None
     relations: Optional[Dict[str, str]] = None
     arity: Optional[str] = None
+    guidelines: Optional[str] = None
     location: Optional[SourceLocation] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -108,6 +109,7 @@ class FieldSpec:
             "values": [v.to_dict() for v in self.values] if self.values else None,
             "relations": self.relations,
             "arity": self.arity,
+            "guidelines": self.guidelines,
             "location": self.location.to_dict() if self.location else None,
         }
 

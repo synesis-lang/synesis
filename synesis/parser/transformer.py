@@ -378,6 +378,9 @@ class SynesisTransformer(Transformer):
     def KW_TOPIC(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
 
+    def KW_GUIDELINES(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
     def COMPARATOR(self, token: Token) -> str:  # noqa: N802
         return token.value
 
@@ -528,6 +531,36 @@ class SynesisTransformer(Transformer):
 
     def description_lines(self, items: List[Any]) -> List[Any]:
         return items
+
+    def guidelines_lines(self, items: List[Any]) -> List[Any]:
+        return items
+
+    def guidelines_block(self, items: List[Any]) -> Tuple[str, Any]:
+        lines: List[str] = []
+        pending_blank = False
+        keywords = {"GUIDELINES", "END"}
+        flattened: List[Any] = []
+        for item in items:
+            if isinstance(item, list):
+                flattened.extend(item)
+            else:
+                flattened.append(item)
+        for item in flattened:
+            if isinstance(item, Token) and item.type in {"NEWLINE", "_INDENT", "_DEDENT"}:
+                if item.type == "NEWLINE":
+                    if pending_blank:
+                        lines.append("")
+                        pending_blank = False
+                    else:
+                        pending_blank = True
+                continue
+            if isinstance(item, str):
+                if item.upper() in keywords:
+                    continue
+                lines.append(item)
+                pending_blank = False
+        text = "\n".join(lines).strip()
+        return ("guidelines", text if text else None)
 
     @v_args(tree=True)
     def source_block(self, tree: Any) -> SourceNode:
@@ -745,6 +778,7 @@ class SynesisTransformer(Transformer):
         values = None
         relations = None
         arity = None
+        guidelines = None
         for prop in props:
             key, value = prop
             if key == "scope":
@@ -759,6 +793,8 @@ class SynesisTransformer(Transformer):
                 relations = value
             elif key == "arity":
                 arity = value
+            elif key == "guidelines":
+                guidelines = value
         if scope is None:
             scope = Scope.ITEM
         return FieldSpec(
@@ -770,6 +806,7 @@ class SynesisTransformer(Transformer):
             values=values,
             relations=relations,
             arity=arity,
+            guidelines=guidelines,
             location=_source_location(self.file_path, meta),
         )
 
@@ -790,6 +827,8 @@ class SynesisTransformer(Transformer):
             return ("arity", f"{items[1]} {items[2]}")
         if items[0] == "VALUES":
             return ("values", items[1])
+        if isinstance(items[0], tuple) and items[0][0] == "guidelines":
+            return items[0]
         return ("relations", items[1])
 
     def scope_type(self, items: List[Any]) -> str:

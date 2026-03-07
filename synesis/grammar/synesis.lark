@@ -67,6 +67,7 @@ KW_SCALE.5: /scale/i
 KW_ENUMERATED.5: /enumerated/i
 KW_ORDERED.5: /ordered/i
 KW_TOPIC.5: /topic/i
+KW_GUIDELINES.5: /guidelines/i
 
 // ============================================
 // BLOCO PROJECT
@@ -87,6 +88,9 @@ metadata: KW_METADATA NEWLINE _INDENT (metadata_line | NEWLINE)+ _DEDENT KW_END 
 metadata_line: TEXT_LINE NEWLINE
 description: KW_DESCRIPTION NEWLINE description_lines KW_END KW_DESCRIPTION NEWLINE?
 description_lines: (TEXT_LINE NEWLINE | NEWLINE)+
+
+guidelines_block: KW_GUIDELINES NEWLINE guidelines_lines KW_END KW_GUIDELINES
+guidelines_lines: (_INDENT | _DEDENT | TEXT_LINE NEWLINE | NEWLINE)*
 
 // ============================================
 // BLOCOS DE ANOTACAO
@@ -144,6 +148,7 @@ field_props: KW_SCOPE scope_type
            | KW_ARITY COMPARATOR NUMBER
            | KW_VALUES value_list KW_END KW_VALUES
            | KW_RELATIONS relation_list KW_END KW_RELATIONS
+           | guidelines_block
 
 format_spec: IDENTIFIER | scale_format
 scale_format: "[" NUMBER ".." NUMBER "]"
