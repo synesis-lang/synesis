@@ -61,6 +61,7 @@ from synesis.ast.results import (
     InvalidChainRelation,
     MalformedQualifiedChain,
 )
+from synesis.ast.normalize import normalize_code
 from synesis.parser.bib_loader import suggest_bibref
 
 
@@ -69,9 +70,19 @@ class SemanticValidator:
     template: TemplateNode
     bibliography: Dict[str, Any]
     ontology_index: Dict[str, Any]
+    norm_cache: dict | None = None
 
     def __post_init__(self) -> None:
-        self.ontology_index = {self._norm_code(key): value for key, value in self.ontology_index.items()}
+        self.ontology_index = {normalize_code(key, self.norm_cache): value for key, value in self.ontology_index.items()}
+
+        # Pre-indexar: nomes de fields CODE no scope ITEM, excluindo "code"/"codes"
+        # Invariante por compilação — evita iterar template.field_specs por item
+        self._code_field_names: list[str] = []
+        if self.template:
+            for name, spec in self.template.field_specs.items():
+                if spec.scope == Scope.ITEM and spec.type == FieldType.CODE:
+                    if name.lower() not in {"code", "codes"}:
+                        self._code_field_names.append(name)
 
     def validate_project(self, node: ProjectNode) -> ValidationResult:
         return ValidationResult()
@@ -200,7 +211,7 @@ class SemanticValidator:
             result.add(arity_error)
 
         for code in codes:
-            if self._norm_code(code) not in self.ontology_index:
+            if normalize_code(code, self.norm_cache) not in self.ontology_index:
                 result.add(
                     UndefinedCode(
                         location=chain.location,
@@ -543,9 +554,6 @@ class SemanticValidator:
             return len(value) > 0
         return True
 
-    def _norm_code(self, code: str) -> str:
-        return " ".join(code.strip().split()).lower()
-
     def _extract_code_values(self, value: Any) -> list[str]:
         if value is None:
             return []
@@ -557,25 +565,26 @@ class SemanticValidator:
         if isinstance(value, (int, float)):
             return [str(value)]
         if isinstance(value, str):
+            # TEXT_LINE tem prioridade sobre CODE_ELEMENT no lexer contextual, então
+            # "CREATOR, EARTH, HEAVENS" chega como string única. Fazemos o split aqui.
+            if "," in value:
+                return [part.strip() for part in value.split(",") if part.strip()]
             return [value]
         return []
 
     def _collect_item_codes(self, node: ItemNode) -> list[str]:
         codes = list(node.codes)
+        if not self._code_field_names:
+            return codes
         field_values = self._collect_fields(node)
-        for name, spec in self.template.field_specs.items():
-            if spec.scope != Scope.ITEM or spec.type != FieldType.CODE:
-                continue
-            lname = name.lower()
-            if lname in {"code", "codes"}:
-                continue
+        for name in self._code_field_names:
             codes.extend(self._extract_code_values(field_values.get(name)))
         return codes
 
     def _validate_codes_defined(self, node: ItemNode, result: ValidationResult) -> None:
         location = node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
         for code in self._collect_item_codes(node):
-            if self._norm_code(code) not in self.ontology_index:
+            if normalize_code(code, self.norm_cache) not in self.ontology_index:
                 result.add(
                     UndefinedCode(
                         location=location,
@@ -604,7 +613,7 @@ class SemanticValidator:
                 codes = elements
 
             for code in codes:
-                if self._norm_code(code) not in self.ontology_index:
+                if normalize_code(code, self.norm_cache) not in self.ontology_index:
                     result.add(
                         UndefinedCode(
                             location=location,

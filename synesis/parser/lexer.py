@@ -70,17 +70,34 @@ def load_grammar() -> str:
 
 @lru_cache(maxsize=1)
 def create_parser() -> Lark:
-    """Cria o parser LALR com suporte a regex Unicode."""
-    grammar_text = load_grammar()
-    return Lark(
-        grammar_text,
-        parser="lalr",
-        lexer="contextual",
-        regex=True,
-        maybe_placeholders=False,
-        postlex=SynesisIndenter(),
-        propagate_positions=True,
-    )
+    """Cria o parser LALR, preferindo versao precompilada (standalone) se disponivel."""
+    try:
+        import synesis.grammar.synesis_standalone as _sa
+        # O modulo standalone define classes proprias (Tree, Token, excecoes) que
+        # sao incompativeis com o Transformer e error handlers do Lark.
+        # Substituimos pelas classes oficiais antes de instanciar o parser:
+        #   - Tree/Token: para que isinstance() no Transformer funcione corretamente
+        #   - UnexpectedToken/UnexpectedCharacters: para que os except em parse_string
+        #     capturem os erros lancados pelo parser standalone
+        from lark import Tree as _LarkTree, Token as _LarkToken
+        from lark.exceptions import UnexpectedToken as _UT, UnexpectedCharacters as _UC
+        _sa.Tree = _LarkTree
+        _sa.Token = _LarkToken
+        _sa.UnexpectedToken = _UT
+        _sa.UnexpectedCharacters = _UC
+        return _sa.Lark_StandAlone(postlex=SynesisIndenter())
+    except ImportError:
+        # Fallback: compilar da gramatica (modo desenvolvimento ou standalone ausente)
+        grammar_text = load_grammar()
+        return Lark(
+            grammar_text,
+            parser="lalr",
+            lexer="contextual",
+            regex=True,
+            maybe_placeholders=False,
+            postlex=SynesisIndenter(),
+            propagate_positions=True,
+        )
 
 
 class SynesisIndenter(Indenter):

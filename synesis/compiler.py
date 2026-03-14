@@ -29,6 +29,7 @@ Gerado conforme: Especificacao Synesis v1.1
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
@@ -41,6 +42,7 @@ from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
 from synesis.parser.bib_loader import load_bibliography
 from synesis.parser.lexer import parse_file
+from synesis.parser.parse_cache import get_cached_nodes, put_cached_nodes
 from synesis.parser.template_loader import load_template
 from synesis.parser.transformer import SynesisTransformer
 from synesis.semantic.linker import Linker, LinkedProject
@@ -103,6 +105,8 @@ class SynesisCompiler:
         ontologies = self.parse_ontologies(project)
         sources, items = self.parse_annotations(project)
 
+        norm_cache: dict = {}
+
         validation_result = self.validate_all(
             project=project,
             template=template,
@@ -110,6 +114,7 @@ class SynesisCompiler:
             sources=sources,
             items=items,
             ontologies=ontologies,
+            norm_cache=norm_cache,
         )
 
         linked_project = self.link_all(
@@ -119,6 +124,7 @@ class SynesisCompiler:
             items=items,
             ontologies=ontologies,
             validation_result=validation_result,
+            norm_cache=norm_cache,
         )
 
         stats = self._compute_stats(linked_project, sources, items, ontologies)
@@ -160,6 +166,25 @@ class SynesisCompiler:
 
     def parse_annotations(self, project: ProjectNode) -> tuple[List[SourceNode], List[ItemNode]]:
         paths = self._collect_include_paths(project, "ANNOTATIONS", allow_glob=True)
+
+        if len(paths) <= 2:
+            return self._parse_annotations_sequential(paths)
+
+        # Garantir que o parser esta cacheado ANTES de spawnar threads
+        from synesis.parser.lexer import create_parser
+        create_parser()
+
+        with ThreadPoolExecutor(max_workers=min(4, len(paths))) as executor:
+            results = list(executor.map(_parse_single_annotation, paths))
+
+        sources: List[SourceNode] = []
+        items: List[ItemNode] = []
+        for file_sources, file_items in results:
+            sources.extend(file_sources)
+            items.extend(file_items)
+        return sources, items
+
+    def _parse_annotations_sequential(self, paths: List[Path]) -> tuple[List[SourceNode], List[ItemNode]]:
         sources: List[SourceNode] = []
         items: List[ItemNode] = []
         for path in paths:
@@ -179,9 +204,10 @@ class SynesisCompiler:
         sources: List[SourceNode],
         items: List[ItemNode],
         ontologies: List[OntologyNode],
+        norm_cache: dict | None = None,
     ) -> ValidationResult:
         ontology_index = {o.concept: o for o in ontologies}
-        validator = SemanticValidator(template, bibliography, ontology_index)
+        validator = SemanticValidator(template, bibliography, ontology_index, norm_cache=norm_cache)
         result = ValidationResult()
 
         self._merge(result, validator.validate_project(project))
@@ -201,8 +227,9 @@ class SynesisCompiler:
         items: List[ItemNode],
         ontologies: List[OntologyNode],
         validation_result: ValidationResult,
+        norm_cache: dict | None = None,
     ) -> Optional[LinkedProject]:
-        linker = Linker(sources, items, ontologies, project=project, template=template)
+        linker = Linker(sources, items, ontologies, project=project, template=template, norm_cache=norm_cache)
         linked = linker.link()
         self._merge(validation_result, linker.validation_result)
         return linked
@@ -245,13 +272,28 @@ class SynesisCompiler:
         return any(ch in value for ch in ["*", "?", "["])
 
     def _parse_nodes(self, path: Path, only_type=None) -> List:
-        tree = parse_file(path)
-        nodes = SynesisTransformer(path).transform(tree)
+        cached = get_cached_nodes(path)
+        if cached is None:
+            tree = parse_file(path)
+            cached = SynesisTransformer(path).transform(tree)
+            put_cached_nodes(path, cached)
         if only_type:
-            return [n for n in nodes if isinstance(n, only_type)]
-        return nodes
+            return [n for n in cached if isinstance(n, only_type)]
+        return cached
 
     def _merge(self, base: ValidationResult, other: ValidationResult) -> None:
         base.errors.extend(other.errors)
         base.warnings.extend(other.warnings)
         base.info.extend(other.info)
+
+
+def _parse_single_annotation(path: Path) -> tuple[List[SourceNode], List[ItemNode]]:
+    """Parseia uma anotacao. Thread-safe: parser cacheado, transformer per-file."""
+    from synesis.parser.lexer import parse_file
+    from synesis.parser.transformer import SynesisTransformer
+
+    tree = parse_file(path)
+    nodes = SynesisTransformer(path).transform(tree)
+    sources = [n for n in nodes if isinstance(n, SourceNode)]
+    items = [n for n in nodes if isinstance(n, ItemNode)]
+    return sources, items

@@ -43,6 +43,7 @@ from synesis.ast.nodes import (
     SourceNode,
     TemplateNode,
 )
+from synesis.ast.normalize import normalize_bibref, normalize_code
 from synesis.ast.results import (
     OrphanItem,
     SourceWithoutItems,
@@ -186,15 +187,16 @@ class Linker:
     project: ProjectNode | None = None
     template: TemplateNode | None = None
     validation_result: ValidationResult = field(default_factory=ValidationResult)
+    norm_cache: dict | None = None
 
     def link(self) -> LinkedProject:
-        sources_by_bibref = {self._norm_bibref(s.bibref): s for s in self.sources}
+        sources_by_bibref = {normalize_bibref(s.bibref): s for s in self.sources}
         items_by_bibref: Dict[str, List[ItemNode]] = {}
 
         for item in self.items:
             if self.template:
                 self._augment_item_field_locations(item)
-            key = self._norm_bibref(item.bibref)
+            key = normalize_bibref(item.bibref)
             items_by_bibref.setdefault(key, []).append(item)
 
         for bibref, items in items_by_bibref.items():
@@ -220,14 +222,18 @@ class Linker:
                     )
                 )
 
-        ontology_index = {self._norm_code(o.concept): o for o in self.ontologies}
+        ontology_index = {normalize_code(o.concept, self.norm_cache): o for o in self.ontologies}
         code_usage: Dict[str, List[ItemNode]] = {}
         all_triples: List[Tuple[str, str, str]] = []
         relation_index: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
 
+        # Hoist invariantes: computar UMA VEZ antes do loop de items
+        has_relations = self._has_chain_relations()
+        relation_type = "qualified" if has_relations else "simple"
+
         for item in self.items:
             for code in self._collect_item_codes(item):
-                norm_code = self._norm_code(code)
+                norm_code = normalize_code(code, self.norm_cache)
                 code_usage.setdefault(norm_code, []).append(item)
                 if norm_code not in ontology_index:
                     location = item.location or SourceLocation(Path("<unknown>"), 1, 1)
@@ -240,12 +246,9 @@ class Linker:
                     )
 
             for chain in item.chains:
-                # Detecta se template define RELATIONS (chain qualificada)
-                has_relations = self._has_chain_relations()
                 triples = chain.to_triples(has_relations=has_relations)
                 all_triples.extend(triples)
 
-                relation_type = "qualified" if has_relations else "simple"
                 chain_location = chain.location or item.location or SourceLocation(Path("<unknown>"), 1, 1)
                 for triple in triples:
                     if triple not in relation_index:
@@ -259,7 +262,7 @@ class Linker:
             for chain in ontology.parent_chains:
                 # Relacoes IS_A entre nos consecutivos da cadeia
                 for child, parent in self._is_a_pairs(chain):
-                    hierarchy[self._norm_code(child)] = self._norm_code(parent)
+                    hierarchy[normalize_code(child, self.norm_cache)] = normalize_code(parent, self.norm_cache)
 
         topic_index: Dict[str, List[str]] = {}
         for ontology in self.ontologies:
@@ -391,6 +394,10 @@ class Linker:
         if isinstance(value, (int, float)):
             return [str(value)]
         if isinstance(value, str):
+            # TEXT_LINE tem prioridade sobre CODE_ELEMENT no lexer contextual, então
+            # "CREATOR, EARTH, HEAVENS" chega como string única. Fazemos o split aqui.
+            if "," in value:
+                return [part.strip() for part in value.split(",") if part.strip()]
             return [value]
         return []
 
@@ -409,12 +416,6 @@ class Linker:
         if lname in {"chain", "chains"}:
             return item.chains
         return None
-
-    def _norm_bibref(self, bibref: str) -> str:
-        return bibref.lstrip("@").strip().lower()
-
-    def _norm_code(self, code: str) -> str:
-        return " ".join(code.strip().split()).lower()
 
     def _default_project(self) -> ProjectNode:
         return ProjectNode(

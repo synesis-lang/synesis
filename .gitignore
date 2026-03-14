@@ -156,3 +156,6 @@ temp/
 # Upload scripts with tokens (security)
 upload_testpypi.bat
 upload_testpypi.sh
+
+# Compiler Study symlink at repo root
+/COMPILER_Study

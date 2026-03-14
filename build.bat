@@ -1,4 +1,5 @@
 @echo off
+setlocal
 REM Quick build and validation script for Synesis (Windows)
 
 echo ==========================================
@@ -11,37 +12,37 @@ echo [1/6] Cleaning previous builds...
 if exist dist rmdir /s /q dist
 if exist build rmdir /s /q build
 if exist synesis.egg-info rmdir /s /q synesis.egg-info
-echo [92m√ Clean complete[0m
+echo OK: Clean complete
 echo.
 
 REM Step 2: Run tests
 echo [2/6] Running tests...
-pytest -q
-if %errorlevel% neq 0 (
-    echo [91m× Tests failed. Fix errors before building.[0m
+python -m pytest -q
+if errorlevel 1 (
+    echo ERROR: Tests failed. Fix errors before building.
     exit /b 1
 )
-echo [92m√ All tests passed[0m
+echo OK: All tests passed
 echo.
 
 REM Step 3: Build package
 echo [3/6] Building package...
 python -m build
-if %errorlevel% neq 0 (
-    echo [91m× Build failed[0m
+if errorlevel 1 (
+    echo ERROR: Build failed
     exit /b 1
 )
-echo [92m√ Build successful[0m
+echo OK: Build successful
 echo.
 
 REM Step 4: Check distribution
 echo [4/6] Validating distribution with twine...
-twine check dist/*
-if %errorlevel% neq 0 (
-    echo [91m× Distribution validation failed[0m
+python -m twine check dist/*
+if errorlevel 1 (
+    echo ERROR: Distribution validation failed
     exit /b 1
 )
-echo [92m√ Distribution valid[0m
+echo OK: Distribution valid
 echo.
 
 REM Step 5: List contents
@@ -52,12 +53,13 @@ echo.
 REM Step 6: Summary
 echo [6/6] Summary
 echo ----------------------------------------
-echo [92m√ Package ready for publication![0m
+echo OK: Package ready for publication!
 echo.
 echo Next steps:
-echo   • TestPyPI: twine upload --repository testpypi dist/*
-echo   • PyPI:     twine upload dist/*
+echo   TestPyPI: python -m twine upload --repository testpypi dist/*
+echo   PyPI:     python -m twine upload dist/*
 echo.
 echo Or run the pre-publication checklist:
 echo   python check_ready.py
 echo ==========================================
+endlocal
