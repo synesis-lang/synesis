@@ -2,377 +2,203 @@
 
 > **The confluence of information into intelligence.**
 
-A Domain-Specific Language (DSL) compiler that transforms qualitative research annotations into canonical knowledge structures.
+A Domain-Specific Language and toolchain for transforming qualitative research annotations into structured, auditable knowledge.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-## Philosophy
+---
 
-Human knowledge is naturally intricate, full of nuances and deep connections. This is **complexity**—and it is valuable. **Complication** arises only when we lack adequate methods for organizing knowledge.
+## What is Synesis?
 
-Synesis is a declarative Domain-Specific Language created for those who need more than simple annotations. It is a method for **knowledge consolidation**.
+Qualitative research — literature reviews, grounded theory, case studies — generates enormous amounts of interpretive work that is typically lost in unstructured notes, spreadsheets, or proprietary software. Synesis is a **compiler for analytical thinking**: you write your interpretations in plain-text files with a clean declarative syntax, and the toolchain validates, structures, and exports them as canonical knowledge artifacts.
 
-Unlike traditional tools, Synesis acts as a **compiler for your analytical thinking**: it receives your interpretations and annotations in plain text files, validates their logical consistency, and transforms them into canonical, rigorous knowledge structures.
+The result is true **σύνεσις** — the convergence of evidence fragments into an intelligible, auditable, and technically rigorous whole.
 
-Many believe that technical rigor stifles creativity. Synesis proves otherwise: **discipline is the true form of freedom**. By delegating logical organization to a canonical structure, your mind is freed for what truly matters: interpretation, nuance, and insight.
+---
 
-The result is true **σύνεσις** (sýnesis): the convergence of information fragments into an intelligible, auditable, and technically structured whole.
+## The Ecosystem
 
-## What Synesis Does
+```mermaid
+graph TD
+    Z["📚 Zotero\n(PDF annotations & tags)"]
+    ZP["🔌 zotero-synesis-export\n(.xpi plugin)"]
+    SYN["📄 .syn / .synt / .syno files\n(Synesis source)"]
+    C["⚙️ Synesis Compiler\n(LALR parser + AST validator)"]
+    LSP["🧠 Synesis LSP\n(Language Server)"]
+    EXT["🖥️ Synesis Explorer\n(VS Code extension)"]
+    OUT["📊 Outputs\n(JSON · CSV · Excel · Mermaid)"]
+    NEO["🕸️ Graph DB\n(Neo4j / synesis2neo4j)"]
+    AI["🤖 AI Agents\n(MCP server / synesis-coder)"]
 
-- **Formal syntax** for annotating research sources with structured metadata
-- **Template-based validation** ensuring consistency across annotations
-- **BibTeX integration** for bibliographic reference management
-- **Semantic validation** of codes, chains, ontologies, and field bundles
-- **Multiple export formats** (JSON, CSV, Excel) for downstream analysis
-- **Comprehensive error reporting** with precise source location tracking
-
-## Features
-
-- **LALR(1) Parser**: Fast, deterministic parsing with Lark grammar
-- **Type-Safe AST**: Full type hints throughout the codebase
-- **Pedagogical Error Messages**: Clear, actionable error messages with suggestions
-- **Template System**: Define custom field schemas with REQUIRED/OPTIONAL/FORBIDDEN constraints
-- **BUNDLE Validation**: Enforce co-occurring field groups (e.g., note + chain pairs)
-- **Chain Semantics**: Validate qualified chains (A -> INFLUENCES -> B) with relation types
-- **Ontology Support**: Define hierarchical concept vocabularies with ORDERED/ENUMERATED types
-- **Source Traceability**: Every AST node tracks file, line, and column location
-
-## Installation
-
-### From PyPI
-
-```bash
-pip install synesis
+    Z -->|export annotations| ZP
+    ZP -->|generates| SYN
+    SYN -->|parsed & validated by| C
+    C -->|AST + diagnostics| LSP
+    LSP -->|LSP protocol| EXT
+    EXT -->|editing, navigation\ndiagnostics, graphs| SYN
+    C -->|compile| OUT
+    OUT -->|import| NEO
+    OUT -->|context for| AI
+    SYN -->|direct import| NEO
 ```
 
-### From Source
+---
 
-```bash
-git clone https://github.com/synesis-lang/synesis.git
-cd synesis
-pip install -e .
-```
+## Components
+
+| Component | Language | Description |
+|---|---|---|
+| [synesis](https://github.com/synesis-lang/synesis) | Python | Compiler, parser, validator, exporter |
+| [synesis-lsp](https://github.com/synesis-lang/synesis-lsp) | Python | Language Server (LSP) — diagnostics, hover, completion |
+| [synesis-explorer](https://github.com/synesis-lang/synesis-explorer) | TypeScript/JS | VS Code extension — editors, tree views, graph viewer |
+| [zotero-synesis-export](https://github.com/synesis-lang/zotero-synesis-export) | JavaScript | Zotero 7 plugin — export PDF annotations to `.syn` |
+| [synesis2neo4j](https://github.com/synesis-lang/synesis2neo4j) | Python | Import compiled knowledge graphs into Neo4j |
+| [synesis-coder](https://github.com/synesis-lang/synesis-coder) | Python | AI coding assistant with Synesis context |
+
+---
+
+## Key Concepts
+
+**Sources & Items** — You annotate bibliographic sources (`SOURCE @smith2023`) and individual data excerpts (`ITEM @smith2023_p12`). Every annotation is traceable to a BibTeX reference.
+
+**Templates** — A `.synt` file defines the field schema for your project: which fields are `REQUIRED`, `OPTIONAL`, or `FORBIDDEN`, what types they accept (`CODE`, `TEXT`, `CHAIN`, `SCALE`...), and validation rules (`ARITY`, `BUNDLE`, `VALUES`).
+
+**Ontologies** — A `.syno` file defines the controlled vocabulary of codes. The compiler validates every code against the ontology, catching typos and orphaned concepts at compile time.
+
+**Chains** — Causal or relational connections between codes: `Trust -> ENABLES -> Acceptance`. Chains can be simple or qualified with typed relations, and are validated against the template's `ARITY` and `RELATIONS` constraints.
+
+---
+
+## Potential Applications
+
+- **Systematic literature reviews** — annotate hundreds of papers with a shared template; export clean datasets for meta-analysis
+- **Grounded Theory / Thematic Analysis** — build and validate code systems with ontological constraints; trace every code to its source
+- **Mixed-methods research** — bridge qualitative interpretation with quantitative export formats (CSV, Excel, JSON) for integration with R or Python
+- **Knowledge graphs** — compile research findings into Neo4j for visualization and query; model causal chains as graph edges
+- **AI-augmented analysis** — feed structured annotations as context to LLMs; synesis-coder generates annotations from AI suggestions with human review
+- **Longitudinal projects** — template versioning and strict validation prevent concept drift across research phases
+
+---
 
 ## Quick Start
 
-### 1. Create a Project File (`project.synp`)
+### 1. Install the compiler and LSP
 
-```synesis
-PROJECT MyResearch
-    TEMPLATE "template.synt"
-    INCLUDE BIBLIOGRAPHY "references.bib"
-    INCLUDE ANNOTATIONS "annotations.syn"
-    INCLUDE ONTOLOGY "ontologies.syno"
-
-    DESCRIPTION
-        Climate Change Perception Study
-    END METADATA
-END PROJECT
+```bash
+pip install synesis synesis-lsp
 ```
 
-### 2. Define a Template (`template.synt`)
+### 2. Install the VS Code extension
 
-```synesis
-TEMPLATE QualitativeAnalysis
+Download `synesis-explorer-*.vsix` from [Releases](https://github.com/synesis-lang/synesis-explorer/releases) and install via:
 
-SOURCE FIELDS
-    REQUIRED date, country
-    OPTIONAL keywords
-END SOURCE FIELDS
-
-ITEM FIELDS
-    REQUIRED quote
-    REQUIRED BUNDLE note, chain
-    OPTIONAL tags
-END ITEM FIELDS
-
-ONTOLOGY FIELDS
-    REQUIRED description
-    OPTIONAL topic
-END ONTOLOGY FIELDS
-
-FIELD quote TYPE QUOTATION
-    SCOPE SOURCE
-    DESCRIPTION Extracted text from source
-END FIELD
-
-FIELD note TYPE MEMO
-    SCOPE ITEM
-    DESCRIPTION Analytical annotation
-END FIELD
-
-FIELD chain TYPE CHAIN
-    SCOPE ITEM
-    ARITY >= 2
-    RELATIONS
-        INFLUENCES: Causal influence relationship
-        ENABLES: Enabling relationship
-    END RELATIONS
-END FIELD
+```
+Ctrl+Shift+P → Extensions: Install from VSIX...
 ```
 
-### 3. Add Bibliography (`references.bib`)
+### 3. Export from Zotero (optional)
 
-```bibtex
-@article{smith2024,
-    author = {Smith, John},
-    title = {Climate Beliefs and Policy Support},
-    year = {2024},
-    journal = {Environmental Research}
-}
+Install `synesis-export.xpi` in Zotero 7. After annotating PDFs, use **File → Export Library → Synesis Format**.
+
+### 4. Write your first annotation
+
 ```
+# references.bib contains @smith2023
 
-### 4. Create Annotations (`annotations/sample.syn`)
-
-```synesis
-SOURCE @smith2024
-    date: 2024-03-15
-    country: United States
+SOURCE @smith2023
+    note: Examines trust dynamics in renewable energy adoption across 14 European countries.
+    codes: Trust, Social_Acceptance, Governance
 END SOURCE
 
-ITEM @smith2024
-    quote: Public acceptance is crucial for climate policy implementation.
-
-    note: Identifies acceptance as key factor
-    chain: Public_Acceptance -> INFLUENCES -> Policy_Support
-
-    note: Links to economic barriers
-    chain: Policy_Support -> ENABLES -> Climate_Action
+ITEM @smith2023_p47
+    text: "Community engagement emerged as the strongest predictor of project acceptance."
+    codes: Community_Engagement, Social_Acceptance
+    chain: Community_Engagement -> ENABLES -> Social_Acceptance
 END ITEM
 ```
 
-### 5. Define Ontology (`ontologies/concepts.syno`)
-
-```synesis
-ONTOLOGY Public_Acceptance
-    description: Community-level support for climate policies
-    topic: Social_Factors
-END ONTOLOGY
-
-ONTOLOGY Policy_Support
-    description: Governmental and institutional backing
-    topic: Political_Factors
-END ONTOLOGY
-```
-
-### 6. Compile the Project
+### 5. Compile
 
 ```bash
-# Validate syntax and semantics
-synesis compile project.synp
-
-# Export to JSON
-synesis compile project.synp --json output.json
-
-# Export to CSV
-synesis compile project.synp --csv output_dir/
-
-# Export to Excel
-synesis compile project.synp --xls analysis.xlsx
+synesis compile project.synp --output results/
 ```
 
-## CLI Commands
+---
 
-### `synesis compile`
-
-Compile a Synesis project and generate outputs.
-
-```bash
-synesis compile PROJECT.synp [OPTIONS]
-
-Options:
-  --json PATH       Export to JSON format
-  --csv PATH        Export to CSV directory (creates multiple tables)
-  --xls PATH        Export to Excel workbook
-  --stats           Show project basic statistics
-```
-
-## Python API
-
-Use Synesis directly in Python scripts and Jupyter Notebooks without file I/O.
-
-### Quick Example
-
-```python
-import synesis
-
-result = synesis.load(
-    project_content='PROJECT Demo TEMPLATE "t.synt" END PROJECT',
-    template_content='''
-        TEMPLATE Demo
-        SOURCE FIELDS
-            OPTIONAL date
-        END SOURCE FIELDS
-        ITEM FIELDS
-            REQUIRED quote
-        END ITEM FIELDS
-        FIELD date TYPE DATE SCOPE SOURCE END FIELD
-        FIELD quote TYPE QUOTATION SCOPE ITEM END FIELD
-        END TEMPLATE
-    ''',
-    annotation_contents={
-        "data.syn": '''
-            SOURCE @ref2024
-                date: 2024-01-15
-                ITEM
-                    quote: Technology shows promising results.
-                END ITEM
-            END SOURCE
-        '''
-    },
-    bibliography_content='@article{ref2024, author={Silva}, year={2024}}'
-)
-
-if result.success:
-    # Export to pandas DataFrame
-    df = result.to_dataframe("items")
-
-    # Export to dict (JSON-serializable)
-    data = result.to_json_dict()
-
-    # Get all tables as DataFrames
-    dfs = result.to_dataframes()
-```
-
-### Available Methods
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `to_dataframe(table)` | `pd.DataFrame` | Single table as DataFrame |
-| `to_dataframes()` | `Dict[str, DataFrame]` | All tables as DataFrames |
-| `to_json_dict()` | `Dict` | Full JSON structure as dict |
-| `to_csv_tables()` | `Dict[str, tuple]` | Tables as (headers, rows) |
-
-## Output Formats
-
-### JSON Export
-
-Hierarchical structure preserving SOURCE → ITEM relationships:
-
-```json
-{
-  "project": {
-    "name": "MyResearch",
-    "template": "template.synt",
-    "metadata": {...}
-  },
-  "sources": [
-    {
-      "bibref": "smith2024",
-      "fields": {"date": "2024-03-15", "country": "United States"},
-      "items": [
-        {
-          "quote": "Public acceptance is crucial...",
-          "notes": ["Identifies acceptance as key factor"],
-          "chains": [
-            {
-              "nodes": ["Public_Acceptance", "INFLUENCES", "Policy_Support"],
-              "triples": [["Public_Acceptance", "INFLUENCES", "Policy_Support"]]
-            }
-          ],
-          "source_file": "annotations/sample.syn",
-          "source_line": 7,
-          "source_column": 1
-        }
-      ]
-    }
-  ],
-  "ontologies": [...]
-}
-```
-
-### CSV Export
-
-Generates separate tables with full traceability:
-
-- `sources.csv`: Bibliography entries with fields
-- `items.csv`: Annotated excerpts with metadata
-- `codes.csv`: All applied codes with frequency
-- `chains.csv`: Relational triples (from, relation, to)
-- `ontologies.csv`: Concept definitions
-- `topics.csv`: Hierarchical topic groupings
-
-Each row includes `source_file`, `source_line`, `source_column` for traceability.
-
-### Excel Export
-
-Multi-sheet workbook combining all tables with formatting.
-
-## Language Specification
-
-Full language specification available at: [https://synesis-lang.github.io/synesis-docs](https://synesis-lang.github.io/synesis-docs)
-
-### Core Concepts
-
-- **PROJECT**: Root container defining template and includes
-- **SOURCE**: Contextualizes items with bibliographic reference
-- **ITEM**: Analytical unit containing quote, codes, memos, chains
-- **ONTOLOGY**: Concept definition with description and metadata
-- **TEMPLATE**: Meta-schema defining field requirements and types
-- **FIELD**: Type declaration (QUOTATION, MEMO, CODE, CHAIN, TEXT, DATE, SCALE, ENUMERATED, ORDERED, TOPIC)
-
-### Field Types
-
-| Type | Scope | Description |
-|------|-------|-------------|
-| QUOTATION | ITEM | Verbatim text excerpt from source |
-| MEMO | ITEM | Researcher's analytical annotation |
-| CODE | ITEM | Categorical label (concept reference) |
-| CHAIN | ITEM | Qualified relational structure (A → REL → B) |
-| TEXT | Any | Free-form text field |
-| DATE | SOURCE | Temporal metadata |
-| SCALE | Any | Numeric value with range constraints |
-| ENUMERATED | Any | Closed-list categorical value |
-| ORDERED | ONTOLOGY | Hierarchical indexed value |
-| TOPIC | ONTOLOGY | Dynamic category grouping |
-
-## Development
-
-### Project Structure
+## Language at a Glance
 
 ```
-synesis/
-├── synesis/              # Main package
-│   ├── cli.py           # Command-line interface
-│   ├── compiler.py      # Compilation orchestrator
-│   ├── ast/             # AST node definitions
-│   ├── parser/          # Parsing and loading
-│   ├── semantic/        # Validation and linking
-│   ├── exporters/       # Output format generators
-│   └── grammar/         # Lark grammar file
-└── tests/               # Test suite with fixtures
+# template.synt — define the field schema
+TEMPLATE QualitativeStudy
+
+SOURCE FIELDS
+    FIELD note TYPE MEMO OPTIONAL
+    FIELD codes TYPE CODE OPTIONAL SCOPE ONTOLOGY
+END FIELDS
+
+ITEM FIELDS
+    FIELD text TYPE QUOTATION REQUIRED
+    FIELD codes TYPE CODE REQUIRED SCOPE ONTOLOGY
+        ARITY 1..5
+    FIELD chain TYPE CHAIN OPTIONAL
+        RELATIONS INFLUENCES, ENABLES, CONSTRAINS
+    FIELD rgt_element_a TYPE TEXT OPTIONAL
+        GUIDELINES
+            Describe the positive/functional pole of a bipolar construct.
+            E.g.: "High Trust" (not just "Trust")
+        END GUIDELINES
+END FIELDS
+
+END TEMPLATE
 ```
 
-## Contributing
+---
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+## Architecture
 
-## Documentation
+```mermaid
+flowchart LR
+    subgraph Compiler ["⚙️ synesis (compiler)"]
+        P[Lark LALR parser] --> T[Transformer → AST]
+        T --> V[Semantic Validator]
+        V --> E[Exporters\nJSON · CSV · Excel]
+    end
 
-- **Homepage**: [https://synesis-lang.github.io/synesis-docs](https://synesis-lang.github.io/synesis-docs)
-- **Repository**: [https://github.com/synesis-lang/synesis](https://github.com/synesis-lang/synesis)
-- **Issue Tracker**: [https://github.com/synesis-lang/synesis/issues](https://github.com/synesis-lang/synesis/issues)
+    subgraph LSP ["🧠 synesis-lsp"]
+        S[pygls server]
+        S --> D[Diagnostics\nvia compile_string]
+        S --> H[Hover · Completion\nInlay Hints]
+        S --> ST[Semantic Tokens]
+        S --> Sym[Document Symbols\nGo-to-Definition · Rename]
+        S --> G[Relation Graph\nMermaid generation]
+    end
+
+    subgraph VSCode ["🖥️ synesis-explorer (VS Code)"]
+        EX[Tree Explorers\nReferences · Codes · Relations · Ontology]
+        GV[Graph Viewer\nMermaid → SVG]
+        AV[Abstract Viewer\nBibTeX highlights]
+        TH[Themes\nSynesis Dark · Light]
+    end
+
+    Compiler -->|AST + errors| LSP
+    LSP -->|JSON-RPC / stdio| VSCode
+```
+
+---
+
+## File Types
+
+| Extension | Purpose |
+|---|---|
+| `.syn` | Annotation files — sources and items |
+| `.synp` | Project file — declares template, bibliography, includes |
+| `.synt` | Template file — field schema and validation rules |
+| `.syno` | Ontology file — controlled vocabulary of codes |
+| `.bib` | BibTeX bibliography (standard format) |
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Citation
-
-If you use Synesis in your research, please cite:
-
-```bibtex
-@software{synesis2026,
-  title = {Synesis: A Domain-Specific Language for Qualitative Research},
-  author = {{De Britto, Christian Maciel}},
-  year = {2026},
-  url = {https://github.com/synesis-lang/synesis},
-  version = {0.2.9}
-}
-```
-
-## Acknowledgments
-
-Synesis implements a Result-based error handling system inspired by Elm and Rust, ensuring robust compilation without uncontrolled exceptions.
+MIT — see [LICENSE](LICENSE).
