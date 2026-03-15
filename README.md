@@ -24,7 +24,8 @@ The result is true **σύνεσις** — the convergence of evidence fragments 
 ```mermaid
 graph TD
     Z["📚 Zotero\n(PDF annotations & tags)"]
-    ZP["🔌 zotero-synesis-export\n(.xpi plugin)"]
+    ZP["🔌 zotero-synesis-export\n(.xpi plugin)\nexports raw .syn\nno chains or ontology codes"]
+    SC["🤖 synesis-coder\n(AI-assisted annotation)\ngenerates full .syn with chains\nand codes per project template"]
     SYN["📄 .syn / .synt / .syno / .synp\n(Synesis source files)"]
     C["⚙️ Synesis Compiler\n(LALR parser · AST validator · exporters)"]
     API["🐍 Python API\nsynesis.load() · to_dataframe()"]
@@ -35,13 +36,15 @@ graph TD
     NEO["🕸️ Graph Database\nNeo4j / Memgraph"]
     MCP["🤖 AI Agents\nClaude Desktop via MCP"]
 
-    Z -->|export annotations| ZP
-    ZP -->|generates| SYN
+    Z -->|"export highlights & tags\n(plain .syn, no chains)"| ZP
+    ZP -->|raw annotations| SYN
+    SYN -->|"human codes .syn\nwith chains + ontology codes"| EXT
+    EXT -->|"template-aware\nAI coding request"| SC
+    SC -->|"fully coded .syn\n(chains · codes · fields)"| SYN
     SYN -->|parsed & validated| C
     C --> API
     C -->|AST + diagnostics| LSP
     LSP -->|JSON-RPC / stdio| EXT
-    EXT -->|editing · navigation\ndiagnostics · graph viewer| SYN
     API -->|to_dataframe · to_json_dict| JP
     C -->|compile| OUT
     OUT -->|import| NEO
@@ -57,9 +60,9 @@ graph TD
 | **synesis** ← *this* | Python | Compiler, parser, validator, exporters, Python API |
 | [synesis-lsp](https://github.com/synesis-lang/synesis-lsp) | Python | Language Server — diagnostics, hover, completion, semantic tokens |
 | [synesis-explorer](https://github.com/synesis-lang/synesis-explorer) | JS/TS | VS Code extension — tree views, graph viewer, themes |
-| [zotero-synesis-export](https://github.com/synesis-lang/zotero-synesis-export) | JavaScript | Zotero 7 plugin — export PDF annotations to `.syn` |
+| [zotero-synesis-export](https://github.com/synesis-lang/zotero-synesis-export) | JavaScript | Zotero 7 plugin — exports PDF highlights and tags as plain `.syn` (no chains or ontology codes) |
 | [synesis2neo4j](https://github.com/synesis-lang/synesis2neo4j) | Python | Import compiled knowledge into Neo4j / Memgraph |
-| [synesis-coder](https://github.com/synesis-lang/synesis-coder) | Python | AI-assisted annotation with human review |
+| [synesis-coder](https://github.com/synesis-lang/synesis-coder) | Python | AI-assisted annotation — generates fully coded `.syn` files (chains, codes, fields) conforming to the project template |
 
 ---
 
