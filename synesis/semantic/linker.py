@@ -45,6 +45,9 @@ from synesis.ast.nodes import (
 )
 from synesis.ast.normalize import normalize_bibref, normalize_code
 from synesis.ast.results import (
+    DuplicateOntologyConcept,
+    DuplicateOntologyDescription,
+    DuplicateSourceBibref,
     OrphanItem,
     SourceWithoutItems,
     UndefinedCode,
@@ -190,6 +193,9 @@ class Linker:
     norm_cache: dict | None = None
 
     def link(self) -> LinkedProject:
+        # Erro 70: bibrefs duplicados em blocos SOURCE (mesmo arquivo ou arquivos diferentes)
+        self._check_duplicate_source_bibrefs()
+
         sources_by_bibref = {normalize_bibref(s.bibref): s for s in self.sources}
         items_by_bibref: Dict[str, List[ItemNode]] = {}
 
@@ -221,6 +227,10 @@ class Linker:
                         bibref=bibref,
                     )
                 )
+
+        # Erros 68 e 71: conceitos ontológicos duplicados e descrições duplicadas
+        self._check_duplicate_ontology_concepts()
+        self._check_duplicate_ontology_descriptions()
 
         ontology_index = {normalize_code(o.concept, self.norm_cache): o for o in self.ontologies}
         code_usage: Dict[str, List[ItemNode]] = {}
@@ -416,6 +426,63 @@ class Linker:
         if lname in {"chain", "chains"}:
             return item.chains
         return None
+
+    def _check_duplicate_source_bibrefs(self) -> None:
+        """Erro 70: mesma bibref declarada em mais de um bloco SOURCE."""
+        seen: Dict[str, SourceNode] = {}
+        for source in self.sources:
+            key = normalize_bibref(source.bibref)
+            if key in seen:
+                location = source.location or SourceLocation(Path("<unknown>"), 1, 1)
+                self.validation_result.add(
+                    DuplicateSourceBibref(
+                        location=location,
+                        bibref=key,
+                        filename=str(location.file),
+                    )
+                )
+            else:
+                seen[key] = source
+
+    def _check_duplicate_ontology_concepts(self) -> None:
+        """Erro 68: mesmo conceito definido em dois arquivos de ontologia distintos."""
+        seen: Dict[str, OntologyNode] = {}
+        for ontology in self.ontologies:
+            key = normalize_code(ontology.concept, self.norm_cache)
+            if key in seen:
+                location = ontology.location or SourceLocation(Path("<unknown>"), 1, 1)
+                file_a = str(seen[key].location.file) if seen[key].location else "<unknown>"
+                file_b = str(location.file)
+                self.validation_result.add(
+                    DuplicateOntologyConcept(
+                        location=location,
+                        concept_name=ontology.concept,
+                        file_a=file_a,
+                        file_b=file_b,
+                    )
+                )
+            else:
+                seen[key] = ontology
+
+    def _check_duplicate_ontology_descriptions(self) -> None:
+        """Erro 71 (AVISO): dois conceitos distintos com descrição idêntica."""
+        seen: Dict[str, OntologyNode] = {}
+        for ontology in self.ontologies:
+            desc = ontology.description
+            if not desc or not desc.strip():
+                continue
+            key = desc.strip().lower()
+            if key in seen:
+                location = ontology.location or SourceLocation(Path("<unknown>"), 1, 1)
+                self.validation_result.add(
+                    DuplicateOntologyDescription(
+                        location=location,
+                        concept_a=seen[key].concept,
+                        concept_b=ontology.concept,
+                    )
+                )
+            else:
+                seen[key] = ontology
 
     def _default_project(self) -> ProjectNode:
         return ProjectNode(

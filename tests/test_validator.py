@@ -202,12 +202,25 @@ class TestUnknownFields:
 class TestRequiredFields:
 
     def test_missing_required_field_generates_error(self):
+        # Item com conteúdo presente mas campo obrigatório ausente
+        specs = {
+            "quotation": make_field_spec("quotation", FieldType.QUOTATION),
+            "citation": make_field_spec("citation", FieldType.QUOTATION),
+        }
+        template = make_template(specs, required={Scope.ITEM: ["citation"]})
+        validator = SemanticValidator(template, None, {})
+        item = make_item(quote="Some content")  # item tem conteúdo mas não tem 'citation'
+        result = validator.validate_item(item)
+        assert any(isinstance(e, MissingRequiredField) for e in result.errors)
+
+    def test_empty_item_generates_error(self):
         specs = {"citation": make_field_spec("citation", FieldType.QUOTATION)}
         template = make_template(specs, required={Scope.ITEM: ["citation"]})
         validator = SemanticValidator(template, None, {})
-        item = make_item(quote="")  # quote vazio → _has_value retorna False
+        from synesis.ast.results import EmptyItemBlock
+        item = make_item(quote="")  # item vazio → EmptyItemBlock
         result = validator.validate_item(item)
-        assert any(isinstance(e, MissingRequiredField) for e in result.errors)
+        assert any(isinstance(e, EmptyItemBlock) for e in result.errors)
 
     def test_present_required_field_no_error(self):
         # O validator mapeia item.quote para os aliases 'quote' e 'quotation'

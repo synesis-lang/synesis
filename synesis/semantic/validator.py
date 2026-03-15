@@ -27,9 +27,11 @@ Gerado conforme: Especificacao Synesis v1.1
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from difflib import get_close_matches
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from synesis.ast.nodes import (
     ChainNode,
@@ -44,22 +46,33 @@ from synesis.ast.nodes import (
     TemplateNode,
 )
 from synesis.ast.results import (
+    BundleCountMismatch,
+    ChainArityViolation,
+    ChainWithoutArrowOperator,
+    ConceptNameMatchesRelation,
+    ConceptWithSpaces,
+    DecimalInIntegerScale,
+    DuplicateCodeInField,
+    EmptyItemBlock,
     ForbiddenFieldPresent,
+    InvalidChainRelation,
     InvalidEnumeratedValue,
     InvalidFieldType,
+    InvalidIdentifierCharacter,
     InvalidOrderedValue,
-    BundleCountMismatch,
+    MalformedQualifiedChain,
     MissingBundleField,
     MissingRequiredField,
-    UnknownFieldName,
+    OntologyWithoutTemplateFields,
+    QualifiedChainWithoutRelations,
     ScaleOutOfRange,
+    SimpleChainWithRelationsRequired,
+    TopicWithSpaces,
     UndefinedCode,
+    UnknownFieldName,
     UnregisteredSource,
     ValidationError,
     ValidationResult,
-    ChainArityViolation,
-    InvalidChainRelation,
-    MalformedQualifiedChain,
 )
 from synesis.ast.normalize import normalize_code
 from synesis.parser.bib_loader import suggest_bibref
@@ -84,8 +97,38 @@ class SemanticValidator:
                     if name.lower() not in {"code", "codes"}:
                         self._code_field_names.append(name)
 
+        # Regex para validar identificadores Synesis: letras, números, underscore e hífen.
+        # Deve começar com letra. Caracteres inválidos são detectados para erro 33.
+        self._identifier_invalid_re = re.compile(r"[^a-zA-Z0-9_\-]")
+
+    def _suggest_concept(self, code: str) -> list[str]:
+        """Retorna até 1 conceito similar ao code usando get_close_matches."""
+        candidates = list(self.ontology_index.keys())
+        normalized = normalize_code(code, self.norm_cache)
+        matches = get_close_matches(normalized, candidates, n=1, cutoff=0.6)
+        # Desnormalizar: retornar a forma original do conceito, não a normalizada
+        if matches:
+            matched_key = matches[0]
+            entry = self.ontology_index.get(matched_key)
+            original = getattr(entry, "concept", matched_key)
+            return [original]
+        return []
+
     def validate_project(self, node: ProjectNode) -> ValidationResult:
-        return ValidationResult()
+        result = ValidationResult()
+        # Erro 5: ontologias presentes mas template sem ONTOLOGY FIELDS
+        if self.ontology_index and self.template:
+            has_ontology_fields = bool(
+                self.template.required_fields.get(Scope.ONTOLOGY)
+                or self.template.optional_fields.get(Scope.ONTOLOGY)
+                or self.template.forbidden_fields.get(Scope.ONTOLOGY)
+                or self.template.bundled_fields.get(Scope.ONTOLOGY)
+            )
+            if not has_ontology_fields:
+                result.add(OntologyWithoutTemplateFields(
+                    location=node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
+                ))
+        return result
 
     def validate_source(self, node: SourceNode) -> ValidationResult:
         result = ValidationResult()
@@ -100,10 +143,19 @@ class SemanticValidator:
 
     def validate_item(self, node: ItemNode) -> ValidationResult:
         result = ValidationResult()
+        # Erro 23: ITEM vazio (sem campos)
+        field_values = self._collect_fields(node)
+        has_content = any(self._has_value(v) for v in field_values.values())
+        if not has_content:
+            result.add(EmptyItemBlock(
+                location=node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
+            ))
+            return result
         self._validate_declared_fields(node.field_names, Scope.ITEM, node.location, result)
         self._validate_fields(node, Scope.ITEM, result)
         self._validate_codes_defined(node, result)
         self._validate_chains(node, result)
+        self._validate_code_fields_duplicates(node, result)
         bundle_result = self.validate_bundle(node, Scope.ITEM)
         result.errors.extend(bundle_result.errors)
         result.warnings.extend(bundle_result.warnings)
@@ -173,13 +225,40 @@ class SemanticValidator:
         if not elements:
             return result
 
+        # Erro 13 (defensivo): chain com elemento unico sem seta — parser normalmente captura antes
+        if len(elements) == 1:
+            result.add(ChainWithoutArrowOperator(
+                location=chain.location,
+                raw_value=elements[0],
+            ))
+            return result
+
+        # Erro 15: conceito com espacos em algum elemento
+        for elem in elements:
+            if " " in elem:
+                result.add(ConceptWithSpaces(
+                    location=chain.location,
+                    concept=elem,
+                ))
+
         has_relations = bool(field_spec.relations)
         codes: list[str] = []
-        relations: list[str] = []
+        relations_found: list[str] = []
 
         if has_relations:
             # Extrai codigos (posicoes pares) e relacoes (posicoes impares)
             if len(elements) < 3 or len(elements) % 2 == 0:
+                # Antes de declarar malformada: se tem 2 elementos e nenhum deles é
+                # uma relação reconhecida → chain simples com RELATIONS exigido (erro 9)
+                if len(elements) == 2:
+                    second_is_relation = elements[1] in field_spec.relations
+                    if not second_is_relation:
+                        result.add(SimpleChainWithRelationsRequired(
+                            location=chain.location,
+                            field_name=field_spec.name,
+                            valid_relations=list(field_spec.relations.keys()),
+                        ))
+                        return result
                 result.add(
                     MalformedQualifiedChain(
                         location=chain.location,
@@ -188,11 +267,27 @@ class SemanticValidator:
                 )
                 return result
 
+            # Verifica se os elementos em posição ímpar parecem ser códigos em vez de relações.
+            # Heurística: se nenhum elemento ímpar está nas RELATIONS definidas e nenhum é
+            # totalmente maiúsculo, a chain foi escrita sem relações → erro 9.
+            odd_elements = [elements[i] for i in range(1, len(elements), 2)]
+            all_odd_are_codes = all(
+                e not in (field_spec.relations or {}) and not e.isupper()
+                for e in odd_elements
+            )
+            if all_odd_are_codes:
+                result.add(SimpleChainWithRelationsRequired(
+                    location=chain.location,
+                    field_name=field_spec.name,
+                    valid_relations=list(field_spec.relations.keys()),
+                ))
+                return result
+
             for idx, element in enumerate(elements):
                 if idx % 2 == 0:
                     codes.append(element)
                 else:
-                    relations.append(element)
+                    relations_found.append(element)
                     if element not in field_spec.relations:
                         result.add(
                             InvalidChainRelation(
@@ -204,19 +299,41 @@ class SemanticValidator:
                         )
         else:
             # Chain simples: todos os elementos sao codigos
+            # Erro 8: se parece ter relações (número ímpar ≥ 3 com maiúsculas em posições ímpares)
+            if len(elements) >= 3 and len(elements) % 2 == 1:
+                odd_elements = [elements[i] for i in range(1, len(elements), 2)]
+                if any(e.isupper() for e in odd_elements):
+                    result.add(QualifiedChainWithoutRelations(
+                        location=chain.location,
+                        field_name=field_spec.name,
+                    ))
+                    return result
             codes = elements
 
         arity_error = self._validate_chain_arity(field_spec, len(codes), chain.location)
         if arity_error:
             result.add(arity_error)
 
+        relation_names = set(field_spec.relations.keys()) if field_spec.relations else set()
         for code in codes:
+            # Erro 33: caracteres inválidos no conceito de CHAIN
+            self._validate_identifier(code, chain.location, result)
+            # Erro 14: conceito com mesmo nome de uma relação
+            if relation_names and code in relation_names:
+                result.add(
+                    ConceptNameMatchesRelation(
+                        location=chain.location,
+                        name=code,
+                        field_name=field_spec.name,
+                    )
+                )
             if normalize_code(code, self.norm_cache) not in self.ontology_index:
                 result.add(
                     UndefinedCode(
                         location=chain.location,
                         code=code,
                         context="CHAIN",
+                        suggestions=self._suggest_concept(code),
                     )
                 )
 
@@ -426,6 +543,17 @@ class SemanticValidator:
                         actual=type(value).__name__,
                     )
                 )
+                return
+            # Erro 32: TOPIC com espaços
+            if " " in value:
+                result.add(TopicWithSpaces(
+                    location=location,
+                    field_name=field_spec.name,
+                    value=value,
+                ))
+                return
+            # Erro 33: caracteres inválidos em TOPIC
+            self._validate_identifier(value, location, result)
             return
 
         if expected in {
@@ -461,6 +589,10 @@ class SemanticValidator:
                         actual=type(value).__name__,
                     )
                 )
+                return
+            # Erro 33: caracteres inválidos nos identificadores CODE
+            for code_part in self._extract_code_values(value):
+                self._validate_identifier(code_part, location, result)
             return
 
         if expected == FieldType.CHAIN:
@@ -521,6 +653,19 @@ class SemanticValidator:
             scale_range = self._parse_scale_format(field_spec.format)
             if scale_range:
                 min_value, max_value = scale_range
+                # Erro 26: decimal em intervalo inteiro
+                if min_value == int(min_value) and max_value == int(max_value):
+                    if isinstance(value, float) and value != int(value):
+                        result.add(
+                            DecimalInIntegerScale(
+                                location=location,
+                                field_name=field_spec.name,
+                                value=str(value),
+                                min_val=min_value,
+                                max_val=max_value,
+                            )
+                        )
+                        return
                 if value < min_value or value > max_value:
                     result.add(
                         ScaleOutOfRange(
@@ -590,6 +735,7 @@ class SemanticValidator:
                         location=location,
                         code=code,
                         context="ITEM",
+                        suggestions=self._suggest_concept(code),
                     )
                 )
 
@@ -619,6 +765,7 @@ class SemanticValidator:
                             location=location,
                             code=code,
                             context="CHAIN",
+                            suggestions=self._suggest_concept(code),
                         )
                     )
 
@@ -663,6 +810,61 @@ class SemanticValidator:
             result.errors.extend(chain_result.errors)
             result.warnings.extend(chain_result.warnings)
             result.info.extend(chain_result.info)
+
+    def _validate_identifier(
+        self,
+        name: str,
+        location: SourceLocation,
+        result: ValidationResult,
+    ) -> None:
+        """Erro 33: valida que o identificador contem apenas letras, numeros, underscore e hifen."""
+        if not name:
+            return
+        match = self._identifier_invalid_re.search(name)
+        if match:
+            result.add(InvalidIdentifierCharacter(
+                location=location,
+                name=name,
+                invalid_char=match.group(0),
+            ))
+
+    def _validate_code_fields_duplicates(
+        self,
+        node: ItemNode,
+        result: ValidationResult,
+    ) -> None:
+        """Erro 31: mesmo codigo repetido na mesma ocorrencia de campo CODE."""
+        location = node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
+        field_values = self._collect_fields(node)
+
+        # Checar campo "code" padrao (node.codes)
+        self._check_duplicate_codes_in_list("code", node.codes, location, result)
+
+        # Checar campos CODE extras definidos no template
+        for field_name in self._code_field_names:
+            raw = field_values.get(field_name)
+            if raw is not None:
+                codes = self._extract_code_values(raw)
+                self._check_duplicate_codes_in_list(field_name, codes, location, result)
+
+    def _check_duplicate_codes_in_list(
+        self,
+        field_name: str,
+        codes: List[str],
+        location: SourceLocation,
+        result: ValidationResult,
+    ) -> None:
+        """Detecta codigos duplicados em uma lista de codigos de um mesmo campo."""
+        seen: set = set()
+        for code in codes:
+            normalized = normalize_code(code, self.norm_cache)
+            if normalized in seen:
+                result.add(DuplicateCodeInField(
+                    location=location,
+                    field_name=field_name,
+                    code=code,
+                ))
+            seen.add(normalized)
 
     def _count_value(self, value: Any) -> int:
         if isinstance(value, list):

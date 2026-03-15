@@ -265,6 +265,9 @@ class TemplateNode:
     forbidden_fields: Dict[Scope, List[str]]
     bundled_fields: Dict[Scope, List[Tuple[str, ...]]]
     location: Optional[SourceLocation] = None
+    # Erros detectados durante a construcao do TemplateNode (ex: campos duplicados).
+    # Propagados para ValidationResult pelo validate_template() em template_loader.py.
+    parse_errors: List[Any] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {

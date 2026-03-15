@@ -36,14 +36,23 @@ from typing import Dict, Iterable, List, Optional
 
 from synesis.ast.nodes import ItemNode, OntologyNode, ProjectNode, SourceNode, TemplateNode
 from synesis.parser.bib_loader import BibEntry
-from synesis.ast.results import ValidationResult
+from synesis.ast.results import (
+    DuplicateProjectBlock,
+    MissingAnnotationsInclude,
+    MissingBibliographyFile,
+    MissingOntologyInclude,
+    MissingTemplateDeclaration,
+    MissingTemplateFile,
+    ModifiedBeforeCreated,
+    ValidationResult,
+)
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
 from synesis.parser.bib_loader import load_bibliography
 from synesis.parser.lexer import parse_file
 from synesis.parser.parse_cache import get_cached_nodes, put_cached_nodes
-from synesis.parser.template_loader import load_template
+from synesis.parser.template_loader import load_template, validate_template
 from synesis.parser.transformer import SynesisTransformer
 from synesis.semantic.linker import Linker, LinkedProject
 from synesis.semantic.validator import SemanticValidator
@@ -99,9 +108,34 @@ class SynesisCompiler:
         self.project_dir = self.project_path.parent
 
     def compile(self) -> CompilationResult:
-        project = self.parse_project()
-        template = self.load_template(project)
+        project, project_validation = self.parse_project()
+
+        # Validacao de estrutura do projeto (erros 61, 62, 63, 65, 66, 67)
+        project_validation_structure = self.validate_project_structure(project)
+
+        # Erro 63: arquivo .bib declarado mas nao encontrado (antes de load_bibliography)
+        bib_validation = self._check_bibliography_file(project)
+
+        # Se template ausente ou invalido, retornar cedo com os erros de estrutura
+        template, template_load_result = self._safe_load_template(project)
+        if template is None:
+            result = ValidationResult()
+            self._merge(result, project_validation)
+            self._merge(result, project_validation_structure)
+            self._merge(result, template_load_result)
+            self._merge(result, bib_validation)
+            return CompilationResult(
+                success=False,
+                linked_project=None,
+                validation_result=result,
+                stats=CompilationStats(),
+            )
+
+        # Validacao estrutural do template (erros 6, 18, 39-60, 69)
+        template_validation = validate_template(template)
+
         bibliography = self.load_bibliography(project)
+
         ontologies = self.parse_ontologies(project)
         sources, items = self.parse_annotations(project)
 
@@ -116,6 +150,11 @@ class SynesisCompiler:
             ontologies=ontologies,
             norm_cache=norm_cache,
         )
+
+        self._merge(validation_result, project_validation)
+        self._merge(validation_result, project_validation_structure)
+        self._merge(validation_result, template_validation)
+        self._merge(validation_result, bib_validation)
 
         linked_project = self.link_all(
             project=project,
@@ -138,13 +177,22 @@ class SynesisCompiler:
             bibliography=bibliography,
         )
 
-    def parse_project(self) -> ProjectNode:
+    def parse_project(self) -> tuple[ProjectNode, ValidationResult]:
         tree = parse_file(self.project_path)
         nodes = SynesisTransformer(self.project_path).transform(tree)
-        for node in nodes:
-            if isinstance(node, ProjectNode):
-                return node
-        raise ValueError("Nenhum bloco PROJECT encontrado no .synp")
+        result = ValidationResult()
+        project_nodes = [n for n in nodes if isinstance(n, ProjectNode)]
+
+        if not project_nodes:
+            raise ValueError("Nenhum bloco PROJECT encontrado no .synp")
+
+        # Erro 66: dois ou mais blocos PROJECT no mesmo .synp
+        if len(project_nodes) > 1:
+            for duplicate in project_nodes[1:]:
+                loc = duplicate.location
+                result.add(DuplicateProjectBlock(location=loc))
+
+        return project_nodes[0], result
 
     def load_template(self, project: ProjectNode):
         template_path = self.project_dir / project.template_path
@@ -154,6 +202,8 @@ class SynesisCompiler:
         for include in project.includes:
             if include.include_type.upper() == "BIBLIOGRAPHY":
                 path = self.project_dir / include.path
+                if not path.exists():
+                    return {}
                 return load_bibliography(path)
         return {}
 
@@ -250,6 +300,90 @@ class SynesisCompiler:
             stats.chain_count = sum(len(item.chains) for item in items)
             stats.triple_count = len(linked.all_triples)
         return stats
+
+    def validate_project_structure(self, project: ProjectNode) -> ValidationResult:
+        """Valida estrutura do projeto: arquivos nao incluidos, template ausente, datas. (erros 61, 62, 65, 67)"""
+        result = ValidationResult()
+        loc = project.location
+
+        # Erro 65: PROJECT sem TEMPLATE declarado
+        if not project.template_path or str(project.template_path).strip() == "":
+            result.add(MissingTemplateDeclaration(location=loc))
+
+        # Erros 61-62: arquivos .syn/.syno no diretorio nao referenciados no .synp
+        included_annotations = set()
+        included_ontologies = set()
+        for include in project.includes:
+            inc_type = include.include_type.upper()
+            raw = include.path
+            if inc_type == "ANNOTATIONS":
+                if self._has_glob(raw):
+                    for p in self.project_dir.glob(raw):
+                        included_annotations.add(p.resolve())
+                else:
+                    included_annotations.add((self.project_dir / raw).resolve())
+            elif inc_type == "ONTOLOGY":
+                included_ontologies.add((self.project_dir / raw).resolve())
+
+        for syn_file in self.project_dir.glob("*.syn"):
+            if syn_file.resolve() not in included_annotations:
+                result.add(MissingAnnotationsInclude(location=loc, filename=syn_file.name))
+
+        for syno_file in self.project_dir.glob("*.syno"):
+            if syno_file.resolve() not in included_ontologies:
+                result.add(MissingOntologyInclude(location=loc, filename=syno_file.name))
+
+        # Erro 67: MODIFIED < CREATED no bloco METADATA
+        metadata = project.metadata or {}
+        created = metadata.get("created") or metadata.get("CREATED")
+        modified = metadata.get("modified") or metadata.get("MODIFIED")
+        if created and modified:
+            try:
+                if modified < created:
+                    result.add(ModifiedBeforeCreated(location=loc, modified=modified, created=created))
+            except TypeError:
+                pass  # Datas nao comparaveis — nao e erro de estrutura
+
+        return result
+
+    def _safe_load_template(self, project: ProjectNode) -> tuple[Optional[TemplateNode], ValidationResult]:
+        """Carrega o template capturando erros de arquivo ausente. (erros 64, 65)"""
+        result = ValidationResult()
+        template_path_str = str(project.template_path).strip() if project.template_path else ""
+        if not template_path_str:
+            # Erro 65 já emitido em validate_project_structure; retornar None para abortar cedo
+            return None, result
+        template_path = self.project_dir / project.template_path
+        if not template_path.exists():
+            result.add(MissingTemplateFile(
+                location=project.location,
+                template_path=str(project.template_path),
+                project_file=self.project_path.name,
+            ))
+            return None, result
+        try:
+            return load_template(template_path), result
+        except Exception as exc:
+            result.add(MissingTemplateFile(
+                location=project.location,
+                template_path=str(project.template_path),
+                project_file=self.project_path.name,
+            ))
+            return None, result
+
+    def _check_bibliography_file(self, project: ProjectNode) -> ValidationResult:
+        """Erro 63: arquivo .bib declarado no projeto nao encontrado."""
+        result = ValidationResult()
+        for include in project.includes:
+            if include.include_type.upper() == "BIBLIOGRAPHY":
+                path = self.project_dir / include.path
+                if not path.exists():
+                    result.add(MissingBibliographyFile(
+                        location=include.location,
+                        filename=include.path,
+                    ))
+                break
+        return result
 
     def _collect_include_paths(
         self,

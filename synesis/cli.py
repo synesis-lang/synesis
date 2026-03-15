@@ -27,6 +27,8 @@ Gerado conforme: Especificacao Synesis v1.1
 from __future__ import annotations
 
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Iterable
 
@@ -44,6 +46,61 @@ from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
 from synesis.parser.lexer import SynesisSyntaxError, parse_file
 from synesis.parser.template_loader import TemplateLoadError, load_template
+
+class _Spinner:
+    """Spinner animado para etapas do pipeline. Desativa-se se stdout nao for TTY."""
+
+    _FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+    def __init__(self) -> None:
+        self._active = False
+        self._thread: threading.Thread | None = None
+        self._label = ""
+        self._is_tty = sys.stderr.isatty()
+
+    def start(self, label: str) -> None:
+        self._label = label
+        if not self._is_tty:
+            sys.stderr.write(f"  {label}...\n")
+            sys.stderr.flush()
+            return
+        self._active = True
+        self._t0 = time.monotonic()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def _spin(self) -> None:
+        i = 0
+        while self._active:
+            frame = self._FRAMES[i % len(self._FRAMES)]
+            sys.stderr.write(f"\r  {frame} {self._label}...")
+            sys.stderr.flush()
+            time.sleep(0.08)
+            i += 1
+
+    def done(self, suffix: str = "") -> None:
+        if not self._is_tty:
+            return
+        self._active = False
+        if self._thread:
+            self._thread.join()
+        elapsed = time.monotonic() - self._t0
+        elapsed_str = click.style(f"({elapsed:.1f}s)", fg="bright_black")
+        check = click.style("✔", fg="green", bold=True)
+        suffix_str = f"  {suffix}" if suffix else ""
+        sys.stderr.write(f"\r  {check} {self._label}{suffix_str}  {elapsed_str}\n")
+        sys.stderr.flush()
+
+    def fail(self) -> None:
+        if not self._is_tty:
+            return
+        self._active = False
+        if self._thread:
+            self._thread.join()
+        cross = click.style("✖", fg="red", bold=True)
+        sys.stderr.write(f"\r  {cross} {self._label}\n")
+        sys.stderr.flush()
+
 
 HELP_EPILOG = (
     "Examples:\n"
@@ -77,42 +134,120 @@ def main(ctx, version: bool) -> None:
 @click.option("--force", is_flag=True, help="Generate artifacts even with errors")
 def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, strict: bool, stats: bool, force: bool) -> None:
     """Compile a Synesis project."""
-    try:
-        compiler = SynesisCompiler(Path(project))
-        result = compiler.compile()
+    click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + "  Compile seu pensamento.")
 
-        _print_diagnostics(result.validation_result.errors, "ERROR")
-        _print_diagnostics(result.validation_result.warnings, "WARNING")
+    spinner = _Spinner()
+    project_path = Path(project)
+    project_dir = project_path.parent
+
+    try:
+        from synesis.ast.results import ValidationResult
+        from synesis.parser.template_loader import validate_template
+
+        compiler = SynesisCompiler(project_path)
+
+        # Etapa 1: projeto + template + bibliografia
+        spinner.start("Lendo projeto e template")
+        project_node, project_validation = compiler.parse_project()
+        project_validation_structure = compiler.validate_project_structure(project_node)
+        bib_validation = compiler._check_bibliography_file(project_node)
+        template, template_load_result = compiler._safe_load_template(project_node)
+        if template is None:
+            spinner.fail()
+            result_early = ValidationResult()
+            compiler._merge(result_early, project_validation)
+            compiler._merge(result_early, project_validation_structure)
+            compiler._merge(result_early, template_load_result)
+            compiler._merge(result_early, bib_validation)
+            _print_diagnostics(result_early.errors, "ERROR", project_dir)
+            raise SystemExit(1)
+        template_validation = validate_template(template)
+        bibliography = compiler.load_bibliography(project_node)
+        spinner.done()
+
+        # Etapa 2: ontologia
+        spinner.start("Carregando ontologia")
+        ontologies = compiler.parse_ontologies(project_node)
+        spinner.done(f"{len(ontologies):,}".replace(",", ".") + " conceitos")
+
+        # Etapa 3: anotacoes (etapa mais lenta — paralela)
+        spinner.start("Lendo anotacoes")
+        sources, items = compiler.parse_annotations(project_node)
+        spinner.done(
+            f"{len(sources):,}".replace(",", ".") + " sources, "
+            f"{len(items):,}".replace(",", ".") + " items"
+        )
+
+        # Etapa 4: validacao semantica
+        spinner.start("Validando")
+        norm_cache: dict = {}
+        validation_result = compiler.validate_all(
+            project=project_node,
+            template=template,
+            bibliography=bibliography,
+            sources=sources,
+            items=items,
+            ontologies=ontologies,
+            norm_cache=norm_cache,
+        )
+        compiler._merge(validation_result, project_validation)
+        compiler._merge(validation_result, project_validation_structure)
+        compiler._merge(validation_result, template_validation)
+        compiler._merge(validation_result, bib_validation)
+        n_errors = len(validation_result.errors)
+        n_warnings = len(validation_result.warnings)
+        if n_errors:
+            spinner.done(click.style(f"{n_errors} erro(s)", fg="red"))
+        elif n_warnings:
+            spinner.done(click.style(f"{n_warnings} aviso(s)", fg="yellow"))
+        else:
+            spinner.done("sem erros")
+
+        # Etapa 5: vinculacao
+        spinner.start("Vinculando")
+        linked_project = compiler.link_all(
+            project=project_node,
+            template=template,
+            sources=sources,
+            items=items,
+            ontologies=ontologies,
+            validation_result=validation_result,
+            norm_cache=norm_cache,
+        )
+        spinner.done()
+
+        result_stats = compiler._compute_stats(linked_project, sources, items, ontologies)
+
+        click.echo("")
+        _print_diagnostics(validation_result.errors, "ERROR", project_dir)
+        _print_diagnostics(validation_result.warnings, "WARNING", project_dir)
 
         if stats:
-            _print_stats(result.stats)
+            click.echo("")
+            _print_stats(result_stats)
 
-        has_errors = result.has_errors()
-        has_warnings = result.has_warnings()
+        has_errors = validation_result.has_errors()
+        has_warnings = validation_result.has_warnings()
         exit_code = 1 if has_errors or (strict and has_warnings) else 0
 
-        if (force or exit_code == 0) and result.linked_project:
+        if (force or exit_code == 0) and linked_project:
             if json_path:
-                export_json(
-                    result.linked_project,
-                    Path(json_path),
-                    result.template,
-                    result.bibliography,
-                )
+                export_json(linked_project, Path(json_path), template, bibliography)
             if csv_dir:
-                export_csv(result.linked_project, result.template, Path(csv_dir))
+                export_csv(linked_project, template, Path(csv_dir))
             if xls_path:
-                export_xls(result.linked_project, result.template, Path(xls_path))
+                export_xls(linked_project, template, Path(xls_path))
 
         raise SystemExit(exit_code)
 
+    except SystemExit:
+        raise
     except SynesisSyntaxError as exc:
-        # Erro de sintaxe já formatado pedagogicamente
+        spinner.fail()
         click.echo(click.style(str(exc), fg="red"), err=True)
         raise SystemExit(1)
-
     except Exception as exc:
-        # Qualquer outro erro inesperado
+        spinner.fail()
         click.echo(click.style(f"erro: Falha inesperada durante compilacao: {exc}", fg="red"), err=True)
         if click.get_current_context().obj and click.get_current_context().obj.get("debug"):
             raise
@@ -278,30 +413,49 @@ def init() -> None:
     click.echo(click.style("Basic project initialized.", fg="green"))
 
 
-def _print_diagnostics(errors: Iterable, severity_label: str) -> None:
+def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | None = None) -> None:
     color = "red" if severity_label == "ERROR" else "yellow"
-    for err in errors:
-        location = err.location
-        full_message = err.to_diagnostic().strip()
+    label_color = "red" if severity_label == "ERROR" else "yellow"
 
-        # Primeira linha com localização e severidade
-        lines = full_message.split("\n")
-        first_line = f"{location}: [{severity_label}] {lines[0]}"
-        click.echo(click.style(first_line, fg=color), err=True)
+    # Formata location com caminho relativo
+    def _fmt_location(loc) -> str:
+        try:
+            rel = Path(loc.file).relative_to(base_dir) if base_dir else Path(loc.file)
+        except ValueError:
+            rel = Path(loc.file).name
+        return f"{rel}:{loc.line}:{loc.column}"
 
-        # Linhas adicionais com indentação
-        for line in lines[1:]:
-            click.echo(click.style(f"  {line}", fg=color), err=True)
+    # Pre-formata para calcular alinhamento
+    formatted = [
+        (_fmt_location(err.location), err.to_cli_line())
+        for err in errors
+    ]
+    if not formatted:
+        return
+
+    col_width = max(len(loc) for loc, _ in formatted) + 2
+
+    for loc_str, msg in formatted:
+        loc_part = click.style(loc_str.ljust(col_width), fg="cyan")
+        label_part = click.style(f"[{severity_label}]", fg=label_color, bold=True)
+        click.echo(f"{loc_part}{label_part}  {msg}", err=True)
 
 
 def _print_stats(stats) -> None:
-    click.echo("Stats:")
-    click.echo(f"  sources: {stats.source_count}")
-    click.echo(f"  items: {stats.item_count}")
-    click.echo(f"  ontologies: {stats.ontology_count}")
-    click.echo(f"  codes: {stats.code_count}")
-    click.echo(f"  chains: {stats.chain_count}")
-    click.echo(f"  triples: {stats.triple_count}")
+    rows = [
+        ("Sources",    stats.source_count),
+        ("Items",      stats.item_count),
+        ("Ontologies", stats.ontology_count),
+        ("Codes",      stats.code_count),
+        ("Chains",     stats.chain_count),
+    ]
+    label_width = max(len(label) for label, _ in rows)
+    num_width   = max(len(f"{n:,}".replace(",", ".")) for _, n in rows)
+
+    click.echo(click.style("Estatisticas da Compilacao:", bold=True))
+    for label, n in rows:
+        formatted_n = f"{n:,}".replace(",", ".")
+        click.echo(f"  {label:<{label_width}}  {formatted_n:>{num_width}}")
 
 
 def _format_syntax_error(error: SynesisSyntaxError) -> str:

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-03-15
+
+### Changed
+
+- `cli.py`: saída do comando `compile` reformulada para eliminar "ansiedade de tela preta" em
+  projetos grandes. O pipeline agora é executado etapa a etapa com feedback visual em tempo real:
+  spinner animado por etapa (`⠋ Lendo anotacoes...`), substituído por linha de conclusão com
+  checkmark verde, tempo decorrido e contagem relevante (`✔ Lendo anotacoes  484 sources, 1.614 items  (1.2s)`).
+  Em terminais não-TTY (pipe, redirect, CI) o spinner é desativado e as etapas são impressas como
+  linhas simples sem animação.
+- `cli.py`: mensagens de erro e aviso migradas para formato compacto de uma linha via novo método
+  `to_cli_line()` na hierarquia de `ValidationError`. A mensagem pedagógica completa permanece em
+  `to_diagnostic()` para uso no LSP/hover do VSCode.
+- `cli.py`: localização nos diagnósticos exibe caminho relativo ao diretório do projeto em vez do
+  caminho absoluto. Colunas de localização e label `[ERROR]`/`[WARNING]` alinhadas tabulariamente.
+- `cli.py`: estatísticas (`--stats`) removem `Triples` (métrica técnica interna sem significado
+  direto para o usuário) e exibem separador de milhar com ponto (`1.614`), alinhamento à direita
+  dos números e título `Estatisticas da Compilacao:` em negrito.
+- `cli.py`: cabeçalho `SYNESIS v{VERSION}  Compile seu pensamento.` exibido no início de cada
+  compilação.
+- `ast/results.py`: `ValidationError` recebe método `to_cli_line()` com implementação padrão
+  (extrai primeira linha de `to_diagnostic()`). Todas as 57 subclasses implementam a versão
+  especializada com mensagem de uma linha contendo dado principal + sugestão de correção quando
+  disponível. Sugestões usam padrão uniforme `"Sugestao de correcao -> \`valor\`"`.
+
 ## [0.4.0] - 2026-03-13
 
 ### Added
@@ -256,6 +281,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LSP adapter documentation
 ---
 
+[0.4.1]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.1
+[0.4.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.0
+[0.3.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.3.0
 [0.2.2]: https://github.com/synesis-lang/synesis/releases/tag/v0.2.2
 [0.2.1]: https://github.com/synesis-lang/synesis/releases/tag/v0.2.1
 [0.2.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.2.0
