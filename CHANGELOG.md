@@ -5,7 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-03-15
+
+### Fixed
+- **Bloco `GUIDELINES` aceita qualquer conteúdo de texto** (`grammar/synesis.lark`, `parser/transformer.py`, `grammar/synesis_standalone.py`)
+  - O lexer tokenizava keywords (`CODE`, `CHAIN`, `DESCRIPTION`, etc.) com prioridade `.5` antes do terminal `TEXT_LINE` (.3), causando falha de parse quando linhas do GUIDELINES continham nomes de campos ou commands (ex: `CODE: Use taxonomy codes`).
+  - Solução: regra `guideline_line` + `guideline_token` que aceita explicitamente qualquer keyword, `IDENTIFIER`, `FIELD_NAME`, `NUMBER`, `BIBREF`, `COLON`, `","`, `"->"` como texto. O transformer `guideline_line` reconstrói a linha sem espaço desnecessário antes de `:`.
+  - `synesis_standalone.py` regenerado com a nova gramática.
+
 ## [0.4.1] - 2026-03-15
+
+### Added
+
+- `ast/results.py`: 38 novas subclasses `ValidationError` cobrindo erros de template (Fase 1),
+  anotações (Fase 2), entidades cruzadas (Fase 3) e estrutura de projeto (Fase 4) — elevando de
+  19 para 57 subclasses tipadas no total:
+  - **Fase 1 — Validação estrutural de template:** `DuplicateFieldName`, `UndefinedFieldInScopeFields`,
+    `OrphanFieldDefinition`, `SingleFieldBundle`, `FieldScopeListMismatch`, `ChainWithoutArity`,
+    `ArityRelationsMismatch`, `OrderedWithoutValues`, `EnumeratedWithoutValues`, `ScaleWithoutFormat`,
+    `InvalidFormatSyntax`, `InvalidArityOperator`, `FormatOnNonScale`, `ArityOnNonChain`,
+    `RelationsOnNonChain`, `DuplicateScopeBlock`, `ValueWithWhitespace`, `DuplicateValue`
+    (erros 18, 39–59, 69 do inventory).
+  - **Fase 2 — Validação semântica de anotações:** `OntologyWithoutTemplateFields`,
+    `QualifiedChainWithoutRelations`, `SimpleChainWithRelationsRequired`, `EmptyItemBlock`,
+    `DecimalInIntegerScale`, `DuplicateCodeInField`, `TopicWithSpaces`, `InvalidIdentifierCharacter`
+    (erros 5, 8, 9, 23, 26, 31–33).
+  - **Fase 3 — Validação cross-entity:** `ChainWithoutArrowOperator`, `ConceptNameMatchesRelation`,
+    `ConceptWithSpaces`, `DuplicateOntologyConcept`, `DuplicateSourceBibref`,
+    `DuplicateOntologyDescription` (erros 6, 13–15, 68, 70, 71).
+  - **Fase 4 — Estrutura de projeto:** `MissingAnnotationsInclude`, `MissingOntologyInclude`,
+    `MissingBibliographyFile`, `MissingTemplateDeclaration`, `DuplicateProjectBlock`,
+    `ModifiedBeforeCreated` (erros 61–63, 65–67).
+- `parser/template_loader.py`: função `validate_template()` com 16 funções auxiliares que realiza
+  validação estrutural completa do `TemplateNode` após parsing — substituindo os `TemplateLoadError`
+  pontuais por `ValidationResult` acumulável compatível com o pipeline LSP/diagnósticos.
+- `semantic/validator.py`: validações para erros 5, 8, 9, 23, 26, 31 integradas ao
+  `SemanticValidator`; novo método `_validate_code_fields_duplicates` e helper `_validate_identifier`.
+- `semantic/linker.py`: detecção de `DuplicateOntologyConcept` (erro 68), `DuplicateSourceBibref`
+  (erro 70) e `DuplicateOntologyDescription` (erro 71) integradas ao `Linker`.
+- `compiler.py`: chamada a `validate_template()` inserida no pipeline entre `load_template()` e
+  `validate_all()`; verificações de estrutura de projeto (erros 61–67) integradas a `compile()`.
+- `ast/nodes.py`: campo `parse_errors` adicionado a `TemplateNode` para propagar erros de parsing
+  de template pelo pipeline `ValidationResult`.
 
 ### Changed
 

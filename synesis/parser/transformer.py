@@ -532,33 +532,60 @@ class SynesisTransformer(Transformer):
     def description_lines(self, items: List[Any]) -> List[Any]:
         return items
 
+    def guideline_token(self, items: List[Any]) -> str:
+        """Retorna o valor textual de um token dentro de uma linha de guidelines."""
+        if not items:
+            return ""
+        item = items[0]
+        if isinstance(item, Token):
+            return str(item)
+        return str(item)
+
+    def guideline_line(self, items: List[Any]) -> str:
+        """Reconstrói uma linha de guidelines a partir de seus tokens sem espaços desnecessários."""
+        parts: List[str] = []
+        _no_space_before = {":", ",", "->"}
+        for item in items:
+            if isinstance(item, Token) and item.type == "NEWLINE":
+                break
+            token_str = str(item) if isinstance(item, Token) else str(item)
+            if parts and token_str not in _no_space_before:
+                parts.append(" ")
+            parts.append(token_str)
+        return "".join(parts)
+
     def guidelines_lines(self, items: List[Any]) -> List[Any]:
         return items
 
     def guidelines_block(self, items: List[Any]) -> Tuple[str, Any]:
         lines: List[str] = []
         pending_blank = False
-        keywords = {"GUIDELINES", "END"}
+
         flattened: List[Any] = []
         for item in items:
             if isinstance(item, list):
                 flattened.extend(item)
             else:
                 flattened.append(item)
+
         for item in flattened:
-            if isinstance(item, Token) and item.type in {"NEWLINE", "_INDENT", "_DEDENT"}:
+            if isinstance(item, Token):
                 if item.type == "NEWLINE":
                     if pending_blank:
                         lines.append("")
                         pending_blank = False
                     else:
                         pending_blank = True
+                # _INDENT/_DEDENT e keywords GUIDELINES/END já são ignorados aqui
                 continue
+            # guideline_line retorna str; TEXT_LINE direto também é str
             if isinstance(item, str):
-                if item.upper() in keywords:
+                kw = item.upper()
+                if kw in {"GUIDELINES", "END"}:
                     continue
                 lines.append(item)
                 pending_blank = False
+
         text = "\n".join(lines).strip()
         return ("guidelines", text if text else None)
 

@@ -90,7 +90,18 @@ description: KW_DESCRIPTION NEWLINE description_lines KW_END KW_DESCRIPTION NEWL
 description_lines: (TEXT_LINE NEWLINE | NEWLINE)+
 
 guidelines_block: KW_GUIDELINES NEWLINE guidelines_lines KW_END KW_GUIDELINES
-guidelines_lines: (_INDENT | _DEDENT | TEXT_LINE NEWLINE | NEWLINE)*
+guidelines_lines: (_INDENT | _DEDENT | guideline_line | NEWLINE)*
+guideline_line: guideline_token+ NEWLINE
+guideline_token: TEXT_LINE | IDENTIFIER | FIELD_NAME | BIBREF | STRING | NUMBER | COMPARATOR
+               | KW_PROJECT | KW_SOURCE | KW_ITEM | KW_ONTOLOGY | KW_TEMPLATE | KW_FIELD
+               | KW_INCLUDE | KW_BIBLIOGRAPHY | KW_ANNOTATIONS | KW_FIELDS
+               | KW_REQUIRED | KW_OPTIONAL | KW_FORBIDDEN | KW_BUNDLE
+               | KW_TYPE | KW_SCOPE | KW_FORMAT | KW_DESCRIPTION | KW_ARITY
+               | KW_VALUES | KW_RELATIONS | KW_METADATA | KW_QUOTATION | KW_MEMO
+               | KW_CODE | KW_CHAIN | KW_TEXT | KW_DATE | KW_SCALE
+               | KW_ENUMERATED | KW_ORDERED | KW_TOPIC | KW_GUIDELINES
+               | COLON | "," | "->"
+COLON: ":"
 
 // ============================================
 // BLOCOS DE ANOTACAO
