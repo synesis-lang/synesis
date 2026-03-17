@@ -352,7 +352,15 @@ def _discover_context(file_uri: str) -> tuple[ValidationContext, List["Validatio
 
     if project_result is None:
         # Nenhum .synp encontrado - gerar WARNING
-        file_path = Path(file_uri.replace("file://", ""))
+        if file_uri.startswith("file://"):
+            from urllib.parse import unquote, urlparse
+            _p = urlparse(file_uri)
+            _s = unquote(_p.path or "")
+            if len(_s) >= 3 and _s[0] == "/" and _s[2] == ":":
+                _s = _s[1:]
+            file_path = Path(_s)
+        else:
+            file_path = Path(file_uri)
         warning = MissingProjectFile(
             location=SourceLocation(file_path, 1, 1), workspace_root=str(workspace_root)
         )
@@ -480,8 +488,16 @@ def _find_workspace_root(file_uri: str) -> Optional[Path]:
     Returns:
         Path da raiz do workspace ou None se não encontrado
     """
-    # Remove prefixo file:// se presente
-    file_path = Path(file_uri.replace("file://", ""))
+    # Remove prefixo file:// se presente (suporte correto a file:///C:/ no Windows)
+    if file_uri.startswith("file://"):
+        from urllib.parse import unquote, urlparse
+        parsed = urlparse(file_uri)
+        path_str = unquote(parsed.path or "")
+        if len(path_str) >= 3 and path_str[0] == "/" and path_str[2] == ":":
+            path_str = path_str[1:]  # /C:/... → C:/...
+        file_path = Path(path_str)
+    else:
+        file_path = Path(file_uri)
 
     # Garante que é arquivo válido
     if not file_path.exists():
@@ -587,6 +603,7 @@ def _load_context_from_project(
     errors: List[ValidationError] = []
     template = None
     bibliography = None
+    ontology_index: Dict[str, "OntologyNode"] = {}
 
     # 1. CARREGAR TEMPLATE (obrigatório)
     template_path = project_dir / project.template_path
@@ -631,9 +648,31 @@ def _load_context_from_project(
                 logger.warning("Bibliografia nao encontrada: %s", bib_path)
             break  # Usar apenas primeiro INCLUDE BIBLIOGRAPHY
 
-    # 3. RETORNAR CONTEXTO
+    # 3. CARREGAR ONTOLOGIAS (opcional)
+    from synesis.ast.nodes import OntologyNode
+    from synesis.parser.lexer import parse_file
+
+    for include in project.includes:
+        if include.include_type.upper() == "ONTOLOGY":
+            ont_path = project_dir / include.path
+            if ont_path.exists():
+                try:
+                    tree = parse_file(ont_path)
+                    from synesis.parser.transformer import SynesisTransformer
+                    transformer = SynesisTransformer(str(ont_path))
+                    nodes = transformer.transform(tree)
+                    for node in nodes:
+                        if isinstance(node, OntologyNode):
+                            ontology_index[node.concept] = node
+                    logger.info("Ontologia carregada: %s (%d conceitos)", ont_path, len(ontology_index))
+                except Exception as e:
+                    logger.warning("Erro ao carregar ontologia %s: %s", ont_path, e)
+            else:
+                logger.warning("Ontologia nao encontrada: %s", ont_path)
+
+    # 4. RETORNAR CONTEXTO
     context = ValidationContext(
-        template=template, bibliography=bibliography, ontology_index={}
+        template=template, bibliography=bibliography, ontology_index=ontology_index
     )
 
     return context, errors

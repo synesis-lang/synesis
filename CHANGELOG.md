@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-03-17
+
+### Fixed
+- **Ontologia não carregada no contexto LSP** (`synesis/lsp_adapter.py`)
+  - `_load_context_from_project` carregava template e bibliografia mas retornava sempre `ontology_index={}` — o campo `INCLUDE ONTOLOGY` do `.synp` era ignorado. Resultado: `validate_single_file` via LSP reportava todos os códigos como "não definidos na ontologia", mesmo com a ontologia corretamente declarada.
+  - Fix: adicionado bloco "3. CARREGAR ONTOLOGIAS" em `_load_context_from_project` — itera `project.includes`, filtra `include_type == "ONTOLOGY"`, parseia cada `.syno` via `parse_file` + `SynesisTransformer` e popula `ontology_index` com os `OntologyNode` encontrados. Mesmo padrão já usado pelo compilador (`compiler.py:parse_ontologies`).
+  - Verificado: `validate_single_file` no projeto Basic agora encontra `['Social_Cohesion', 'Collective_Action']` na ontologia e retorna 0 erros.
+
+## [0.4.3] - 2026-03-17
+
+### Fixed
+- **`_find_workspace_root` e `_discover_context` falham silenciosamente no Windows** (`synesis/lsp_adapter.py`)
+  - `Path(file_uri.replace("file://", ""))` transformava `file:///C:/...` em `/C:/...` — caminho inválido no Windows — fazendo `_find_workspace_root` retornar `None`. `_discover_context` então retornava contexto vazio e `validate_single_file` validava arquivos sem template, gerando **zero diagnósticos** mesmo com erros reais presentes.
+  - Fix: substituído por `urlparse` + `unquote` com normalização de drive Windows (`/C:/...` → `C:/...`) — mesmo padrão já usado em `server.py:_normalize_workspace_path`. Aplicado em dois locais: `_find_workspace_root` (linha 484) e `_discover_context` (linha 355).
+  - Verificado: `validate_single_file` com URI `file:///` passou de 0 para 10 diagnósticos no case-study T01.
+
 ## [0.4.2] - 2026-03-15
 
 ### Fixed

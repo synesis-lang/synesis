@@ -27,7 +27,7 @@ graph TD
     ZP["🔌 zotero-synesis-export\n(.xpi plugin)\nexports raw .syn\nno chains or ontology codes"]
     SC["🤖 synesis-coder\n(AI-assisted annotation)\ngenerates full .syn with chains\nand codes per project template"]
     SYN["📄 .syn / .synt / .syno / .synp\n(Synesis source files)"]
-    C["⚙️ Synesis Compiler\n(LALR parser · AST validator · exporters)"]
+    C["⚙️ Synesis Compiler\n(LALR parser · AST validator · exporters)"]:::core
     API["🐍 Python API\nsynesis.load() · to_dataframe()"]
     LSP["🧠 Synesis LSP\n(Language Server Protocol)"]
     EXT["🖥️ Synesis Explorer\n(VS Code extension)"]
@@ -35,6 +35,8 @@ graph TD
     OUT["📊 Structured Outputs\nJSON · CSV · Excel · REFI-QDA"]
     NEO["🕸️ Graph Database\nNeo4j / Memgraph"]
     MCP["🤖 AI Agents\nClaude Desktop via MCP"]
+
+    classDef core fill:#7c3aed,stroke:#4c1d95,color:#fff,font-weight:bold
 
     Z -->|"export highlights & tags\n(plain .syn, no chains)"| ZP
     ZP -->|raw annotations| SYN
