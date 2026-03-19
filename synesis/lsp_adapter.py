@@ -58,7 +58,8 @@ from synesis.ast.nodes import (
     SourceNode,
     TemplateNode,
 )
-from synesis.ast.results import ValidationResult
+from synesis.ast.normalize import normalize_bibref
+from synesis.ast.results import DuplicateSourceBibref, ValidationResult
 from synesis.parser.bib_loader import BibEntry, load_bibliography
 from synesis.parser.lexer import SynesisSyntaxError, parse_string
 from synesis.parser.template_loader import load_template
@@ -280,6 +281,22 @@ def _validate_semantics(
             items.append(node)
         elif isinstance(node, OntologyNode):
             ontologies.append(node)
+
+    # Verifica bibrefs duplicados (E070) — mesmo check do Linker, mas no escopo do arquivo aberto
+    seen_bibrefs: Dict[str, SourceNode] = {}
+    for source in sources:
+        key = normalize_bibref(source.bibref)
+        if key in seen_bibrefs:
+            location = source.location or SourceLocation(Path("<unknown>"), 1, 1)
+            from urllib.parse import unquote
+            filename = unquote(str(location.file))
+            result.add(DuplicateSourceBibref(
+                location=location,
+                bibref=key,
+                filename=filename,
+            ))
+        else:
+            seen_bibrefs[key] = source
 
     # Constrói índice de ontologia
     ontology_index = context.ontology_index or {}

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-03-19
+
+### Fixed
+- **`DuplicateSourceBibref` (E070) não reportado pelo LSP** (`synesis/lsp_adapter.py`)
+  - `validate_single_file` validava cada `SourceNode` isoladamente via `SemanticValidator` — nunca acumulava o conjunto completo para checar bibrefs duplicados entre blocos SOURCE.
+  - O erro era detectado apenas pelo CLI (fase de linking no `Linker._check_duplicate_source_bibrefs`), invisível no VSCode.
+  - Fix: adicionada checagem cross-node em `_validate_semantics` após coleta dos sources — replica exatamente a lógica do Linker usando `normalize_bibref` para consistência (case-insensitive).
+  - Fix: `filename` na mensagem de diagnóstico decodificado via `urllib.parse.unquote` — evita exibição de `%3A` em vez de `:` em paths Windows.
+
 ## [0.4.5] - 2026-03-18
 
 ### Fixed
@@ -353,6 +362,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LSP adapter documentation
 ---
 
+[0.4.6]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.6
 [0.4.5]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.5
 [0.4.4]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.4
 [0.4.3]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.3
