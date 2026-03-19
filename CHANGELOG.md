@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-03-18
+
+### Fixed
+- **API pública do `lsp_adapter.py`** — 3 funções privadas promovidas a nomes públicos com aliases backward-compat:
+  - `_find_workspace_root` → `find_workspace_root`
+  - `_discover_context` → `discover_context`
+  - `_invalidate_cache` → `invalidate_cache`
+  - Aliases `_find_workspace_root = find_workspace_root` etc. garantem que imports existentes não quebram.
+  - Chamadas internas (`validate_single_file`, `discover_context`) atualizadas para usar os nomes públicos.
+
+### Removed
+- **`synesis/parser/error_handler.py`** — arquivo de código morto deletado.
+  - Continha `SynesisErrorHandler` como `@dataclass(frozen=True)` com API incompatível com o handler ativo (`synesis/error_handler.py`).
+  - Zero imports em qualquer repositório do ecossistema. Nunca exportado por `synesis/parser/__init__.py`.
+
 ## [0.4.4] - 2026-03-17
 
 ### Fixed
@@ -338,6 +353,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LSP adapter documentation
 ---
 
+[0.4.5]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.5
+[0.4.4]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.4
+[0.4.3]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.3
+[0.4.2]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.2
 [0.4.1]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.1
 [0.4.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.0
 [0.3.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.3.0

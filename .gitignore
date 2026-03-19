@@ -159,3 +159,10 @@ upload_testpypi.sh
 
 # Compiler Study symlink at repo root
 /COMPILER_Study
+.gitnexus
+.claude
+claude.md
+synesis-error-implementation.md
+synesis-error-inventory.md
+synesis-performance-plan.md
+AGENTS.md

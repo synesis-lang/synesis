@@ -150,7 +150,7 @@ def _set_cached_context(
     _cache_mtimes[workspace_root] = mtimes
 
 
-def _invalidate_cache(workspace_root: Path) -> None:
+def invalidate_cache(workspace_root: Path) -> None:
     """
     Invalida cache para workspace específico.
 
@@ -159,6 +159,10 @@ def _invalidate_cache(workspace_root: Path) -> None:
     """
     _context_cache.pop(workspace_root, None)
     _cache_mtimes.pop(workspace_root, None)
+
+
+# Alias backward-compat
+_invalidate_cache = invalidate_cache
 
 
 def validate_single_file(
@@ -190,7 +194,7 @@ def validate_single_file(
     # Descoberta automática de contexto se não fornecido
     discovery_warnings: List["ValidationError"] = []
     if context is None:
-        context, discovery_warnings = _discover_context(file_uri)
+        context, discovery_warnings = discover_context(file_uri)
 
     # Adicionar warnings de descoberta ao resultado
     for warning in discovery_warnings:
@@ -314,7 +318,7 @@ def _validate_semantics(
     return result
 
 
-def _discover_context(file_uri: str) -> tuple[ValidationContext, List["ValidationError"]]:
+def discover_context(file_uri: str) -> tuple[ValidationContext, List["ValidationError"]]:
     """
     Descobre automaticamente contexto via arquivo .synp no workspace.
 
@@ -335,7 +339,7 @@ def _discover_context(file_uri: str) -> tuple[ValidationContext, List["Validatio
     warnings: List[ValidationError] = []
 
     # 1. ENCONTRAR RAIZ DO WORKSPACE
-    workspace_root = _find_workspace_root(file_uri)
+    workspace_root = find_workspace_root(file_uri)
 
     if workspace_root is None:
         # Sem workspace detectado - retornar contexto vazio SEM warning
@@ -402,6 +406,10 @@ def _discover_context(file_uri: str) -> tuple[ValidationContext, List["Validatio
         _set_cached_context(workspace_root, context, monitored_files)
 
     return context, warnings
+
+
+# Alias backward-compat
+_discover_context = discover_context
 
 
 def _find_template(directory: Path) -> Optional[TemplateNode]:
@@ -473,7 +481,7 @@ def _find_bibliography(directory: Path) -> Optional[Dict[str, BibEntry]]:
 # DESCOBERTA DE WORKSPACE E PROJETO (.synp)
 # ============================================
 
-def _find_workspace_root(file_uri: str) -> Optional[Path]:
+def find_workspace_root(file_uri: str) -> Optional[Path]:
     """
     Detecta raiz do workspace VSCode a partir de um arquivo.
 
@@ -523,6 +531,10 @@ def _find_workspace_root(file_uri: str) -> Optional[Path]:
         current = parent
 
     return None
+
+
+# Alias backward-compat
+_find_workspace_root = find_workspace_root
 
 
 def _find_project_in_workspace(workspace_root: Path) -> Optional[tuple[Path, "ProjectNode"]]:
