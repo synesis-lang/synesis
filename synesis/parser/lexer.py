@@ -27,6 +27,7 @@ Gerado conforme: Especificacao Synesis v1.1
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
@@ -68,9 +69,38 @@ def load_grammar() -> str:
     return grammar_path.read_text(encoding="utf-8")
 
 
-@lru_cache(maxsize=1)
+class SynesisIndenter(Indenter):
+    NL_type = "NEWLINE"
+    INDENT_type = "_INDENT"
+    DEDENT_type = "_DEDENT"
+    OPEN_PAREN_types = []
+    CLOSE_PAREN_types = []
+    tab_len = 4
+
+
+# threading.local: cada thread tem seu proprio parser, evitando race condition
+# no estado mutavel do SynesisIndenter (indent_level, paren_level).
+_thread_local = threading.local()
+
+
 def create_parser() -> Lark:
-    """Cria o parser LALR, preferindo versao precompilada (standalone) se disponivel."""
+    """
+    Retorna parser LALR thread-local, criando-o na primeira chamada por thread.
+
+    Cada thread recebe sua propria instancia do parser (incluindo SynesisIndenter),
+    eliminando a race condition no estado mutavel do Indenter (indent_level,
+    paren_level) quando o compilador processa arquivos em paralelo via
+    ThreadPoolExecutor.
+
+    Custo: ~4ms na primeira chamada por thread; zero nas subsequentes.
+    """
+    if not hasattr(_thread_local, "parser"):
+        _thread_local.parser = _make_parser_instance()
+    return _thread_local.parser
+
+
+def _make_parser_instance() -> Lark:
+    """Cria uma instancia do parser com SynesisIndenter proprio."""
     try:
         import synesis.grammar.synesis_standalone as _sa
         # O modulo standalone define classes proprias (Tree, Token, excecoes) que
@@ -100,18 +130,13 @@ def create_parser() -> Lark:
         )
 
 
-class SynesisIndenter(Indenter):
-    NL_type = "NEWLINE"
-    INDENT_type = "_INDENT"
-    DEDENT_type = "_DEDENT"
-    OPEN_PAREN_types = []
-    CLOSE_PAREN_types = []
-    tab_len = 4
-
-
 def parse_string(content: str, filename: str) -> Tree:
     """Parseia conteudo Synesis a partir de uma string."""
     parser = create_parser()
+    # Normaliza TABs para 4 espacos para evitar comportamento inconsistente
+    # do Indenter quando arquivos misturam TAB e espacos na indentacao.
+    if "\t" in content:
+        content = content.replace("\t", "    ")
     try:
         return parser.parse(content)
     except UnexpectedToken as exc:

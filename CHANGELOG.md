@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] - 2026-03-19
+
+### Fixed
+- **Race condition no parser paralelo** (`synesis/parser/lexer.py`)
+  - O `SynesisIndenter` era singleton via `@lru_cache`, compartilhado entre todas as threads do `ThreadPoolExecutor` usado em `parse_annotations`. O estado mutável do Indenter (`indent_level`, `paren_level`) era corrompido quando múltiplas threads chamavam `parser.parse()` simultaneamente, produzindo erros espúrios de indentação (`_INDENT` inesperado) em projetos com mais de 2 arquivos `.syn`.
+  - Fix: `create_parser()` migrado de `@lru_cache` para `threading.local` — cada thread recebe sua própria instância do parser (incluindo `SynesisIndenter`), criada uma vez na primeira chamada por thread.
+  - Custo: ~4ms na primeira chamada por thread; zero nas subsequentes. Compilação sequencial (≤2 arquivos) não é afetada.
+
+- **TAB misturado com espaços causa falha de parse** (`synesis/parser/lexer.py`)
+  - O parser standalone Lark trata TAB e espaços como tokens distintos no terminal `NEWLINE`. Arquivos `.syn` com TAB em uma linha e espaços nas demais (comportamento comum de editores com `insertSpaces=false`) causavam `UnexpectedToken(_INDENT)` mesmo que a indentação numérica fosse equivalente (1 TAB = 4 espaços).
+  - Fix: normalização `\t → "    "` em `parse_string()` antes do parse, com guard `if "\t" in content` para custo zero em arquivos sem TAB.
+
 ## [0.4.6] - 2026-03-19
 
 ### Fixed
