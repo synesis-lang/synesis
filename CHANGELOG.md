@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-04-09
+
+### Fixed
+
+- **Filtro de sentinelas em ORDERED/ENUMERATED** (`synesis/exporters/alpaca_export.py`)
+  - Valores com `index=0` ou label `Undefined/None/N/A` eram incluídos na lista de opções das instruções ORDERED/ENUMERATED, treinando o LLM a reconhecer "Undefined" como resposta válida. Esses são marcadores estruturais de dados faltantes no compilador, não alvos de classificação.
+  - Fix: `_is_sentinel_value()` detecta sentinelas por `index == 0` ou label em `{"undefined", "none", "n/a", "not available"}` e os remove das opções e dos outputs gerados.
+
+- **Instrução abreviada para ORDERED com muitos valores** (`synesis/exporters/alpaca_export.py`)
+  - Campos ORDERED com > 6 valores (ex: escala Dooyeweerd com 15 aspectos) listavam todas as opções na instrução, tornando-a excessivamente densa e desperdiçando tokens no fine-tuning.
+  - Fix: quando `len(meaningful_values) > 6`, a instrução usa forma abreviada com exemplos representativos: `"Classify the concept 'X' into the most appropriate level of '...' (e.g., Quantitative, Spatial, ..., Fiducial)."` — o modelo já possui conhecimento latente dessas categorias e só precisa do vínculo conceito→nível.
+  - Fix colateral: corrigido bug de `{{concept}}` (double brace) na forma abreviada que gerava `'{Cost}'` em vez de `'Cost'` nas instruções.
+
+- **Citação bibliográfica legível em pares SOURCE** (`synesis/exporters/alpaca_export.py`)
+  - Instruções SOURCE usavam apenas a chave BibTeX (`"Describe the source 'jenal2021' regarding: ..."`) — chave opaca que força o LLM a memorizar IDs arbitrários sem generalização.
+  - Fix: `_format_citation()` extrai `author`, `title` e `year` da `BibEntry` e formata como `"Regarding Jenal et al. (2021) – 'Technological Transformation Processes...'", describe: ..."` — grounding real na referência bibliográfica.
+  - `_format_authors()` normaliza strings BibTeX: 1 autor → `"Smith"`, 2 → `"Smith and Doe"`, 3+ → `"Smith et al."`.
+  - Fallback gracioso para bibrefs sem entrada na bibliografia (mantém a chave).
+
+- **Divisão de TOPIC_INDEX com muitos conceitos** (`synesis/exporters/alpaca_export.py`)
+  - Tópicos com muitos conceitos (ex: "Behavior" com 40+ itens) geravam um único par com output excessivamente longo, de difícil aprendizado.
+  - Fix: tópicos com > 15 conceitos são divididos em partes de 15 com instrução numerada `"(part 1 of 2)"`, garantindo que todos os conceitos sejam cobertos sem sobrecarregar nenhum par.
+
+## [0.5.0] - 2026-04-09
+
+### Added
+
+- **Exportador Alpaca JSONL** (`synesis/exporters/alpaca_export.py`)
+  - Novo módulo `alpaca_export` gera pares `{"instruction", "input", "output"}` para fine-tuning de LLMs diretamente a partir de qualquer projeto Synesis compilado — sem dependência de IA (Camada 1 estática, determinística).
+  - `build_alpaca_pairs(linked, template, bibliography)` — retorna lista de pares em memória.
+  - `export_alpaca(linked, output_path, template, bibliography)` — serializa como JSONL em disco.
+  - Geração template-driven por tipo de campo:
+    - **QUOTATION + MEMO (bundle)**: pares de interpretação analítica com trecho como `input` e memo como `output`.
+    - **CHAIN + MEMO (bundle)**: pares causais com tripla + memo concatenados no `output` (`"A -> REL -> B. {memo}"`).
+    - **CHAIN (sem bundle)**: pares de triplas causais com a QUOTATION do item como `input`.
+    - **MEMO autônomo**: pares de interpretação analítica usando a QUOTATION como `input`.
+    - **CODE**: pares de codificação conceitual com todos os códigos do item no `output`.
+    - **ONTOLOGY TEXT**: pares de definição conceitual por conceito (`input` vazio).
+    - **ONTOLOGY TOPIC**: pares de categorização temática por conceito.
+    - **ONTOLOGY ENUMERATED/ORDERED**: pares de classificação com opções no enunciado.
+    - **ONTOLOGY SCALE**: pares de escala numérica com intervalo no enunciado.
+    - **SOURCE TEXT/MEMO/QUOTATION**: pares de descrição de fontes bibliográficas.
+    - **Pares agregados** de `all_triples`: conceitos com ≥ 2 triples distintas entrantes.
+    - **Pares de topic_index**: tópicos com ≥ 2 conceitos listam todos os membros.
+  - Deduplicação exata por `(instruction, output)` — sem colisões entre geradores.
+  - Descarte automático de `output` com menos de 5 caracteres.
+  - BUNDLE-aware: detecta `(CHAIN, MEMO)` e `(QUOTATION, MEMO)` via `template.bundled_fields` — MEMOs bundled com CHAIN não são processados como MEMO autônomos.
+  - Integrado em `CompilationResult.to_alpaca(path)` (`compiler.py`), `MemoryCompilationResult.to_alpaca_pairs()` (`api.py`) e opção `--alpaca` na CLI.
+  - Validado em `social_acceptance` (452 sources, 1.505 items, 2.211 chains): **13.699 pares** gerados.
+
+- **Opção `--alpaca` na CLI** (`synesis/cli.py`)
+  - `synesis compile projeto.synp --alpaca dataset.jsonl` exporta JSONL de fine-tuning junto com os demais artefatos.
+  - Compatível com `--force` e com qualquer combinação de `--json`, `--csv`, `--xls`.
+
+- **Módulo `_helpers.py`** (`synesis/exporters/_helpers.py`)
+  - Funções compartilhadas entre `csv_export`, `xls_export` e `alpaca_export`:
+    - `_get_field_names_for_scope(template, scope)` — lista de nomes de campo para um dado scope.
+    - `_get_field_names_for_scope_and_types(template, scope, types)` — filtrado por tipo.
+    - `_get_item_field_value(item, name)` — acesso unificado a campos de ItemNode (extra_fields + campos canônicos).
+    - `_get_ontology_field_value(ontology, name)` — acesso unificado a campos de OntologyNode.
+
+### Changed
+
+- **JSON v3.0** (`synesis/exporters/json_export.py`)
+  - Campos de ontologia agora são planos no objeto (`"topic": "Theme"` em vez de `"fields": {"topic": "Theme"}`).
+  - Chains exportadas como lista de objetos `{"from", "relation", "to"}` em vez de lista de nodes.
+  - Seção `bibliography` enriquecida com os campos SOURCE do template (ex: `epistemic_model`, `method`).
+  - Corrigido **bug de `frequency`/`source_count` sempre zero** em projetos cujos conceitos aparecem exclusivamente em campos CHAIN: `_build_chain_usage()` itera todos os chains do corpus para mapear conceitos → items, complementando o `code_usage` do linker que só registra referências diretas via CODE/ITEM.
+  - `synesis2neo4j` e `synesis2graph` atualizados para consumir o formato v3.0 flat.
+
+### Fixed
+
+- **`frequency` e `source_count` sempre 0 em projetos CHAIN-only** (`synesis/exporters/json_export.py`)
+  - Projetos que atribuem conceitos exclusivamente via campos CHAIN (sem campos CODE) tinham `item.codes = []`, portanto `linked.code_usage = {}`. Todos os conceitos da ontologia apareciam com `frequency: 0` e `source_count: 0` no JSON exportado.
+  - Fix: `_build_chain_usage()` extrai ocorrências de conceitos dos chains de todos os items, e `_build_ontology_schema()` combina `code_usage` (direto) + `chain_usage` (via chains) para calcular `frequency` e `source_count` corretos.
+
 ## [0.4.7] - 2026-03-19
 
 ### Fixed

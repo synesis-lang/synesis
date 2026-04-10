@@ -1,5 +1,5 @@
 """
-json_export.py - Exportacao JSON analitico do projeto Synesis v2.0
+json_export.py - Exportacao JSON analitico do projeto Synesis v3.0
 
 Proposito:
     Gerar JSON analitico universal para Neo4j, analise bibliometrica,
@@ -7,9 +7,9 @@ Proposito:
     verdade e enriquece com indices pre-computados.
 
 Componentes principais:
-    - export_json: funcao principal de escrita em JSON v2.0
+    - export_json: funcao principal de escrita em JSON v3.0
     - Builders de secoes: metadata, project, template, bibliography, indices, ontology, corpus
-    - Enriquecimentos: frequencias, source_count, labels de campos ORDERED, triplas com proveniencia
+    - Enriquecimentos: frequencias (diretas + chains), source_count, labels de campos ORDERED
 
 Dependencias criticas:
     - json: serializacao
@@ -20,17 +20,17 @@ Dependencias criticas:
 
 Exemplo de uso:
     from synesis.exporters.json_export import export_json
-    export_json(linked, Path("saida_v2.json"), template, bibliography)
+    export_json(linked, Path("saida_v3.json"), template, bibliography)
 
-Notas de implementacao (v2.0):
+Notas de implementacao (v3.0):
     - Estrutura: version, export_metadata, project, template, bibliography, indices, ontology, corpus
-    - Breaking change: Chains agora sao objetos {nodes, relations, location} (nao arrays)
-    - Indices pre-computados: hierarchy, triples (com proveniencia), topics, code_frequency
-    - Ontologia enriquecida: frequency, source_count, aspect_label, dimension_label
-    - Rastreabilidade expandida: triplas incluem source_item e location
-    - Sem template, usa modo legado com campos brutos (mantido para compatibilidade)
+    - Breaking change v3.0: sem source_metadata por item (usar source_ref -> bibliography)
+    - Breaking change v3.0: campos de ontologia aplanados (sem sub-dict "fields")
+    - Breaking change v3.0: chains no corpus como lista de {from, relation, to}
+    - Fix: frequency e source_count incluem uso via chains (nao apenas campos CODE)
+    - Campos vazios/zerados omitidos na secao ontology
 
-Gerado conforme: Especificacao Synesis v2.0
+Gerado conforme: Especificacao Synesis v3.0
 """
 
 from __future__ import annotations
@@ -52,20 +52,17 @@ from synesis.ast.nodes import (
 )
 from synesis.parser.bib_loader import BibEntry
 from synesis.semantic.linker import LinkedProject
+from synesis.exporters._helpers import (
+    _get_field_names_for_scope,
+    _get_field_names_for_scope_and_types,
+    _get_item_field_value,
+    _get_ontology_field_value,
+)
 
 _ITEM_INDEX_WIDTH = 4
 
 
 def _build_export_metadata(linked: LinkedProject) -> Dict[str, Any]:
-    """
-    Constrói metadados de exportação para versionamento e estatísticas.
-
-    Args:
-        linked: Projeto vinculado
-
-    Returns:
-        Dict com timestamp, versão, modo e contadores
-    """
     from datetime import datetime, timezone
 
     return {
@@ -80,84 +77,105 @@ def _build_export_metadata(linked: LinkedProject) -> Dict[str, Any]:
 
 
 def _build_project_section(linked: LinkedProject) -> Dict[str, Any]:
-    """
-    Constrói seção de projeto usando ProjectNode.to_dict().
-
-    Args:
-        linked: Projeto vinculado
-
-    Returns:
-        Dict com name, template_path, includes[], metadata, description
-    """
     return linked.project.to_dict()
 
 
 def _build_template_section(template: Optional[TemplateNode]) -> Optional[Dict[str, Any]]:
-    """
-    Constrói seção de template usando TemplateNode.to_dict().
-
-    Args:
-        template: Template opcional (None = modo legado)
-
-    Returns:
-        Dict com field_specs completos (VALUES, RELATIONS, arity) ou None
-    """
     if template is None:
         return None
     return template.to_dict()
 
 
 def _build_bibliography_section(
-    bibliography: Optional[Dict[str, BibEntry]]
+    bibliography: Optional[Dict[str, BibEntry]],
+    linked: LinkedProject,
+    template: Optional[TemplateNode],
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Constrói seção de bibliografia separada de source_metadata.
+    Constroi secao de bibliografia enriquecida com campos SOURCE (v3.0).
 
-    Args:
-        bibliography: Entradas BibTeX opcionais
-
-    Returns:
-        Dict mapeando bibref normalizado -> entrada BibTeX completa
+    Em v3.0, a bibliography inclui tanto as entradas BibTeX quanto os campos
+    sintetizados do bloco SOURCE (description, epistemic_model, method, etc.),
+    eliminando a necessidade de source_metadata por item no corpus.
     """
-    if not bibliography:
-        return {}
-
     result: Dict[str, Dict[str, Any]] = {}
-    for key, entry in bibliography.items():
-        cleaned = {k: v for k, v in entry.items() if k != "_original_key"}
-        result[_normalize_bibref(key)] = cleaned
+
+    if bibliography:
+        for key, entry in bibliography.items():
+            cleaned = {k: v for k, v in entry.items() if k != "_original_key"}
+            result[_normalize_bibref(key)] = cleaned
+
+    # Enrich with SOURCE synthetic fields
+    if template:
+        source_field_names = _get_field_names_for_scope(template, Scope.SOURCE)
+    else:
+        source_field_names = None
+
+    for bibref, source in linked.sources.items():
+        norm_bibref = _normalize_bibref(bibref)
+        entry = result.setdefault(norm_bibref, {})
+        if source_field_names is not None:
+            for name in source_field_names:
+                val = _clean_value(source.fields.get(name))
+                if val is not None:
+                    entry[name] = val
+        else:
+            for name, value in source.fields.items():
+                val = _clean_value(value)
+                if val is not None:
+                    entry[name] = val
 
     return result
 
 
-def _build_code_frequency_index(linked: LinkedProject) -> Dict[str, int]:
+def _build_chain_usage(
+    linked: LinkedProject,
+    template: Optional[TemplateNode],
+) -> Dict[str, List[ItemNode]]:
     """
-    Calcula frequência de uso de cada código.
+    Mapeia conceito normalizado -> lista de ItemNodes que o referenciam em chains.
 
-    Args:
-        linked: Projeto vinculado
-
-    Returns:
-        Dict mapeando código normalizado -> contagem de itens
+    Necessario para corrigir frequency/source_count em projetos que usam
+    conceitos exclusivamente via chains (sem campos CODE de scope ITEM).
     """
-    return {
-        code: len(items)
-        for code, items in linked.code_usage.items()
-    }
+    has_relations = _has_chain_relations(template)
+    usage: Dict[str, List[ItemNode]] = {}
+    for source in linked.sources.values():
+        for item in source.items:
+            for chain in item.chains:
+                for from_c, _rel, to_c in chain.to_triples(has_relations):
+                    for concept in (from_c, to_c):
+                        key = _normalize_code(concept)
+                        usage.setdefault(key, []).append(item)
+    return usage
+
+
+def _build_code_frequency_index(
+    linked: LinkedProject,
+    chain_usage: Dict[str, List[ItemNode]],
+) -> Dict[str, int]:
+    """
+    Calcula frequencia de uso de cada codigo (direto + via chains).
+    """
+    freq: Dict[str, int] = {}
+
+    for code, items in linked.code_usage.items():
+        freq[code] = len(items)
+
+    for code, chain_items in chain_usage.items():
+        direct_ids = {id(i) for i in linked.code_usage.get(code, [])}
+        additional = sum(1 for i in chain_items if id(i) not in direct_ids)
+        freq[code] = freq.get(code, 0) + additional
+
+    return freq
 
 
 def _has_chain_relations(template: Optional[TemplateNode]) -> bool:
     """
     Verifica se template define RELATIONS para campo chain.
 
-    Se True, chain é qualificada (códigos alternados com relações).
-    Se False, chain é simples (apenas códigos).
-
-    Args:
-        template: Template opcional
-
-    Returns:
-        True se template define relations para chain, False caso contrário
+    Se True, chain e qualificada (codigos alternados com relacoes).
+    Se False, chain e simples (apenas codigos).
     """
     if not template:
         return False
@@ -174,20 +192,7 @@ def _build_triples_index(
     template: Optional[TemplateNode],
 ) -> List[Dict[str, Any]]:
     """
-    Enriquece triplas com proveniência (source_item, location).
-
-    Problema atual:
-        LinkedProject.all_triples é List[Tuple[str, str, str]] sem proveniência.
-
-    Solução:
-        Percorrer sources -> items -> chains novamente e adicionar contexto.
-
-    Args:
-        linked: Projeto vinculado
-        template: Template para detectar se chains têm relações explícitas
-
-    Returns:
-        Lista de dicts com {from, relation, to, source_item, location}
+    Enriquece triplas com proveniencia (source_item, location).
     """
     has_relations = _has_chain_relations(template)
     triples: List[Dict[str, Any]] = []
@@ -212,22 +217,13 @@ def _build_triples_index(
 def _build_indices_section(
     linked: LinkedProject,
     template: Optional[TemplateNode],
+    chain_usage: Dict[str, List[ItemNode]],
 ) -> Dict[str, Any]:
-    """
-    Constrói seção de índices pré-computados.
-
-    Args:
-        linked: Projeto vinculado
-        template: Template opcional
-
-    Returns:
-        Dict com hierarchy, triples, topics, code_frequency
-    """
     return {
         "hierarchy": linked.hierarchy,
         "triples": _build_triples_index(linked, template),
         "topics": linked.topic_index,
-        "code_frequency": _build_code_frequency_index(linked),
+        "code_frequency": _build_code_frequency_index(linked, chain_usage),
     }
 
 
@@ -237,7 +233,7 @@ def build_json_payload(
     bibliography: Optional[Dict[str, BibEntry]] = None,
 ) -> Dict[str, Any]:
     """
-    Constroi payload JSON v2.0 em memoria (sem I/O).
+    Constroi payload JSON v3.0 em memoria (sem I/O).
 
     Ideal para uso em Jupyter Notebooks, LSP e integracao com APIs.
     Retorna dicionario Python que pode ser serializado ou manipulado.
@@ -248,30 +244,32 @@ def build_json_payload(
         bibliography: Entradas BibTeX opcionais
 
     Returns:
-        Dict com estrutura JSON v2.0 contendo:
-        - version: "2.0"
+        Dict com estrutura JSON v3.0 contendo:
+        - version: "3.0"
         - export_metadata: timestamp, estatisticas
         - project: dados do ProjectNode
         - template: esquema completo (field_specs, relations, arity)
-        - bibliography: entradas BibTeX
+        - bibliography: entradas BibTeX + campos SOURCE sintetizados
         - indices: hierarquia, triplas, topicos, frequencias
-        - ontology: conceitos enriquecidos
-        - corpus: items com metadados
+        - ontology: conceitos com campos aplanados e enriquecidos
+        - corpus: items sem source_metadata (usar source_ref -> bibliography)
 
     Example:
         >>> payload = build_json_payload(linked, template, bib)
         >>> import json
         >>> print(json.dumps(payload, indent=2))
     """
+    chain_usage = _build_chain_usage(linked, template)
+
     return {
-        "version": "2.0",
+        "version": "3.0",
         "export_metadata": _build_export_metadata(linked),
         "project": _build_project_section(linked),
         "template": _build_template_section(template),
-        "bibliography": _build_bibliography_section(bibliography),
-        "indices": _build_indices_section(linked, template),
-        "ontology": _build_ontology_schema(linked, template),
-        "corpus": _build_corpus(linked, template, bibliography),
+        "bibliography": _build_bibliography_section(bibliography, linked, template),
+        "indices": _build_indices_section(linked, template, chain_usage),
+        "ontology": _build_ontology_schema(linked, template, chain_usage),
+        "corpus": _build_corpus(linked, template),
     }
 
 
@@ -282,23 +280,13 @@ def export_json(
     bibliography: Optional[Dict[str, BibEntry]] = None,
 ) -> None:
     """
-    Exporta o projeto Synesis em JSON analitico v2.0.
+    Exporta o projeto Synesis em JSON analitico v3.0.
 
     Usa build_json_payload() para construir os dados e escreve em disco.
 
-    Mudanças em relação a v1.0:
-        - Adiciona seção 'version' com valor "2.0"
-        - Adiciona seção 'export_metadata' com timestamp e estatísticas
-        - Renomeia seção 'meta' para 'project' com dados completos do ProjectNode
-        - Adiciona seção 'template' com esquema completo (field_specs, relations, arity)
-        - Adiciona seção 'bibliography' separada de source_metadata
-        - Adiciona seção 'indices' com hierarquia, triplas enriquecidas, tópicos, frequências
-        - Renomeia seção 'ontology_schema' para 'ontology' com enriquecimentos
-        - Preserva seção 'corpus' com chains como objetos to_dict()
-
     Args:
-        linked: Projeto vinculado com índices construídos
-        path: Caminho do arquivo JSON de saída
+        linked: Projeto vinculado com indices construidos
+        path: Caminho do arquivo JSON de saida
         template: Template opcional (None = modo legado)
         bibliography: Entradas BibTeX opcionais
     """
@@ -326,88 +314,93 @@ def _build_meta(linked: LinkedProject, template: Optional[TemplateNode]) -> Dict
 
 
 def _add_ordered_field_labels(
-    fields: Dict[str, Any],
+    entry: Dict[str, Any],
     template: TemplateNode,
 ) -> Dict[str, Any]:
     """
-    Adiciona labels legíveis para campos ORDERED.
+    Adiciona labels legiveis para campos ORDERED.
 
     Exemplo:
-        aspect: 11 → adiciona aspect_label: "Economic"
-        dimension: 2 → adiciona dimension_label: "Market_Acceptance"
-
-    Args:
-        fields: Campos do conceito de ontologia
-        template: Template com field_specs
-
-    Returns:
-        Campos enriquecidos com *_label para cada campo ORDERED
+        aspect: 11 -> adiciona aspect_label: "Economic"
+        dimension: 2 -> adiciona dimension_label: "Market_Acceptance"
     """
-    for field_name, field_value in list(fields.items()):
-        # Skip non-integer values and enriched fields
+    for field_name, field_value in list(entry.items()):
         if not isinstance(field_value, int) or field_name in {
             "frequency", "source_count", "theoretical_significance"
         }:
             continue
 
-        # Check if ORDERED type
         spec = template.field_specs.get(field_name)
         if not spec or spec.type != FieldType.ORDERED:
             continue
 
-        # Lookup label from VALUES
         if not spec.values:
             continue
 
         for ordered_value in spec.values:
             if ordered_value.index == field_value:
-                fields[f"{field_name}_label"] = ordered_value.label
+                entry[f"{field_name}_label"] = ordered_value.label
                 break
 
-    return fields
+    return entry
 
 
 def _build_ontology_schema(
     linked: LinkedProject,
     template: Optional[TemplateNode],
+    chain_usage: Dict[str, List[ItemNode]],
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Constrói seção de ontologia com campos enriquecidos (v2.0).
+    Constroi secao de ontologia v3.0 com campos aplanados e enriquecidos.
 
-    Enriquecimentos:
-        - frequency: len(code_usage[code])
-        - source_count: len(unique sources using code)
-        - aspect_label, dimension_label: Labels de valores ORDERED
-        - parent_chains: Preservado de OntologyNode.to_dict()
-
-    Args:
-        linked: Projeto vinculado
-        template: Template opcional
-
-    Returns:
-        Dict mapeando conceito -> campos enriquecidos
+    Mudancas em relacao a v2.0:
+        - Campos aplanados: sem sub-dict "fields" (ontology_description, topic, etc. na raiz)
+        - frequency e source_count incluem uso via chains (fix para projetos chain-based)
+        - Campos vazios/zerados omitidos
+        - aspect_label, dimension_label adicionados corretamente (antes eram perdidos)
     """
     schema: Dict[str, Dict[str, Any]] = {}
     for key in sorted(linked.ontology_index.keys()):
         ontology = linked.ontology_index[key]
 
-        # Base fields via to_dict()
-        fields = ontology.to_dict()
+        entry: Dict[str, Any] = {"concept": ontology.concept}
+        if ontology.description:
+            entry["description"] = ontology.description
 
-        # Enrich with frequency
-        frequency = len(linked.code_usage.get(key, []))
-        fields["frequency"] = frequency
+        # Flat fields (v3.0: sem sub-dict "fields")
+        for fname, fval in ontology.fields.items():
+            cleaned = _clean_value(fval)
+            if cleaned not in (None, "", []):
+                entry[fname] = cleaned
 
-        # Enrich with source_count
-        items_using_code = linked.code_usage.get(key, [])
-        unique_sources = len(set(item.bibref for item in items_using_code))
-        fields["source_count"] = unique_sources
+        # parent_chains (preservado se nao-vazio)
+        if ontology.parent_chains:
+            entry["parent_chains"] = [chain.to_dict() for chain in ontology.parent_chains]
 
-        # Enrich with ordered field labels
+        # location
+        if ontology.location:
+            entry["location"] = ontology.location.to_dict()
+
+        # frequency: direto + via chains (deduplica por id(item))
+        direct_items = linked.code_usage.get(key, [])
+        chain_items = chain_usage.get(key, [])
+        direct_ids = {id(i) for i in direct_items}
+        all_count = len(direct_ids) + sum(1 for i in chain_items if id(i) not in direct_ids)
+        if all_count:
+            entry["frequency"] = all_count
+
+        # source_count: fontes unicas (direto + via chains)
+        direct_sources = {item.bibref for item in direct_items}
+        chain_sources = {item.bibref for item in chain_items}
+        all_sources = direct_sources | chain_sources
+        if all_sources:
+            entry["source_count"] = len(all_sources)
+
+        # Labels para campos ORDERED (funciona corretamente com campos aplanados)
         if template:
-            fields = _add_ordered_field_labels(fields, template)
+            entry = _add_ordered_field_labels(entry, template)
 
-        schema[ontology.concept] = fields
+        schema[ontology.concept] = entry
 
     return schema
 
@@ -415,11 +408,9 @@ def _build_ontology_schema(
 def _build_corpus(
     linked: LinkedProject,
     template: Optional[TemplateNode],
-    bibliography: Optional[Dict[str, BibEntry]],
 ) -> List[Dict[str, Any]]:
     corpus: List[Dict[str, Any]] = []
     for source in linked.sources.values():
-        source_meta = _build_source_metadata(source, template, bibliography)
         for index, item in enumerate(source.items, start=1):
             corpus.append(
                 _build_corpus_item(
@@ -428,7 +419,6 @@ def _build_corpus(
                     index=index,
                     template=template,
                     linked=linked,
-                    source_metadata=source_meta,
                 )
             )
     return corpus
@@ -440,39 +430,23 @@ def _build_corpus_item(
     index: int,
     template: Optional[TemplateNode],
     linked: LinkedProject,
-    source_metadata: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """
+    Constroi item do corpus v3.0.
+
+    Mudanca em relacao a v2.0: sem source_metadata (usar source_ref -> bibliography).
+    """
     location = item.location
     item_id = _format_item_id(source.bibref, index)
     return {
         "id": item_id,
         "source_ref": source.bibref,
-        "source_metadata": dict(source_metadata),
         "data": _build_item_data(item, template, linked),
         "traceability": {
             "file": str(location.file) if location else None,
             "line": location.line if location else None,
         },
     }
-
-
-def _build_source_metadata(
-    source: SourceNode,
-    template: Optional[TemplateNode],
-    bibliography: Optional[Dict[str, BibEntry]],
-) -> Dict[str, Any]:
-    metadata = _get_bib_metadata(bibliography, source.bibref)
-    for key in ("author", "year", "title"):
-        metadata.setdefault(key, None)
-
-    if template:
-        field_names = _get_field_names_for_scope(template, Scope.SOURCE)
-        for name in field_names:
-            metadata[name] = _clean_value(source.fields.get(name))
-    else:
-        for name, value in source.fields.items():
-            metadata[name] = _clean_value(value)
-    return metadata
 
 
 def _build_item_data(
@@ -485,8 +459,16 @@ def _build_item_data(
 
     data: Dict[str, Any] = {}
     item_fields = _get_field_names_for_scope(template, Scope.ITEM)
+    has_relations = _has_chain_relations(template)
+
     for name in item_fields:
-        data[name] = _clean_value(_get_item_field_value(item, name))
+        spec = template.field_specs.get(name)
+        raw = _get_item_field_value(item, name)
+        if spec and spec.type == FieldType.CHAIN:
+            # v3.0: chains como lista de {from, relation, to}
+            data[name] = _serialize_chain_as_triples(raw, has_relations)
+        else:
+            data[name] = _clean_value(raw)
 
     index_values = _collect_index_values(item, template)
     ontology_fields = _get_field_names_for_scope(template, Scope.ONTOLOGY)
@@ -496,6 +478,22 @@ def _build_item_data(
             _resolve_ontology_value(index_values, name, field_spec, linked)
         )
     return data
+
+
+def _serialize_chain_as_triples(
+    value: Any,
+    has_relations: bool,
+) -> Optional[List[Dict[str, Any]]]:
+    """
+    Converte ChainNode(s) para lista de {from, relation, to} (formato v3.0).
+    """
+    chains = value if isinstance(value, list) else ([value] if value else [])
+    result: List[Dict[str, Any]] = []
+    for chain in chains:
+        if isinstance(chain, ChainNode):
+            for from_c, rel, to_c in chain.to_triples(has_relations):
+                result.append({"from": from_c, "relation": rel, "to": to_c})
+    return result or None
 
 
 def _build_item_data_legacy(item: ItemNode) -> Dict[str, Any]:
@@ -637,72 +635,9 @@ def _extract_chain_codes(chain: ChainNode, field_spec: Optional[FieldSpec]) -> L
     return elements
 
 
-def _get_field_names_for_scope(template: TemplateNode, scope: Scope) -> List[str]:
-    return [
-        name
-        for name, spec in template.field_specs.items()
-        if spec.scope == scope
-    ]
-
-
-def _get_field_names_for_scope_and_types(
-    template: TemplateNode,
-    scope: Scope,
-    field_types: set[FieldType],
-) -> List[str]:
-    return [
-        name
-        for name, spec in template.field_specs.items()
-        if spec.scope == scope and spec.type in field_types
-    ]
-
-
-def _get_item_field_value(item: ItemNode, name: str) -> Any:
-    value = item.extra_fields.get(name)
-    if value is not None:
-        return value
-
-    lname = name.lower()
-    if lname in {"quote", "quotation"}:
-        return item.quote
-    if lname in {"code", "codes"}:
-        return item.codes
-    if lname in {"note", "notes", "memo", "memos"}:
-        return item.notes
-    if lname in {"chain", "chains"}:
-        return item.chains
-    return ""
-
-
-def _get_ontology_field_value(ontology: OntologyNode, name: str) -> Any:
-    value = ontology.fields.get(name)
-    if value is not None:
-        return value
-
-    lname = name.lower()
-    if lname == "description":
-        return ontology.description
-    if lname == "concept":
-        return ontology.concept
-    return ""
-
-
 def _clean_value(value: Any) -> Any:
-    """
-    Limpa valores para serialização JSON.
-
-    Mudanças em v2.0:
-        ChainNode: Retorna to_dict() com {nodes, relations, location}
-        (antes retornava apenas value.nodes)
-
-    Args:
-        value: Valor a ser limpo
-
-    Returns:
-        Valor limpo ou None se vazio
-    """
     if isinstance(value, ChainNode):
-        return value.to_dict()  # Changed from: return value.nodes
+        return value.to_dict()
 
     if isinstance(value, list):
         if not value:

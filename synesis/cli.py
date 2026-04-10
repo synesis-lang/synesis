@@ -41,6 +41,7 @@ except ImportError:
 
 from synesis import __version__ as VERSION
 from synesis.compiler import SynesisCompiler
+from synesis.exporters.alpaca_export import export_alpaca
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
@@ -103,16 +104,24 @@ class _Spinner:
 
 
 HELP_EPILOG = (
-    "Examples:\n"
+    "\b\n"
+    "Output formats:\n"
+    "  --json   file.json    Canonical JSON v3.0 (ontology, corpus, indices)\n"
+    "  --csv    dir/         CSV tables: sources, items, ontologies, chains\n"
+    "  --xls    file.xlsx    Excel workbook (one sheet per CSV table)\n"
+    "  --alpaca file.jsonl   Alpaca JSONL for LLM fine-tuning\n"
     "\n"
+    "\b\n"
+    "Examples:\n"
     "  synesis compile projeto.synp --json saida.json\n"
     "  synesis compile projeto.synp --csv saida_csv/\n"
     "  synesis compile projeto.synp --xls resultado.xlsx\n"
-    "  synesis compile projeto.synp --json saida.json --csv saida_csv/ --xls saida.xlsx\n"
+    "  synesis compile projeto.synp --alpaca dataset.jsonl\n"
+    "  synesis compile projeto.synp --json saida.json --csv saida_csv/ --alpaca dataset.jsonl\n"
 )
 
 
-@click.group(invoke_without_command=True, epilog=HELP_EPILOG)
+@click.group(invoke_without_command=True)
 @click.option("--version", is_flag=True, help="Show version and exit")
 @click.pass_context
 def main(ctx, version: bool) -> None:
@@ -124,15 +133,16 @@ def main(ctx, version: bool) -> None:
         _print_help()
 
 
-@main.command()
+@main.command(epilog=HELP_EPILOG)
 @click.argument("project", type=click.Path(exists=True))
-@click.option("--json", "json_path", type=click.Path())
-@click.option("--csv", "csv_dir", type=click.Path())
-@click.option("--xls", "xls_path", type=click.Path())
+@click.option("--json", "json_path", type=click.Path(), help="Export canonical JSON v3.0")
+@click.option("--csv", "csv_dir", type=click.Path(), help="Export CSV tables to directory")
+@click.option("--xls", "xls_path", type=click.Path(), help="Export Excel workbook (.xlsx)")
+@click.option("--alpaca", "alpaca_path", type=click.Path(), help="Export Alpaca JSONL for LLM fine-tuning")
 @click.option("--strict", is_flag=True, help="Treat warnings as errors")
 @click.option("--stats", is_flag=True, help="Show compilation statistics")
 @click.option("--force", is_flag=True, help="Generate artifacts even with errors")
-def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, strict: bool, stats: bool, force: bool) -> None:
+def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
     """Compile a Synesis project."""
     click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + "  Compile seu pensamento.")
 
@@ -237,6 +247,8 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
                 export_csv(linked_project, template, Path(csv_dir))
             if xls_path:
                 export_xls(linked_project, template, Path(xls_path))
+            if alpaca_path:
+                export_alpaca(linked_project, Path(alpaca_path), template, bibliography)
 
         raise SystemExit(exit_code)
 
@@ -476,6 +488,12 @@ def _print_help() -> None:
     click.echo("  validate-template Validate a template file")
     click.echo("  init              Create a minimal project structure")
     click.echo()
+    click.echo(click.style("Output formats:", fg="yellow", bold=True))
+    click.echo("  --json   <file.json>    Canonical JSON v3.0 (ontology, corpus, indices)")
+    click.echo("  --csv    <dir/>         CSV tables: sources, items, ontologies, chains")
+    click.echo("  --xls    <file.xlsx>    Excel workbook (one sheet per CSV table)")
+    click.echo("  --alpaca <file.jsonl>   Alpaca JSONL for LLM fine-tuning")
+    click.echo()
     click.echo(click.style("Examples:", fg="yellow", bold=True))
     click.echo("  # Compile project and export to JSON")
     click.echo("  synesis compile projeto.synp --json saida.json")
@@ -486,8 +504,11 @@ def _print_help() -> None:
     click.echo("  # Compile and export to XLS (Excel)")
     click.echo("  synesis compile projeto.synp --xls resultado.xlsx")
     click.echo()
+    click.echo("  # Export Alpaca JSONL for LLM fine-tuning")
+    click.echo("  synesis compile projeto.synp --alpaca dataset.jsonl")
+    click.echo()
     click.echo("  # Combine multiple export formats")
-    click.echo("  synesis compile projeto.synp --json saida.json --csv saida_csv/ --xls saida.xlsx")
+    click.echo("  synesis compile projeto.synp --json saida.json --csv saida_csv/ --alpaca dataset.jsonl")
     click.echo()
     click.echo("  # Initialize a new project")
     click.echo("  synesis init")

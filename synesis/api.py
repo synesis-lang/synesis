@@ -177,6 +177,23 @@ class MemoryCompilationResult:
         headers, rows = tables[table_name]
         return pd.DataFrame(rows, columns=headers)
 
+    def to_alpaca_pairs(self) -> List[Dict[str, str]]:
+        """
+        Retorna pares Alpaca para fine-tuning de LLMs.
+
+        Returns:
+            Lista de dicts {"instruction": str, "input": str, "output": str}
+
+        Example:
+            >>> pairs = result.to_alpaca_pairs()
+            >>> print(len(pairs))
+        """
+        if not self.linked_project:
+            return []
+        from synesis.exporters.alpaca_export import build_alpaca_pairs
+
+        return build_alpaca_pairs(self.linked_project, self.template, self.bibliography)
+
     def to_dataframes(self) -> Dict[str, Any]:
         """
         Retorna todas as tabelas como DataFrames.

@@ -46,6 +46,7 @@ from synesis.ast.results import (
     ModifiedBeforeCreated,
     ValidationResult,
 )
+from synesis.exporters.alpaca_export import export_alpaca
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
@@ -100,6 +101,11 @@ class CompilationResult:
         if self.has_errors() or not self.linked_project:
             return
         export_xls(self.linked_project, self.template, path)
+
+    def to_alpaca(self, path: Path) -> None:
+        if self.has_errors() or not self.linked_project:
+            return
+        export_alpaca(self.linked_project, path, self.template, self.bibliography)
 
 
 class SynesisCompiler:
