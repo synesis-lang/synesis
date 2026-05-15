@@ -37,6 +37,7 @@ python -m build
 ```
 
 This creates:
+
 - `dist/synesis-0.1.0.tar.gz` (source distribution)
 - `dist/synesis-0.1.0-py3-none-any.whl` (wheel)
 
@@ -54,6 +55,7 @@ tar -tzf dist/synesis-0.1.0.tar.gz
 ```
 
 Expected contents:
+
 - `synesis/` (package code)
 - `synesis/grammar/synesis.lark` (grammar file)
 - `LICENSE`, `README.md`, `CHANGELOG.md`
@@ -193,6 +195,7 @@ git push
 ### Issue: Package name conflict
 
 **Solution**: PyPI package names are unique globally. If `synesis` is taken, consider alternatives:
+
 - `synesis-lang`
 - `synesis-compiler`
 - Contact current owner if name is abandoned
@@ -216,7 +219,9 @@ tar -tzf dist/synesis-*.tar.gz
 ### Issue: Import errors after installation
 
 **Solution**:
+
 1. Check `pyproject.toml` has correct package discovery:
+   
    ```toml
    [tool.setuptools.packages.find]
    where = ["."]
@@ -228,6 +233,7 @@ tar -tzf dist/synesis-*.tar.gz
 ## Automation with GitHub Actions
 
 The included `.github/workflows/ci.yml` automatically:
+
 - Runs tests on push/PR
 - Builds distribution
 - Validates package with `twine check`

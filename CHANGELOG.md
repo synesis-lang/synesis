@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-05-15
+
+### Changed
+
+- **Paralelização de `parse_annotations` migrada para multiprocessing** (`synesis/compiler.py`)
+  - `ThreadPoolExecutor` substituído por `ProcessPoolExecutor` no caminho paralelo de `parse_annotations()`. O parser Lark (incluindo o standalone gerado e o `SynesisIndenter`) é puramente Python; com a GIL, 4 worker threads serializavam o trabalho CPU-bound e ainda adicionavam overhead de coordenação. A paralelização introduzida na v0.4.0 era, na prática, uma regressão para projetos grandes: medido contra `Nave_Topical_Concordance` (26 arquivos `.syn`, 82.826 items, 8.6 MB), `ThreadPoolExecutor(4)` levava 39.2s — pior que rodar sequencial (12.0s).
+  - Com `ProcessPoolExecutor(4)`, cada worker tem sua própria GIL e o parsing escala de fato: o mesmo projeto cai para ~4.0s (≈10× mais rápido que a versão anterior, ≈3× mais rápido que sequencial). Tempo total de compilação no Nave: ~42s → ~7s.
+  - Threshold ajustado de `len(paths) <= 2` para `len(paths) <= 3`: o custo de spawn de processos no Windows (~50-100 ms por worker) só é amortizado a partir de 4 arquivos `.syn`. Projetos pequenos seguem no caminho sequencial sem overhead.
+  - Remoção do pre-warm `create_parser()` na main thread antes do spawn: era específico ao modelo thread-local; com processos, cada worker importa `synesis_standalone` no seu próprio startup.
+  - `_parse_single_annotation` já era function module-level (introduzida em 0.4.0 justamente para ser picklable) — nenhuma adaptação adicional foi necessária. Os nós AST (`SourceNode`, `ItemNode`, `ChainNode`, `SourceLocation`, enums) são `@dataclass` com tipos primitivos, picklados automaticamente pelo IPC do `multiprocessing`.
+
 ## [0.5.1] - 2026-04-09
 
 ### Fixed

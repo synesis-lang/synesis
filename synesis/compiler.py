@@ -29,7 +29,7 @@ Gerado conforme: Especificacao Synesis v1.1
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
@@ -223,14 +223,10 @@ class SynesisCompiler:
     def parse_annotations(self, project: ProjectNode) -> tuple[List[SourceNode], List[ItemNode]]:
         paths = self._collect_include_paths(project, "ANNOTATIONS", allow_glob=True)
 
-        if len(paths) <= 2:
+        if len(paths) <= 3:
             return self._parse_annotations_sequential(paths)
 
-        # Garantir que o parser esta cacheado ANTES de spawnar threads
-        from synesis.parser.lexer import create_parser
-        create_parser()
-
-        with ThreadPoolExecutor(max_workers=min(4, len(paths))) as executor:
+        with ProcessPoolExecutor(max_workers=min(4, len(paths))) as executor:
             results = list(executor.map(_parse_single_annotation, paths))
 
         sources: List[SourceNode] = []
