@@ -151,7 +151,7 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
     project_dir = project_path.parent
 
     try:
-        from synesis.ast.results import ValidationResult
+        from synesis.ast.results import MalformedBibliographyEntry, ValidationResult
         from synesis.parser.template_loader import validate_template
 
         compiler = SynesisCompiler(project_path)
@@ -161,6 +161,7 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
         project_node, project_validation = compiler.parse_project()
         project_validation_structure = compiler.validate_project_structure(project_node)
         bib_validation = compiler._check_bibliography_file(project_node)
+        bib_format_validation = compiler._check_bibliography_format(project_node)
         template, template_load_result = compiler._safe_load_template(project_node)
         if template is None:
             spinner.fail()
@@ -169,6 +170,7 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
             compiler._merge(result_early, project_validation_structure)
             compiler._merge(result_early, template_load_result)
             compiler._merge(result_early, bib_validation)
+            compiler._merge(result_early, bib_format_validation)
             _print_diagnostics(result_early.errors, "ERROR", project_dir)
             raise SystemExit(1)
         template_validation = validate_template(template)
@@ -191,6 +193,10 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
         # Etapa 4: validacao semantica
         spinner.start("Validando")
         norm_cache: dict = {}
+        malformed_keys = {
+            e.entry_key.lower() for e in bib_format_validation.errors
+            if isinstance(e, MalformedBibliographyEntry)
+        }
         validation_result = compiler.validate_all(
             project=project_node,
             template=template,
@@ -199,11 +205,13 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
             items=items,
             ontologies=ontologies,
             norm_cache=norm_cache,
+            malformed_bib_keys=malformed_keys,
         )
         compiler._merge(validation_result, project_validation)
         compiler._merge(validation_result, project_validation_structure)
         compiler._merge(validation_result, template_validation)
         compiler._merge(validation_result, bib_validation)
+        compiler._merge(validation_result, bib_format_validation)
         n_errors = len(validation_result.errors)
         n_warnings = len(validation_result.warnings)
         if n_errors:

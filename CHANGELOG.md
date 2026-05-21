@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3.2] - 2026-05-21
+
+### Fixed
+
+- **Deteccao de chaves BibTeX com `@` no inicio** (`synesis/parser/bib_loader.py`)
+  - Entradas no formato `@book{@BibliaNVT,...}` — onde o `@` faz parte da chave — eram parseadas com sucesso pelo bibtexparser mas armazenadas com chave inválida (`@biblianvt`). Isso impedia a correspondência com o `@bibref` da anotação, gerando E001 (`UnregisteredSource`) com sugestão incorreta (`@@biblianvt`).
+  - `detect_malformed_entries()` estendida com um segundo caso de detecção: inspeciona `bib_database.entries` em busca de entradas cujo `ID` começa com `@`. O `@` inicial é removido antes de reportar (`clean_key = entry_id.lstrip("@")`), evitando duplo `@` na mensagem E072 e garantindo que `malformed_bib_keys` suprima corretamente o E001 correspondente.
+
+- **Sugestoes de bibref sem `@` duplicado e com ate 3 alternativas** (`synesis/semantic/validator.py`, `synesis/ast/results.py`)
+  - `_validate_bibref()`: chaves passadas ao `suggest_bibref` agora passam por `lstrip("@")`, eliminando sugestoes com `@@` independente do conteúdo do dicionário `.bib`.
+  - `UnregisteredSource.to_cli_line()` e `to_diagnostic()`: exibem todas as sugestoes retornadas (ate 3), separadas por vírgula, no lugar de apenas a primeira.
+
+## [0.5.3.1] - 2026-05-21
+
+### Fixed
+
+- **Supressao de erros `SYNESIS_E001` em cascata quando o `.bib` e malformado** (`synesis/semantic/validator.py`, `synesis/compiler.py`, `synesis/cli.py`, `synesis/api.py`)
+  - Quando uma entrada do `.bib` era malformada (E072), o compilador tambem emitia um `UnregisteredSource` (E001) para cada `@bibref` que apontava para essa entrada — com uma "sugestao de correcao" incorreta apontando para outra chave de referencia. O comportamento gerava erros em cascata que escondiam a causa raiz (E072) e induziam o usuario a renomear corretamente um `@bibref` para uma referencia errada.
+  - Fix: `SemanticValidator` agora recebe o conjunto de chaves malformadas (`malformed_bib_keys`) detectadas na etapa de validacao de formato do `.bib`. Em `_validate_bibref()`, bibrefs que correspondem a uma entrada malformada sao silenciados — o diagnostico E072 ja aponta o problema correto no `.bib`. A mudanca e puramente defensiva e nao afeta a validacao de bibrefs para entradas `.bib` validas.
+  - Impacto zero no `synesis-lsp`: o caminho de validacao de arquivo unico (`validate_document`) ja era marcado como fora de escopo para deteccao de formato de `.bib`. O caminho de workspace (`validateWorkspace` → `SynesisCompiler.compile()`) beneficia-se automaticamente.
+
+## [0.5.3] - 2026-05-21
+
+### Added
+
+- **Deteccao de entradas BibTeX malformadas no arquivo `.bib`** (`synesis/parser/bib_loader.py`, `synesis/ast/results.py`, `synesis/compiler.py`, `synesis/api.py`)
+  - Novo erro `MalformedBibliographyEntry` (`SYNESIS_E072`): quando uma entrada do `.bib` nao esta em formato BibTeX valido — sem tipo de entrada, chave fora de chaves, ou campos com `:` no lugar de `=` — o compilador emite um diagnostico educativo apontando o proprio `.bib` e a linha da entrada, com exemplo do formato correto.
+  - Causa do problema corrigido: o `bibtexparser` v1.4.4 nao lanca excecao com entradas malformadas — trata o bloco invalido como "comentario implicito" (armazenado em `BibDatabase.comments`, nunca em `entries`). O resultado era `load_bibliography()` retornar vazio e cada `@bibref` falhar depois como "referencia nao encontrada", apontando o arquivo `.syn` errado e escondendo a causa raiz no `.bib`.
+  - `detect_malformed_entries(content)` em `bib_loader.py`: inspeciona `BibDatabase.comments` em busca de blocos iniciados por `@` (entradas que o parser nao reconheceu), extrai a chave suspeita e localiza a linha no conteudo original. Nao altera as assinaturas de `load_bibliography` / `load_bibliography_from_string` — mudanca puramente aditiva.
+  - `SynesisCompiler._check_bibliography_format()`: nova etapa do pipeline, espelhando `_check_bibliography_file()` (erro 63), executada antes do carregamento da bibliografia.
+  - Integrado tambem na API in-memory (`synesis.load()`), que passa a reportar o erro em `validation_result`.
+  - Cobertura no VSCode sem alterar o `synesis-lsp`: a validacao de workspace do LSP ja roteia cada erro para o URI do seu `location.file` via `group_diagnostics_by_file()` — o diagnostico aparece no painel Problems atribuido ao arquivo `.bib`.
+
+## [0.5.2.1] - 2026-05-21
+
+### Fixed
+
+- **Identificadores Unicode aceitos em nomes de conceitos e códigos** (`synesis/semantic/validator.py`)
+  - A regex de validação de identificadores (erro 33) usava `[^a-zA-Z0-9_\-]`, rejeitando qualquer caractere fora do ASCII — incluindo letras acentuadas como `ç`, `ã`, `é`, `ü`. Isso causava `InvalidIdentifierCharacter` em conceitos de ontologia com nomes em português, espanhol ou qualquer idioma com diacríticos (ex.: `Perseguições`, `Conflitos`).
+  - Contraste com a gramática: os tokens `IDENTIFIER`, `CONCEPT_NAME`, `CODE_ELEMENT` e `CHAIN_ELEMENT` em `synesis.lark` já usam `\p{L}` com flag Unicode, aceitando qualquer letra Unicode desde o parser. O validador semântico era o único ponto que bloqueava esses caracteres.
+  - Fix: regex substituída por `[^\w\-]` com `re.UNICODE`. `\w` em modo Unicode cobre `[a-zA-Z0-9_]` mais qualquer letra ou dígito Unicode, alinhando o validador ao que o parser já aceita. Nomes ASCII não são afetados.
+
 ## [0.5.2] - 2026-05-15
 
 ### Changed

@@ -7,6 +7,7 @@ Proposito:
 
 Componentes principais:
     - load_bibliography: carrega e normaliza entradas BibTeX
+    - detect_malformed_entries: localiza entradas BibTeX em formato invalido
     - find_bibref: busca por chave com normalizacao
     - suggest_bibref: sugestoes por fuzzy matching
 
@@ -28,6 +29,7 @@ Gerado conforme: Especificacao Synesis v1.1
 
 from __future__ import annotations
 
+import re
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Dict, Optional, TypedDict
@@ -96,6 +98,60 @@ def load_bibliography_from_string(content: str) -> Dict[str, BibEntry]:
         entry["_original_key"] = original_key
         normalized[key] = entry
     return normalized
+
+
+def detect_malformed_entries(content: str) -> list[tuple[str, int]]:
+    """
+    Localiza entradas BibTeX em formato invalido no conteudo de um .bib.
+
+    O bibtexparser nao lanca excecao com entradas malformadas: blocos que nao
+    casam com a sintaxe BibTeX caem no catch-all de "comentario implicito" e
+    sao guardados em BibDatabase.comments em vez de BibDatabase.entries. Um
+    bloco que comeca com `@` e foi parar em comments e, portanto, uma entrada
+    que o parser nao reconheceu (ex: falta o tipo, a chave nao esta entre
+    chaves, ou os campos usam `:` no lugar de `=`).
+
+    Args:
+        content: Conteudo do arquivo .bib como string
+
+    Returns:
+        Lista de tuplas (chave_suspeita, numero_da_linha), uma por entrada
+        malformada. A linha e 1-indexed; 0 quando a chave nao e localizada.
+    """
+    bib_database = bibtexparser.loads(content)
+    lines = content.splitlines()
+    malformed: list[tuple[str, int]] = []
+
+    # Caso 1: entradas sem tipo/chave que caíram nos comentários implícitos do parser
+    for comment in bib_database.comments:
+        for match in re.finditer(r"(?m)^[ \t]*@([A-Za-z][\w-]*)", comment):
+            key = match.group(1)
+            line_number = next(
+                (
+                    i
+                    for i, line in enumerate(lines, start=1)
+                    if re.match(rf"[ \t]*@{re.escape(key)}\b", line)
+                ),
+                0,
+            )
+            malformed.append((key, line_number))
+
+    # Caso 2: entradas parseadas cuja chave começa com @ (ex: @book{@BibliaNVT,...})
+    for entry in bib_database.entries:
+        entry_id = entry.get("ID", "")
+        if entry_id.startswith("@"):
+            clean_key = entry_id.lstrip("@")
+            line_number = next(
+                (
+                    i
+                    for i, line in enumerate(lines, start=1)
+                    if re.search(rf"@\w+\s*\{{\s*@{re.escape(clean_key)}\b", line, re.IGNORECASE)
+                ),
+                0,
+            )
+            malformed.append((clean_key, line_number))
+
+    return malformed
 
 
 def find_bibref(bibliography: Dict[str, BibEntry], bibref: str) -> Optional[BibEntry]:

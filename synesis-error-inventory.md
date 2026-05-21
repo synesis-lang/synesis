@@ -677,3 +677,14 @@ Esse padrão se aplica a qualquer normalização que o compilador faça implicit
 > Revise as definições e diferencie as descrições, ou verifique se os dois conceitos deveriam ser um único.
 >
 > **(AVISO)** [pendente]
+
+---
+
+## Erros de Bibliografia
+
+**72.** Entrada `.bib` em formato BibTeX inválido
+
+> A entrada `@{entry_key}` no arquivo de referências `{filename}` não está em formato BibTeX válido e foi ignorada pelo compilador. Por isso, qualquer `@bibref` que aponte para ela será reportada como não encontrada.
+> Uma entrada BibTeX válida tem três partes: um tipo, a chave de citação entre chaves, e campos separados por vírgula usando `=` (ex: `@book{chave, title = {...}, year = {...}}`). Verifique se a entrada começa com um tipo (`@book`, `@article`, `@misc`...), se a chave vem entre chaves, e se cada campo usa `=` (e não `:`).
+>
+> **(ERRO)** [implementado — `MalformedBibliographyEntry`]

@@ -135,13 +135,18 @@ class UnregisteredSource(ValidationError):
             f"  exatamente ao campo `ID` da entrada BibTeX.\n"
         )
         if self.suggestions:
-            msg += f"  Voce quis dizer `@{self.suggestions[0]}`?\n"
+            formatted = ", ".join(f"`@{s}`" for s in self.suggestions)
+            msg += f"  Chaves similares encontradas no `.bib`: {formatted}.\n"
         msg += f"  Consulte o arquivo `.bib` para ver as referencias disponiveis."
         return msg
 
     def to_cli_line(self) -> str:
-        suggestion = f". Sugestao de correcao -> `@{self.suggestions[0]}`" if self.suggestions else ""
-        return f"Referencia `@{self.bibref}` nao encontrada no .bib{suggestion}"
+        if self.suggestions:
+            formatted = ", ".join(f"`@{s}`" for s in self.suggestions)
+            suffix = f". Sugestoes: {formatted}"
+        else:
+            suffix = ""
+        return f"Referencia `@{self.bibref}` nao encontrada no .bib{suffix}"
 
 
 @dataclass(frozen=True)
@@ -1362,6 +1367,37 @@ class MissingBibliographyFile(ValidationError):
 
     def to_cli_line(self) -> str:
         return f"Arquivo de referencias `{self.filename}` declarado no projeto nao encontrado"
+
+
+@dataclass(frozen=True)
+class MalformedBibliographyEntry(ValidationError):
+    """Entrada em arquivo .bib nao esta em formato BibTeX valido. (erro 72)"""
+
+    filename: str
+    entry_key: str
+    CODE: ClassVar[str] = "SYNESIS_E072"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"A entrada `@{self.entry_key}` no arquivo de referencias `{self.filename}`\n"
+            f"  nao esta em formato BibTeX valido e foi ignorada pelo compilador. Por\n"
+            f"  isso, qualquer `@bibref` que aponte para ela sera reportada como nao\n"
+            f"  encontrada.\n"
+            f"  Uma entrada BibTeX valida tem tres partes: um tipo, a chave de citacao\n"
+            f"  entre chaves, e campos separados por virgula usando `=`:\n"
+            f"    @book{{{self.entry_key},\n"
+            f"        title = {{Titulo da obra}},\n"
+            f"        year = {{2024}}\n"
+            f"    }}\n"
+            f"  Verifique se a entrada comeca com um tipo (@book, @article, @misc...),\n"
+            f"  se a chave vem entre chaves `{{ }}`, e se cada campo usa `=` (e nao `:`)."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"Entrada `@{self.entry_key}` em `{self.filename}` nao esta em "
+            f"formato BibTeX valido"
+        )
 
 
 @dataclass(frozen=True)

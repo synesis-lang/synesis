@@ -28,7 +28,7 @@ Gerado conforme: Especificacao Synesis v1.1
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -84,6 +84,7 @@ class SemanticValidator:
     bibliography: Dict[str, Any]
     ontology_index: Dict[str, Any]
     norm_cache: dict | None = None
+    malformed_bib_keys: set = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.ontology_index = {normalize_code(key, self.norm_cache): value for key, value in self.ontology_index.items()}
@@ -97,9 +98,9 @@ class SemanticValidator:
                     if name.lower() not in {"code", "codes"}:
                         self._code_field_names.append(name)
 
-        # Regex para validar identificadores Synesis: letras, números, underscore e hífen.
-        # Deve começar com letra. Caracteres inválidos são detectados para erro 33.
-        self._identifier_invalid_re = re.compile(r"[^a-zA-Z0-9_\-]")
+        # Regex para validar identificadores Synesis: letras Unicode, números, underscore e hífen.
+        # \w com re.UNICODE cobre [a-zA-Z0-9_] + qualquer letra/dígito Unicode (ç, ã, é, etc.).
+        self._identifier_invalid_re = re.compile(r"[^\w\-]", re.UNICODE)
 
     def _suggest_concept(self, code: str) -> list[str]:
         """Retorna até 1 conceito similar ao code usando get_close_matches."""
@@ -418,8 +419,11 @@ class SemanticValidator:
             return
 
         normalized = bibref.lstrip("@").lower().strip()
+        if normalized in self.malformed_bib_keys:
+            return
         if normalized not in self.bibliography:
-            suggestions = suggest_bibref(normalized, list(self.bibliography.keys()))
+            clean_keys = [k.lstrip("@") for k in self.bibliography.keys()]
+            suggestions = suggest_bibref(normalized, clean_keys)
             result.add(
                 UnregisteredSource(
                     location=location or SourceLocation(file=Path("<unknown>"), line=1, column=1),

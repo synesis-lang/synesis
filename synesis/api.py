@@ -38,11 +38,16 @@ from synesis.ast.nodes import (
     ItemNode,
     OntologyNode,
     ProjectNode,
+    SourceLocation,
     SourceNode,
     TemplateNode,
 )
-from synesis.ast.results import ValidationResult
-from synesis.parser.bib_loader import BibEntry, load_bibliography_from_string
+from synesis.ast.results import MalformedBibliographyEntry, ValidationResult
+from synesis.parser.bib_loader import (
+    BibEntry,
+    detect_malformed_entries,
+    load_bibliography_from_string,
+)
 from synesis.parser.lexer import parse_string
 from synesis.parser.template_loader import load_template_from_string
 from synesis.parser.transformer import SynesisTransformer
@@ -315,8 +320,22 @@ def load(
 
     # 6. Validacao semantica
     ontology_index = {o.concept: o for o in ontologies}
-    validator = SemanticValidator(template, bibliography, ontology_index)
     validation_result = ValidationResult()
+
+    # Erro 72: entradas BibTeX malformadas na bibliografia fornecida
+    if bibliography_content:
+        for entry_key, line_number in detect_malformed_entries(bibliography_content):
+            validation_result.add(MalformedBibliographyEntry(
+                location=SourceLocation(Path("<bibliography>"), line_number or 1, 1),
+                filename="<bibliography>",
+                entry_key=entry_key,
+            ))
+
+    malformed_keys = {
+        e.entry_key.lower() for e in validation_result.errors
+        if isinstance(e, MalformedBibliographyEntry)
+    }
+    validator = SemanticValidator(template, bibliography, ontology_index, malformed_bib_keys=malformed_keys)
 
     _merge_validation(validation_result, validator.validate_project(project))
     for source in sources:

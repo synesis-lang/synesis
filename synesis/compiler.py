@@ -34,10 +34,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
-from synesis.ast.nodes import ItemNode, OntologyNode, ProjectNode, SourceNode, TemplateNode
+from synesis.ast.nodes import (
+    ItemNode,
+    OntologyNode,
+    ProjectNode,
+    SourceLocation,
+    SourceNode,
+    TemplateNode,
+)
 from synesis.parser.bib_loader import BibEntry
 from synesis.ast.results import (
     DuplicateProjectBlock,
+    MalformedBibliographyEntry,
     MissingAnnotationsInclude,
     MissingBibliographyFile,
     MissingOntologyInclude,
@@ -50,7 +58,7 @@ from synesis.exporters.alpaca_export import export_alpaca
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
-from synesis.parser.bib_loader import load_bibliography
+from synesis.parser.bib_loader import detect_malformed_entries, load_bibliography
 from synesis.parser.lexer import parse_file
 from synesis.parser.parse_cache import get_cached_nodes, put_cached_nodes
 from synesis.parser.template_loader import load_template, validate_template
@@ -122,6 +130,9 @@ class SynesisCompiler:
         # Erro 63: arquivo .bib declarado mas nao encontrado (antes de load_bibliography)
         bib_validation = self._check_bibliography_file(project)
 
+        # Erro 72: entradas BibTeX malformadas no arquivo .bib
+        bib_format_validation = self._check_bibliography_format(project)
+
         # Se template ausente ou invalido, retornar cedo com os erros de estrutura
         template, template_load_result = self._safe_load_template(project)
         if template is None:
@@ -130,6 +141,7 @@ class SynesisCompiler:
             self._merge(result, project_validation_structure)
             self._merge(result, template_load_result)
             self._merge(result, bib_validation)
+            self._merge(result, bib_format_validation)
             return CompilationResult(
                 success=False,
                 linked_project=None,
@@ -147,6 +159,10 @@ class SynesisCompiler:
 
         norm_cache: dict = {}
 
+        malformed_keys = {
+            e.entry_key.lower() for e in bib_format_validation.errors
+            if isinstance(e, MalformedBibliographyEntry)
+        }
         validation_result = self.validate_all(
             project=project,
             template=template,
@@ -155,12 +171,14 @@ class SynesisCompiler:
             items=items,
             ontologies=ontologies,
             norm_cache=norm_cache,
+            malformed_bib_keys=malformed_keys,
         )
 
         self._merge(validation_result, project_validation)
         self._merge(validation_result, project_validation_structure)
         self._merge(validation_result, template_validation)
         self._merge(validation_result, bib_validation)
+        self._merge(validation_result, bib_format_validation)
 
         linked_project = self.link_all(
             project=project,
@@ -257,9 +275,14 @@ class SynesisCompiler:
         items: List[ItemNode],
         ontologies: List[OntologyNode],
         norm_cache: dict | None = None,
+        malformed_bib_keys: set | None = None,
     ) -> ValidationResult:
         ontology_index = {o.concept: o for o in ontologies}
-        validator = SemanticValidator(template, bibliography, ontology_index, norm_cache=norm_cache)
+        validator = SemanticValidator(
+            template, bibliography, ontology_index,
+            norm_cache=norm_cache,
+            malformed_bib_keys=malformed_bib_keys or set(),
+        )
         result = ValidationResult()
 
         self._merge(result, validator.validate_project(project))
@@ -384,6 +407,23 @@ class SynesisCompiler:
                         location=include.location,
                         filename=include.path,
                     ))
+                break
+        return result
+
+    def _check_bibliography_format(self, project: ProjectNode) -> ValidationResult:
+        """Erro 72: entradas BibTeX malformadas no arquivo .bib declarado."""
+        result = ValidationResult()
+        for include in project.includes:
+            if include.include_type.upper() == "BIBLIOGRAPHY":
+                path = self.project_dir / include.path
+                if path.exists():
+                    content = path.read_text(encoding="utf-8")
+                    for entry_key, line_number in detect_malformed_entries(content):
+                        result.add(MalformedBibliographyEntry(
+                            location=SourceLocation(path, line_number or 1, 1),
+                            filename=include.path,
+                            entry_key=entry_key,
+                        ))
                 break
         return result
 
