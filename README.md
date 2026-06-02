@@ -90,6 +90,16 @@ SOURCE FIELDS
     OPTIONAL description
 END SOURCE FIELDS
 
+FIELD description TYPE TEXT
+    SCOPE SOURCE
+    DESCRIPTION General context, summary, or bibliographic details of the data source
+    GUIDELINES
+        Summarize the source purpose and context in 1-2 sentences.
+        Use only information supported by the source.
+        Do not add analytical interpretation.
+    END GUIDELINES
+END FIELD
+
 ITEM FIELDS
     REQUIRED citation, note, code
 END ITEM FIELDS
@@ -97,16 +107,34 @@ END ITEM FIELDS
 FIELD citation TYPE QUOTATION
     SCOPE ITEM
     DESCRIPTION Direct quote or selected excerpt from the data source
+    GUIDELINES
+        Extract a complete, self-contained excerpt of 1-3 sentences.
+        Preserve the original wording and punctuation.
+        Provide enough context for the excerpt to be understood independently.
+        Do not paraphrase.
+    END GUIDELINES
 END FIELD
 
 FIELD note TYPE MEMO
     SCOPE ITEM
     DESCRIPTION Analytical memo recording interpretations, emerging patterns, or causal reasoning
+    GUIDELINES
+        Explain the analytical significance of the excerpt in 1-3 sentences.
+        Identify patterns, mechanisms, or relevant interpretations.
+        Do not merely restate the citation.
+        Distinguish textual evidence from your interpretation.
+    END GUIDELINES
 END FIELD
 
 FIELD code TYPE CODE
     SCOPE ITEM
     DESCRIPTION Codes or descriptors applied to this excerpt
+    GUIDELINES
+        Apply one or more ontology codes directly supported by the excerpt.
+        Prefer existing codes and avoid redundant synonyms.
+        Add a new code only for a distinct and analytically relevant concept.
+        Every code must have a corresponding ONTOLOGY entry.
+    END GUIDELINES
 END FIELD
 
 ONTOLOGY FIELDS
@@ -116,11 +144,21 @@ END ONTOLOGY FIELDS
 FIELD definition TYPE TEXT
     SCOPE ONTOLOGY
     DESCRIPTION Clear definition of the code, with inclusion/exclusion criteria
+    GUIDELINES
+        Define the code in 1-3 sentences.
+        State when the code should be applied and, when useful, when it should not.
+        Distinguish it from closely related codes.
+    END GUIDELINES
 END FIELD
 
 FIELD group TYPE TOPIC
     SCOPE ONTOLOGY
     DESCRIPTION Broader thematic domain that groups these codes
+    GUIDELINES
+        Assign one broad parent-level thematic category.
+        Reuse an existing group whenever possible.
+        Avoid creating a group that applies to only one narrowly defined code.
+    END GUIDELINES
 END FIELD
 ```
 

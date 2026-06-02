@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3.3] - 2026-06-01
+
+### Changed
+
+- **Projeto basico e scaffold `synesis init` agora incluem `GUIDELINES`** (`synesis/cli.py`, `README.md`, `case-studies/Basic/template.synt`)
+  - Os seis campos do template introdutorio (`description`, `citation`, `note`, `code`, `definition`, `group`) agora incorporam instrucoes curtas para anotadores humanos e agentes de IA.
+  - As orientacoes cobrem resumo de fontes, extracao literal de excertos, elaboracao de memos analiticos, reutilizacao de codigos da ontologia, definicao de criterios de aplicacao e agrupamento tematico em categorias amplas.
+  - O exemplo completo do `README.md`, o projeto `case-studies/Basic` e novos projetos criados por `synesis init` permanecem sincronizados.
+  - Mudanca aditiva: a estrutura de dados do exemplo nao foi alterada; os blocos sao exportados como `field_specs.<campo>.guidelines` no JSON compilado.
+
 ## [0.5.3.2] - 2026-05-21
 
 ### Fixed
