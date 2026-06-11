@@ -98,6 +98,13 @@ class SemanticValidator:
                     if name.lower() not in {"code", "codes"}:
                         self._code_field_names.append(name)
 
+        # Pre-indexar: todos os fields CHAIN no scope ITEM (incluindo "chain"/"chains")
+        self._chain_field_specs: list[tuple[str, Any]] = []
+        if self.template:
+            for name, spec in self.template.field_specs.items():
+                if spec.scope == Scope.ITEM and spec.type == FieldType.CHAIN:
+                    self._chain_field_specs.append((name, spec))
+
         # Regex para validar identificadores Synesis: letras Unicode, números, underscore e hífen.
         # \w com re.UNICODE cobre [a-zA-Z0-9_] + qualquer letra/dígito Unicode (ç, ã, é, etc.).
         self._identifier_invalid_re = re.compile(r"[^\w\-]", re.UNICODE)
@@ -743,35 +750,39 @@ class SemanticValidator:
                     )
                 )
 
-        # Para chains, precisa separar códigos de relações
-        field_spec = self.template.field_specs.get("chain")
-        if not field_spec:
-            return
+        # Para chains, precisa separar códigos de relações — iterar todos os campos CHAIN
+        field_values = self._collect_fields(node)
+        for field_name, field_spec in self._chain_field_specs:
+            has_relations = bool(field_spec.relations)
+            raw = field_values.get(field_name)
+            chain_nodes: list[ChainNode] = []
+            if isinstance(raw, ChainNode):
+                chain_nodes = [raw]
+            elif isinstance(raw, list):
+                chain_nodes = [v for v in raw if isinstance(v, ChainNode)]
 
-        has_relations = bool(field_spec.relations)
+            for chain in chain_nodes:
+                elements = [elem.strip() for elem in chain.nodes if elem.strip()]
+                codes: list[str] = []
 
-        for chain in node.chains:
-            elements = [elem.strip() for elem in chain.nodes if elem.strip()]
-            codes = []
+                if has_relations:
+                    # Chain qualificada: códigos nas posições pares (0, 2, 4, ...)
+                    if len(elements) >= 3 and len(elements) % 2 == 1:
+                        codes = [elements[i] for i in range(0, len(elements), 2)]
+                else:
+                    # Chain simples: todos os elementos são códigos
+                    codes = elements
 
-            if has_relations:
-                # Chain qualificada: códigos nas posições pares (0, 2, 4, ...)
-                if len(elements) >= 3 and len(elements) % 2 == 1:
-                    codes = [elements[i] for i in range(0, len(elements), 2)]
-            else:
-                # Chain simples: todos os elementos são códigos
-                codes = elements
-
-            for code in codes:
-                if normalize_code(code, self.norm_cache) not in self.ontology_index:
-                    result.add(
-                        UndefinedCode(
-                            location=location,
-                            code=code,
-                            context="CHAIN",
-                            suggestions=self._suggest_concept(code),
+                for code in codes:
+                    if normalize_code(code, self.norm_cache) not in self.ontology_index:
+                        result.add(
+                            UndefinedCode(
+                                location=location,
+                                code=code,
+                                context="CHAIN",
+                                suggestions=self._suggest_concept(code),
+                            )
                         )
-                    )
 
     def _validate_chain_arity(
         self,
@@ -806,14 +817,20 @@ class SemanticValidator:
         return None
 
     def _validate_chains(self, node: ItemNode, result: ValidationResult) -> None:
-        field_spec = self.template.field_specs.get("chain")
-        if not field_spec:
-            return
-        for chain in node.chains:
-            chain_result = self.validate_chain(chain, field_spec)
-            result.errors.extend(chain_result.errors)
-            result.warnings.extend(chain_result.warnings)
-            result.info.extend(chain_result.info)
+        field_values = self._collect_fields(node)
+        for field_name, field_spec in self._chain_field_specs:
+            raw = field_values.get(field_name)
+            chain_nodes: list[ChainNode] = []
+            if isinstance(raw, ChainNode):
+                chain_nodes = [raw]
+            elif isinstance(raw, list):
+                chain_nodes = [v for v in raw if isinstance(v, ChainNode)]
+
+            for chain in chain_nodes:
+                chain_result = self.validate_chain(chain, field_spec)
+                result.errors.extend(chain_result.errors)
+                result.warnings.extend(chain_result.warnings)
+                result.info.extend(chain_result.info)
 
     def _validate_identifier(
         self,

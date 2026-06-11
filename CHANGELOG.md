@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-06-10
+
+### Changed
+
+- **Campos `TYPE CHAIN` e `TYPE CODE` aceitam qualquer nome de campo** (`synesis/parser/transformer.py`, `synesis/semantic/validator.py`, `synesis/semantic/linker.py`)
+  - Até v0.5.3.3, o compilador exigia que campos `TYPE CHAIN` se chamassem literalmente `chain`/`chains` e campos `TYPE CODE` se chamassem `code`/`codes`. Qualquer outro nome produzia `InvalidFieldType: expected chain, actual str` em todos os ITEMs que usavam o campo.
+  - **Causa raiz:** `transformer.py:field_entry` convertia o valor para `ChainNode` apenas se `_is_chain_field_name(name)` fosse verdadeiro — qualquer outro nome despejava o valor como `str` em `extra_fields`. O validador (passo 6) lia a string e emitia `InvalidFieldType`; o linker (passo 7), que já suportava campos CHAIN genéricos por `spec.type`, rodava tarde demais.
+  - **`transformer.py`**: `field_entry` passa a converter para `ChainNode` por **estrutura** (presença de `->` no valor), não por nome. Nova helper `_lines_contain_chain()` detecta `->` em valores multi-linha. `item_block` roteia `ChainNode` com nome não-canônico para `extra_fields` preservando o tipo.
+  - **`validator.py`**: `__post_init__` pré-indexa `_chain_field_specs` (todos os campos `TYPE CHAIN` do template, análogo ao `_code_field_names` existente). `_validate_codes_defined` e `_validate_chains` iteram sobre `_chain_field_specs` em vez de fixar o literal `field_specs.get("chain")` — validação de arity, relações e `UndefinedCode` funciona para qualquer nome de campo CHAIN.
+  - **`linker.py`**: `_has_chain_relations` itera por tipo (`spec.type == FieldType.CHAIN`) em vez de buscar pelo literal `"chain"`.
+  - **Compatibilidade retroativa total:** campos nomeados `chain`/`code` continuam com comportamento idêntico — as condições novas são superconjuntos das anteriores. Projetos existentes não precisam de nenhuma alteração.
+  - **Validação verificada:** `InvalidChainRelation`, `ChainArityViolation`, `SimpleChainWithRelationsRequired`, `UndefinedCode` em contexto CHAIN — todos funcionam corretamente para campos com nome descritivo (ex: `FIELD causal_chain TYPE CHAIN ... RELATIONS`).
+
 ## [0.5.3.3] - 2026-06-01
 
 ### Changed

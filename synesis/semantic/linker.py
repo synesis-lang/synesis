@@ -320,18 +320,17 @@ class Linker:
 
     def _has_chain_relations(self) -> bool:
         """
-        Verifica se template define RELATIONS para campo chain.
+        Verifica se template define RELATIONS para algum campo CHAIN.
         Se True, chain e qualificada (codigos alternados com relacoes).
         Se False, chain e simples (apenas codigos).
         """
         if not self.template:
             return False
 
-        chain_spec = self.template.field_specs.get("chain")
-        if not chain_spec:
-            return False
-
-        return bool(chain_spec.relations)
+        for spec in self.template.field_specs.values():
+            if spec.type == FieldType.CHAIN and spec.relations:
+                return True
+        return False
 
     def _collect_item_codes(self, item: ItemNode) -> List[str]:
         if not self.template:

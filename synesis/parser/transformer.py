@@ -236,6 +236,15 @@ def _is_chain_field_name(name: str) -> bool:
     return name.lower() in {"chain", "chains"}
 
 
+def _lines_contain_chain(lines: list) -> bool:
+    """Retorna True se alguma linha textual contém '->', indicando sintaxe de chain."""
+    for line in lines:
+        text = str(line) if not isinstance(line, str) else line
+        if "->" in text:
+            return True
+    return False
+
+
 class SynesisTransformer(Transformer):
     def __init__(self, filename: str | Path):
         super().__init__()
@@ -662,6 +671,9 @@ class SynesisTransformer(Transformer):
                 elif isinstance(value, ChainNode):
                     chains.append(value)
                 continue
+            if isinstance(value, ChainNode):
+                _add_field(extra_fields, name, value)
+                continue
             if isinstance(value, CodeListValue):
                 _add_field(extra_fields, name, value.values)
                 if value.locations:
@@ -929,7 +941,7 @@ class SynesisTransformer(Transformer):
             if _is_code_field_name(name):
                 value = _parse_code_lines(self.file_path, lines)
                 return (name, value, location)
-            if _is_chain_field_name(name):
+            if _is_chain_field_name(name) or _lines_contain_chain(lines):
                 value = _parse_chain_lines(self.file_path, lines, location)
                 return (name, value, location)
             text = "\n".join(_line_texts(lines))
@@ -946,13 +958,15 @@ class SynesisTransformer(Transformer):
             if _is_code_field_name(name):
                 value = _parse_code_lines(self.file_path, lines)
                 return (name, value, location)
-            if _is_chain_field_name(name):
+            if _is_chain_field_name(name) or _lines_contain_chain(lines):
                 value = _parse_chain_lines(self.file_path, lines, location)
                 return (name, value, location)
             merged = "\n".join(_line_texts(lines))
             merged = _ensure_non_empty(_dedent_text(merged), location, name)
             return (name, TextBlockValue(text=merged, lines=lines), location)
         if isinstance(value, CodeListValue):
+            return (name, value, location)
+        if isinstance(value, ChainNode):
             return (name, value, location)
         if isinstance(value, (str, Token)):
             token_value = value if isinstance(value, Token) else None
@@ -966,7 +980,7 @@ class SynesisTransformer(Transformer):
                     value = CodeListValue(values=parts, locations=[])
                 else:
                     value = value_str
-            elif lname in {"chain", "chains"} and "->" in value_str:
+            elif "->" in value_str:
                 if isinstance(value, Token):
                     nodes, locations = _split_chain_from_line(self.file_path, value)
                     value = ChainNode(
