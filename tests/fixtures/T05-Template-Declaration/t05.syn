@@ -1,0 +1,9 @@
+# Anotações mínimas para T05 — os erros estão todos no template, não aqui.
+
+SOURCE @autor2024
+    summary: Fonte para testes de erros de declaração de template.
+END SOURCE
+
+ITEM @autor2024
+    citation: Trecho qualquer para permitir compilação e expor erros do template.
+END ITEM

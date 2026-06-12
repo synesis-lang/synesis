@@ -1,6 +1,9 @@
 # AI Context & Instructions
 AI_SESSION.md
 
+# CI logs (local only)
+LOGS/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

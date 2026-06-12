@@ -1,0 +1,28 @@
+# =============================================================================
+# T06_NO_ONTOLOGY_FIELDS.SYNT — Erro 5: template sem ONTOLOGY FIELDS declarado
+# =============================================================================
+# ERRO 5 (ERRO):
+#   O projeto contém blocos ONTOLOGY em t06.syno, mas este template não declara
+#   nenhum bloco ONTOLOGY FIELDS.
+#   Esperado: ERRO "O projeto contém blocos ONTOLOGY, mas o template não declara nenhum campo em ONTOLOGY FIELDS".
+# Para usar: crie um .synp que aponte para este .synt e inclua t06.syno.
+
+TEMPLATE t06_no_ontology_fields
+
+SOURCE FIELDS
+    OPTIONAL summary
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+END ITEM FIELDS
+
+# ONTOLOGY FIELDS ausente intencionalmente — provoca erro 5.
+
+FIELD summary TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD

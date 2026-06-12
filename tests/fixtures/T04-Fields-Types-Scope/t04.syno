@@ -1,0 +1,59 @@
+# Ontologia para T04 — inclui erro 22 (campo REQUIRED ausente em ONTOLOGY)
+# e erro 33 (identificador com caractere inválido).
+
+# Conceito válido — usado em campos do tipo CODE.
+ONTOLOGY Aceitacao_Social
+    definition: Grau de aprovação de uma tecnologia pela comunidade.
+    group: Social
+END ONTOLOGY
+
+# ---------------------------------------------------------------------------
+# ERRO 22 (ERRO — MissingRequiredField):
+#   Campo declarado REQUIRED ausente no bloco ONTOLOGY.
+#   "group" é REQUIRED no template, mas está ausente aqui.
+#   Esperado: ERRO "O campo 'group' é obrigatório neste bloco ONTOLOGY, mas não foi encontrado".
+# ---------------------------------------------------------------------------
+ONTOLOGY Custo_Energia
+    definition: Custo total de instalação e operação de uma tecnologia energética.
+    # "group" ausente — provoca erro 22
+END ONTOLOGY
+
+# ---------------------------------------------------------------------------
+# ERRO 32 (ERRO):
+#   Campo TOPIC recebendo valor com espaços.
+#   "group" é TYPE TOPIC, mas recebe valor com espaço "Economia Energia".
+#   Esperado: ERRO "O valor do campo 'group' contém espaços, o que não é permitido para campos do tipo TOPIC".
+# ---------------------------------------------------------------------------
+ONTOLOGY Barreira_Economica
+    definition: Qualquer fator de natureza econômica que dificulta a adoção de uma tecnologia.
+    group: Economia Energia
+END ONTOLOGY
+
+
+# ---------------------------------------------------------------------------
+# ERRO 33 (ERRO):
+#   Nome de código ou conceito com caracteres inválidos.
+#   "Custo-Alto" usa hífen, que não é permitido em identificadores Synesis.
+#   Esperado: ERRO "O nome Custo-Alto contém o caractere inválido '-'".
+# ---------------------------------------------------------------------------
+ONTOLOGY Custo-Alto
+    definition: Custo elevado que representa barreira de adoção.
+    group: Economia
+END ONTOLOGY
+
+
+# ---------------------------------------------------------------------------
+# ERRO 38 (ERRO — ForbiddenFieldPresent):
+#   Campo CHAIN (SCOPE ITEM) usado em bloco ONTOLOGY.
+#   "citation" tem SCOPE ITEM TYPE QUOTATION, mas aparece aqui em um bloco ONTOLOGY.
+#   (O campo chain_field TYPE CHAIN causaria erro de sintaxe no parser antes de chegar
+#   ao validador semântico, porque o parser não aceita a sintaxe de cadeia dentro de
+#   blocos ONTOLOGY. Usamos "citation" TYPE QUOTATION para testar o mesmo mecanismo
+#   de validação de escopo via campo ITEM em bloco ONTOLOGY.)
+#   Esperado: ERRO "O campo 'citation' é exclusivo de blocos ITEM e não pode ser usado em ONTOLOGY".
+# ---------------------------------------------------------------------------
+ONTOLOGY Fator_Completo
+    definition: Conceito com campo de escopo ITEM usado indevidamente em ONTOLOGY.
+    group: Teste_Escopo
+    citation: Trecho indevido em bloco ONTOLOGY — campo com SCOPE ITEM.
+END ONTOLOGY

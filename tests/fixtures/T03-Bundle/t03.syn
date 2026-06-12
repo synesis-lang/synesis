@@ -1,0 +1,56 @@
+# =============================================================================
+# T03.SYN — Erros de BUNDLE
+# =============================================================================
+
+SOURCE @autor2024
+    summary: Fonte para testes de erros de bundle.
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# ERRO 16 (ERRO — MissingBundleField):
+#   Campo de BUNDLE presente sem o(s) campo(s) parceiro(s).
+#   Apenas "note" está presente; "chain" (parceiro do bundle) está ausente.
+#   Esperado: ERRO "Os campos note, chain formam um pacote indivisível. Faltam: chain".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Bundle parcial — apenas note presente sem chain.
+    note: Este memo não tem cadeia correspondente — violação de bundle.
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 17 (ERRO — BundleCountMismatch):
+#   Contagem de ocorrências de campo1 do bundle diferente de campo2.
+#   "note" aparece 2 vezes, "chain" aparece apenas 1 vez.
+#   Esperado: ERRO "BUNDLE (note, chain) tem contagens diferentes: note=2, chain=1".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Bundle com contagens desiguais entre note e chain.
+    note: Primeiro memo analítico.
+    chain: Custo -> INFLUENCES -> Aceitacao_Social
+    note: Segundo memo sem cadeia correspondente.
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 19 (ERRO — MissingRequiredField, bundle obrigatório):
+#   ITEM sem nenhuma ocorrência do bundle obrigatório note+chain.
+#   Este ITEM não contém nem note nem chain.
+#   Esperado: ERRO "Este bloco ITEM não contém nenhuma ocorrência do pacote de campos obrigatório note, chain".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Este item não tem nenhuma ocorrência do bundle obrigatório note+chain.
+    lone_field: Apenas lone_field presente, sem o bundle note+chain.
+END ITEM
+
+
+# Item válido — para contraste (bundle completo e com contagens iguais).
+# NOTA: ainda vai gerar erro 18 por causa do "lone_field" no template,
+# mas o bundle note+chain em si está correto aqui.
+ITEM @autor2024
+    citation: Item com bundle correto — note e chain presentes e em igual quantidade.
+    note: Memo analítico sobre custo como barreira de adoção.
+    chain: Custo -> INFLUENCES -> Aceitacao_Social
+    lone_field: Campo solo obrigatório (bundle de um campo — erro no template, não aqui).
+END ITEM

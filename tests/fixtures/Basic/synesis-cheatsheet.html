@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Synesis — Cheat Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@300;400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+
+/* ── Tokens ─────────────────────────────── */
+:root {
+  --navy:       #1A3A5C;
+  --slate:      #3D5A7A;
+  --sage:       #4A6741;
+  --terracotta: #8B4A3C;
+  --gold:       #A8905A;
+  --ink:        #1C1C1E;
+  --ink-mid:    #3A3A3C;
+  --ref-mid:    #6B6B70;
+  --doc-light:  #AEAEB2;
+  --paper:      #F7F4EF;
+  --paper-tint: #E5E1DA;
+  --amber:      #C8963A;
+
+  --ff-serif: 'Newsreader', Georgia, serif;
+  --ff-sans:  'IBM Plex Sans', system-ui, sans-serif;
+  --ff-mono:  'IBM Plex Mono', 'Courier New', monospace;
+
+  /* per-file accent */
+  --c-synp: #1A3A5C;
+  --c-synt: #4A6741;
+  --c-bib:  #8B4A3C;
+  --c-syn:  #3D5A7A;
+  --c-syno: #A8905A;
+}
+
+/* ── Reset ──────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--ff-sans);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── Page wrapper ───────────────────────── */
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.4rem 1.6rem 1.2rem;
+}
+
+/* ── Doc header ─────────────────────────── */
+.doc-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--navy);
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.9rem;
+}
+.wordmark {
+  font-family: var(--ff-serif);
+  font-size: 1.4rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+.wordmark span { font-family: var(--ff-mono); color: var(--navy); font-weight: 600; }
+.doc-meta {
+  display: flex; align-items: center; gap: 1.2rem;
+}
+.doc-meta .lbl {
+  font-family: var(--ff-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ref-mid);
+}
+.print-btn {
+  font-family: var(--ff-mono);
+  font-size: 0.7rem;
+  background: var(--navy);
+  color: var(--paper);
+  border: none;
+  padding: 0.35rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: background .2s;
+}
+.print-btn:hover { background: var(--slate); }
+
+/* ── Flow indicator ─────────────────────── */
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--navy);
+  border-radius: 7px;
+  padding: 0.55rem 1rem;
+  margin-bottom: 0.9rem;
+  flex-wrap: wrap;
+}
+.flow-label {
+  font-family: var(--ff-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(247,244,239,0.4);
+  margin-right: 0.9rem;
+  white-space: nowrap;
+}
+.flow-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.3rem 0.65rem;
+  border-radius: 5px;
+  border: 1.5px solid rgba(247,244,239,0.12);
+  cursor: default;
+}
+.flow-node.synp { border-color: rgba(26,58,92,0.7);   background: rgba(26,58,92,0.45); }
+.flow-node.synt { border-color: rgba(74,103,65,0.7);  background: rgba(74,103,65,0.22); }
+.flow-node.bib  { border-color: rgba(139,74,60,0.7);  background: rgba(139,74,60,0.2); }
+.flow-node.syn  { border-color: rgba(61,90,122,0.7);  background: rgba(61,90,122,0.25); }
+.flow-node.syno { border-color: rgba(168,144,90,0.7); background: rgba(168,144,90,0.2); }
+.flow-ext {
+  font-family: var(--ff-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1;
+}
+.flow-name {
+  font-family: var(--ff-sans);
+  font-size: 0.58rem;
+  color: rgba(247,244,239,0.55);
+  margin-top: 2px;
+  text-align: center;
+  line-height: 1.2;
+}
+.flow-arr {
+  font-family: var(--ff-mono);
+  color: rgba(200,150,58,0.55);
+  padding: 0 0.35rem;
+  font-size: 0.85rem;
+}
+.flow-arr.final {
+  color: rgba(200,150,58,0.85);
+  font-size: 1rem;
+  padding: 0 0.5rem;
+}
+.flow-outputs {
+  display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;
+}
+.flow-out {
+  font-family: var(--ff-mono);
+  font-size: 0.6rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 100px;
+  background: rgba(200,150,58,0.14);
+  color: var(--amber);
+  border: 1px solid rgba(200,150,58,0.3);
+  white-space: nowrap;
+}
+
+/* ── Getting started ────────────────────── */
+.start-line {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.45rem 0.7rem;
+  margin-bottom: 0.55rem;
+  border: 1px solid rgba(74,103,65,0.24);
+  border-radius: 7px;
+  background: rgba(74,103,65,0.07);
+}
+.start-line strong {
+  font-size: 0.68rem;
+  color: var(--sage);
+  white-space: nowrap;
+}
+.start-line code {
+  font-family: var(--ff-mono);
+  font-size: 0.7rem;
+  color: var(--navy);
+  background: rgba(26,58,92,0.08);
+  padding: 0.12rem 0.42rem;
+  border-radius: 3px;
+}
+.start-line span {
+  font-size: 0.65rem;
+  color: var(--ref-mid);
+}
+
+/* ── File row — the main structural unit ── */
+.file-row {
+  display: grid;
+  /* label | syntax | rules, notes and frequent errors */
+  grid-template-columns: 120px 1fr 1fr;
+  gap: 0;
+  border: 1.5px solid var(--paper-tint);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 0.55rem;
+}
+
+.file-row + .file-row { /* handled by margin-bottom */ }
+
+/* label column */
+.row-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 0.75rem 0.8rem;
+  border-right: 1.5px solid rgba(0,0,0,0.07);
+}
+.row-label.synp { background: rgba(26,58,92,0.1);   border-right-color: rgba(26,58,92,0.18); }
+.row-label.synt { background: rgba(74,103,65,0.1);  border-right-color: rgba(74,103,65,0.18); }
+.row-label.bib  { background: rgba(139,74,60,0.08); border-right-color: rgba(139,74,60,0.18); }
+.row-label.syn  { background: rgba(61,90,122,0.1);  border-right-color: rgba(61,90,122,0.18); }
+.row-label.syno { background: rgba(168,144,90,0.1); border-right-color: rgba(168,144,90,0.18); }
+
+.row-ext {
+  font-family: var(--ff-mono);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 0.2rem;
+}
+.synp .row-ext { color: var(--c-synp); }
+.synt .row-ext { color: var(--c-synt); }
+.bib  .row-ext { color: var(--c-bib);  }
+.syn  .row-ext { color: var(--c-syn);  }
+.syno .row-ext { color: var(--c-syno); }
+
+.row-role {
+  font-family: var(--ff-sans);
+  font-size: 0.62rem;
+  color: var(--ref-mid);
+  line-height: 1.3;
+  font-weight: 400;
+}
+.row-purpose {
+  margin-top: 0.45rem;
+  font-family: var(--ff-sans);
+  font-size: 0.6rem;
+  line-height: 1.4;
+  color: var(--doc-light);
+  font-style: italic;
+}
+
+/* content columns */
+.row-col {
+  padding: 0.65rem 0.75rem;
+  border-right: 1px solid var(--paper-tint);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.row-col:last-child { border-right: none; }
+
+/* col header */
+.col-hd {
+  font-family: var(--ff-sans);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--doc-light);
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--paper-tint);
+  margin-bottom: 0.1rem;
+}
+
+/* ── Code blocks ─────────────────────────── */
+.cb {
+  font-family: var(--ff-mono);
+  font-size: 0.68rem;
+  line-height: 1.55;
+  background: #1e2530;
+  color: #c8d6e5;
+  border-radius: 5px;
+  padding: 0.5rem 0.6rem;
+  white-space: pre;
+  overflow-x: auto;
+}
+/* tokens */
+.kw  { color: #C8963A; font-weight: 500; }
+.ref { color: #7BB8E8; }
+.str { color: #7EC8A0; }
+.val { color: #E5C07B; }
+.cmt { color: #5c7088; font-style: italic; }
+.op  { color: rgba(229,225,218,0.45); }
+.dim { color: #4a5568; }
+.hl  { color: #E06C75; }
+.ok  { color: #7EC8A0; }
+
+/* ── Mini table ─────────────────────────── */
+.mt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.66rem;
+}
+.mt th {
+  font-family: var(--ff-sans);
+  font-weight: 600;
+  font-size: 0.58rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ref-mid);
+  text-align: left;
+  padding: 0.12rem 0.3rem 0.2rem;
+  border-bottom: 1px solid var(--paper-tint);
+}
+.mt td {
+  font-family: var(--ff-mono);
+  font-size: 0.64rem;
+  padding: 0.18rem 0.3rem;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(229,225,218,0.5);
+  color: var(--ink-mid);
+  line-height: 1.4;
+}
+.mt td:first-child { white-space: nowrap; font-weight: 500; }
+.mt tr:last-child td { border-bottom: none; }
+.mt td.prose { font-family: var(--ff-sans); font-size: 0.63rem; }
+
+/* ── Note ───────────────────────────────── */
+.note {
+  font-family: var(--ff-sans);
+  font-size: 0.63rem;
+  line-height: 1.5;
+  color: var(--ref-mid);
+  background: rgba(26,58,92,0.04);
+  border-left: 2px solid var(--amber);
+  padding: 0.3rem 0.5rem;
+  border-radius: 0 4px 4px 0;
+}
+.note strong { color: var(--ink); font-weight: 600; }
+.note code {
+  font-family: var(--ff-mono);
+  font-size: 0.85em;
+  color: var(--navy);
+  background: rgba(26,58,92,0.08);
+  padding: 0.05em 0.28em;
+  border-radius: 3px;
+}
+
+/* ── Pill ───────────────────────────────── */
+.pill {
+  display: inline-block;
+  font-family: var(--ff-mono);
+  font-size: 0.58rem;
+  padding: 0.08rem 0.38rem;
+  border-radius: 100px;
+  border: 1px solid rgba(26,58,92,0.2);
+  background: rgba(26,58,92,0.06);
+  color: var(--navy);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.pill.sage { border-color: rgba(74,103,65,0.3); background: rgba(74,103,65,0.08); color: var(--c-synt); }
+.pill.terr { border-color: rgba(139,74,60,0.3); background: rgba(139,74,60,0.08); color: var(--c-bib); }
+.pill.gold { border-color: rgba(168,144,90,0.3); background: rgba(168,144,90,0.08); color: var(--c-syno); }
+.pill.err  { border-color: rgba(224,108,117,0.3); background: rgba(224,108,117,0.06); color: #c0404a; }
+.pill.warn { border-color: rgba(229,192,123,0.3); background: rgba(229,192,123,0.06); color: #917220; }
+
+/* ── Errors section ─────────────────────── */
+.err-row { display: flex; align-items: baseline; gap: 0.4rem; padding: 0.18rem 0; border-bottom: 1px solid rgba(229,225,218,0.5); flex-wrap: wrap; }
+.err-row:last-child { border-bottom: none; }
+.err-num  { font-family: var(--ff-mono); font-size: 0.6rem; color: var(--doc-light); min-width: 38px; }
+.err-lvl  { flex-shrink: 0; }
+.err-msg  { font-family: var(--ff-mono); font-size: 0.62rem; color: var(--ink-mid); flex: 1; min-width: 80px; }
+.err-fix  { font-family: var(--ff-sans); font-size: 0.58rem; color: var(--doc-light); }
+
+.error-block {
+  margin-top: 0.25rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--paper-tint);
+  border-radius: 5px;
+  background: rgba(255,255,255,0.32);
+}
+
+/* ── Export example ─────────────────────── */
+.export-example {
+  border: 1.5px solid var(--paper-tint);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  margin-top: 0.55rem;
+  margin-bottom: 0.55rem;
+  background: rgba(74,103,65,0.045);
+}
+
+/* ── Connection diagram ─────────────────── */
+.diagram-block {
+  border: 1.5px solid var(--paper-tint);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  margin-top: 0.55rem;
+  margin-bottom: 0.55rem;
+  background: rgba(26,58,92,0.035);
+}
+.diagram-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-top: 0.35rem;
+}
+.diagram-node { fill: #fff; stroke-width: 1.5; rx: 7; }
+.diagram-file { font-family: var(--ff-mono); font-size: 12px; font-weight: 600; }
+.diagram-detail { font-family: var(--ff-sans); font-size: 11px; fill: var(--ink-mid); }
+.diagram-edge { stroke: var(--slate); stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+.diagram-label { font-family: var(--ff-mono); font-size: 10px; fill: var(--slate); }
+.mermaid-source {
+  margin-top: 0.45rem;
+}
+.mermaid-source summary {
+  cursor: pointer;
+  font-family: var(--ff-mono);
+  font-size: 0.62rem;
+  color: var(--navy);
+}
+.mermaid-source .cb { margin-top: 0.35rem; }
+
+/* ── Section divider (inside a row-col) ─── */
+.divider {
+  border: none;
+  border-top: 1px solid var(--paper-tint);
+  margin: 0.1rem 0;
+}
+
+/* ── Workflow strip ─────────────────────── */
+.workflow {
+  background: var(--navy);
+  border-radius: 7px;
+  padding: 0.55rem 1rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-top: 0.55rem;
+  margin-bottom: 0.5rem;
+}
+.wf-lbl {
+  font-family: var(--ff-mono);
+  font-size: 0.58rem;
+  color: rgba(247,244,239,0.38);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-right: 0.8rem;
+}
+.wf-step { display: flex; align-items: center; gap: 0.25rem; }
+.wf-n   { font-family: var(--ff-mono); font-size: 0.58rem; color: var(--amber); opacity: .8; }
+.wf-t   { font-family: var(--ff-sans); font-size: 0.65rem; color: rgba(247,244,239,0.8); }
+.wf-cmd { font-family: var(--ff-mono); font-size: 0.65rem; color: #7EC8A0; background: rgba(126,200,160,0.1); padding: 0.08rem 0.38rem; border-radius: 3px; }
+.wf-arr { font-family: var(--ff-mono); color: rgba(200,150,58,0.38); padding: 0 0.45rem; font-size: 0.85rem; }
+.wf-out { font-family: var(--ff-sans); font-size: 0.65rem; color: rgba(126,200,160,0.9); }
+
+/* ── Doc footer ─────────────────────────── */
+.doc-footer {
+  border-top: 1px solid var(--paper-tint);
+  padding-top: 0.45rem;
+  display: flex;
+  justify-content: space-between;
+}
+.doc-footer span {
+  font-family: var(--ff-mono);
+  font-size: 0.6rem;
+  color: var(--doc-light);
+}
+
+/* ── Print ──────────────────────────────── */
+@media print {
+  @page { size: A4 landscape; margin: 8mm 9mm 7mm 9mm; }
+  body { font-size: 11px; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-btn { display: none; }
+  .page { padding: 0; max-width: 100%; }
+  .file-row { break-inside: auto; }
+  .row-label { break-inside: avoid; }
+  .row-col { min-width: 0; }
+  .cb { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: visible; }
+  .error-block, .note { break-inside: avoid; }
+  .start-line, .diagram-block { break-inside: avoid; }
+  .export-example { break-inside: avoid; }
+  .flow, .workflow { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cb   { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .row-label { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ── Header ──────────────────────────── -->
+<div class="doc-header">
+  <div class="wordmark"><span>s</span>ynesis &nbsp;<span style="font-family:var(--ff-sans);font-size:0.75rem;font-weight:300;color:var(--ref-mid);letter-spacing:0">Cheat Sheet</span></div>
+  <div class="doc-meta">
+    <span class="lbl">Basic · pt-BR</span>
+    <button class="print-btn" onclick="window.print()">⎙ Imprimir / PDF</button>
+  </div>
+</div>
+
+<!-- ── Getting started ─────────────────── -->
+<div class="start-line">
+  <strong>Comece aqui</strong>
+  <code>synesis init</code>
+  <span>Execute em uma pasta vazia para criar <code>project.synp</code>, <code>template.synt</code>, <code>references.bib</code>, <code>annotations.syn</code> e <code>ontology.syno</code>.</span>
+</div>
+
+<!-- ── Flow indicator ──────────────────── -->
+<div class="flow">
+  <span class="flow-label">Arquivos e saídas</span>
+  <div class="flow-node synp"><span class="flow-ext">.synp</span><span class="flow-name">Projeto</span></div>
+  <span class="flow-arr">→</span>
+  <div class="flow-node synt"><span class="flow-ext">.synt</span><span class="flow-name">Template</span></div>
+  <span class="flow-arr">→</span>
+  <div class="flow-node bib"><span class="flow-ext">.bib</span><span class="flow-name">Referências</span></div>
+  <span class="flow-arr">→</span>
+  <div class="flow-node syn"><span class="flow-ext">.syn</span><span class="flow-name">Anotações</span></div>
+  <span class="flow-arr">→</span>
+  <div class="flow-node syno"><span class="flow-ext">.syno</span><span class="flow-name">Ontologia</span></div>
+  <span class="flow-arr final">⟹</span>
+  <div class="flow-outputs">
+    <span class="flow-out">JSON</span>
+    <span class="flow-out">CSV</span>
+    <span class="flow-out">Excel</span>
+    <span class="flow-out">Alpaca JSONL</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     ROW 1 — .synp
+════════════════════════════════════════ -->
+<div class="file-row">
+  <div class="row-label synp">
+    <span class="row-ext">.synp</span>
+    <span class="row-role">Arquivo de Projeto</span>
+    <span class="row-purpose">Ponto de entrada único do compilador. Declara todos os outros arquivos.</span>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Sintaxe</div>
+    <div class="cb"><span class="kw">PROJECT</span> demo
+
+  <span class="kw">TEMPLATE</span>  <span class="str">"template.synt"</span>
+
+  <span class="kw">INCLUDE BIBLIOGRAPHY</span> <span class="str">"references.bib"</span>
+
+  <span class="kw">INCLUDE ANNOTATIONS</span>  <span class="str">"annotations.syn"</span>
+
+  <span class="kw">INCLUDE ONTOLOGY</span>     <span class="str">"ontology.syno"</span>
+
+<span class="kw">END PROJECT</span></div>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Regras</div>
+    <table class="mt">
+      <tr><td style="color:var(--c-synp)">TEMPLATE</td><td class="prose">Obrigatório. Exatamente um arquivo .synt</td></tr>
+      <tr><td style="color:var(--c-synp)">BIBLIOGRAPHY</td><td class="prose">Use um arquivo .bib. A implementação atual carrega o primeiro INCLUDE</td></tr>
+      <tr><td style="color:var(--c-synp)">ANNOTATIONS</td><td class="prose">Um INCLUDE por arquivo .syn. Ordem não importa</td></tr>
+      <tr><td style="color:var(--c-synp)">ONTOLOGY</td><td class="prose">Um INCLUDE por arquivo .syno. A ontologia define os códigos válidos</td></tr>
+      <tr><td style="color:var(--c-synp)">METADATA</td><td class="prose">Bloco opcional. Campos: version, author, created, modified, dataset</td></tr>
+    </table>
+    <div class="col-hd" style="margin-top:0.4rem">CLI</div>
+    <div class="cb"><span class="ok">synesis check</span>   project.synp
+<span class="ok">synesis compile</span> project.synp \
+        --json basic_out.json
+
+<span class="ok">synesis compile</span> project.synp \
+        --csv out/ --xls out.xlsx</div>
+    <div class="col-hd">Erros frequentes</div>
+    <div class="error-block">
+    <div class="err-row">
+      <span class="err-num">E065</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">TEMPLATE não declarado</span>
+      <span class="err-fix">Adicione TEMPLATE "…"</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E061</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Anotações sem INCLUDE</span>
+      <span class="err-fix">Adicione INCLUDE ANNOTATIONS</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E062</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Ontologia sem INCLUDE</span>
+      <span class="err-fix">Adicione INCLUDE ONTOLOGY</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E066</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Bloco PROJECT duplicado</span>
+      <span class="err-fix">Mantenha somente um PROJECT</span>
+    </div>
+    </div>
+    <div class="note" style="margin-top:0.35rem">
+      <strong>Invariante:</strong> saídas (JSON, CSV, Excel) geradas somente se <strong>zero ERROs</strong>. AVISOs não bloqueiam. Compilação sempre determinística.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     ROW 2 — .synt
+════════════════════════════════════════ -->
+<div class="file-row">
+  <div class="row-label synt">
+    <span class="row-ext">.synt</span>
+    <span class="row-role">Template / Contrato</span>
+    <span class="row-purpose">Define quais campos existem, seus tipos e se são obrigatórios. É a única fonte da verdade.</span>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Sintaxe — FIELDS e FIELD</div>
+    <div class="cb"><span class="kw">SOURCE FIELDS</span>
+  <span class="kw">OPTIONAL</span> description
+<span class="kw">END SOURCE FIELDS</span>
+
+<span class="kw">ITEM FIELDS</span>
+  <span class="kw">REQUIRED</span> citation, note, code
+<span class="kw">END ITEM FIELDS</span>
+
+<span class="kw">ONTOLOGY FIELDS</span>
+  <span class="kw">REQUIRED</span> definition, group
+<span class="kw">END ONTOLOGY FIELDS</span>
+
+<span class="kw">FIELD</span> citation <span class="kw">TYPE</span> <span class="val">QUOTATION</span>
+  <span class="kw">SCOPE</span> <span class="val">ITEM</span>
+  <span class="kw">DESCRIPTION</span> Excerto textual da fonte
+  <span class="kw">GUIDELINES</span>
+    Extraia um excerto completo e autocontido.
+    Preserve a redação original. Não parafraseie.
+  <span class="kw">END GUIDELINES</span>
+<span class="kw">END FIELD</span>
+
+<span class="kw">FIELD</span> code <span class="kw">TYPE</span> <span class="val">CODE</span>
+  <span class="kw">SCOPE</span> <span class="val">ITEM</span>
+  <span class="kw">GUIDELINES</span>
+    Use códigos existentes na ontologia.
+    Evite sinônimos redundantes.
+  <span class="kw">END GUIDELINES</span>
+<span class="kw">END FIELD</span></div>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Tipos de campo (TYPE)</div>
+    <table class="mt">
+      <thead><tr><th>TYPE</th><th>Escopo</th><th>Notas obrigatórias</th></tr></thead>
+      <tr><td>QUOTATION</td><td>ITEM</td><td class="prose">Excerto da fonte</td></tr>
+      <tr><td>MEMO</td><td>ITEM</td><td class="prose">Nota analítica do pesquisador</td></tr>
+      <tr><td>CODE</td><td>ITEM</td><td class="prose">Deve existir na ontologia</td></tr>
+      <tr><td>CHAIN</td><td>ITEM</td><td class="prose">Avançado: exige ARITY. RELATIONS opcional</td></tr>
+      <tr><td>TEXT</td><td>qualquer</td><td class="prose">Texto livre genérico</td></tr>
+      <tr><td>DATE</td><td>SOURCE</td><td class="prose">Formato YYYY-MM-DD</td></tr>
+      <tr><td>SCALE</td><td>qualquer</td><td class="prose">Exige FORMAT [min..max]</td></tr>
+      <tr><td>ENUMERATED</td><td>qualquer</td><td class="prose">Exige VALUES. Lista fechada sem ordem</td></tr>
+      <tr><td>ORDERED</td><td>qualquer</td><td class="prose">Exige VALUES com índice [1] [2]…</td></tr>
+      <tr><td>TOPIC</td><td>ONTOLOGY</td><td class="prose">Agrupamento dinâmico, valor aberto</td></tr>
+    </table>
+    <div class="col-hd" style="margin-top:0.4rem">Contrato e instruções</div>
+    <table class="mt">
+      <tr><td>REQUIRED</td><td class="prose">Obrigatório — erro se ausente no bloco</td></tr>
+      <tr><td>OPTIONAL</td><td class="prose">Pode ser omitido</td></tr>
+      <tr><td>GUIDELINES</td><td class="prose">Instruções livres para anotadores e IA. O compilador exporta, mas não interpreta</td></tr>
+      <tr><td>REQUIRED BUNDLE</td><td class="prose">Avançado: campos co-ocorrem em igual quantidade</td></tr>
+    </table>
+    <div class="col-hd">Erros frequentes</div>
+    <div class="error-block">
+    <div class="err-row">
+      <span class="err-num">E047</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">CHAIN sem ARITY</span>
+      <span class="err-fix">Adicione ARITY >= 2</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E039</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Campo em FIELDS sem bloco FIELD</span>
+      <span class="err-fix">Crie o bloco FIELD correspondente</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E042</span><span class="err-lvl"><span class="pill warn">AVISO</span></span>
+      <span class="err-msg">FIELD definido mas não em FIELDS</span>
+      <span class="err-fix">Adicione ao bloco *FIELDS ou remova</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E049</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">ORDERED sem VALUES</span>
+      <span class="err-fix">Adicione bloco VALUES com índices</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E051</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">SCALE sem FORMAT</span>
+      <span class="err-fix">Adicione FORMAT [min..max]</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E069</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Campo definido duas vezes</span>
+      <span class="err-fix">Remova definição duplicada</span>
+    </div>
+    </div>
+    <div class="note" style="margin-top:0.35rem">
+      <strong>Projeto Basic:</strong> usa somente TEXT, QUOTATION, MEMO, CODE e TOPIC. CHAIN, BUNDLE, VALUES e FORMAT são extensões opcionais para templates mais avançados.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     ROW 3 — .bib
+════════════════════════════════════════ -->
+<div class="file-row">
+  <div class="row-label bib">
+    <span class="row-ext">.bib</span>
+    <span class="row-role">Referências BibTeX</span>
+    <span class="row-purpose">Cada @bibref usado em .syn deve existir aqui como chave BibTeX.</span>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Sintaxe mínima</div>
+    <div class="cb"><span class="cmt"># A chave é o @bibref dos blocos SOURCE</span>
+@article{<span class="val">smith2024</span>,
+  author  = {<span class="str">Smith, Jane</span>},
+  title   = {<span class="str">Understanding Community Resilience</span>},
+  journal = {<span class="str">Journal of Social Research</span>},
+  year    = {<span class="val">2024</span>},
+  volume  = {<span class="val">12</span>},
+  pages   = {<span class="val">45--67</span>}
+}</div>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Regras</div>
+    <table class="mt">
+      <tr><td style="color:var(--c-bib)">Chave</td><td class="prose">Case-insensitive. O compilador normaliza para minúsculas internamente</td></tr>
+      <tr><td style="color:var(--c-bib)">@bibref</td><td class="prose">O identificador usado no SOURCE e ITEM deve bater exatamente com esta chave (após normalização)</td></tr>
+      <tr><td style="color:var(--c-bib)">Tipos BibTeX</td><td class="prose">article, book, inproceedings, misc, etc. O compilador aceita qualquer tipo válido</td></tr>
+      <tr><td style="color:var(--c-bib)">Arquivo ativo</td><td class="prose">Use um único INCLUDE BIBLIOGRAPHY. A implementação atual lê o primeiro .bib declarado</td></tr>
+    </table>
+    <div class="note" style="margin-top:0.35rem">
+      O compilador usa <code>bibtexparser</code> para leitura. O campo <code>_original_key</code> preserva a grafia original para uso nos exports, mesmo após normalização.
+    </div>
+    <div class="col-hd">Erros frequentes</div>
+    <div class="error-block">
+    <div class="err-row">
+      <span class="err-num">E001</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">@bibref do SOURCE não existe no .bib</span>
+      <span class="err-fix">Adicione entrada BibTeX com a chave</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E063</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Arquivo .bib não encontrado</span>
+      <span class="err-fix">Verifique o caminho no .synp</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E070</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">@bibref duplicado em SOURCEs</span>
+      <span class="err-fix">Mantenha somente um SOURCE por @bibref no projeto</span>
+    </div>
+    </div>
+    <div class="note" style="margin-top:0.35rem">
+      <strong>smith2024</strong>, <strong>Smith2024</strong> e <strong>SMITH2024</strong> são tratados como a mesma chave. Use uma grafia consistente para evitar confusão.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     ROW 4 — .syn
+════════════════════════════════════════ -->
+<div class="file-row">
+  <div class="row-label syn">
+    <span class="row-ext">.syn</span>
+    <span class="row-role">Anotações</span>
+    <span class="row-purpose">SOURCE declara a fonte. ITEM contém os recortes analíticos. Um SOURCE pode ter vários ITEMs.</span>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Bloco SOURCE</div>
+    <div class="cb"><span class="kw">SOURCE</span> <span class="ref">@smith2024</span>
+  description: Qualitative study on community
+               resilience strategies in urban contexts.
+<span class="kw">END SOURCE</span>
+</div>
+    <div class="col-hd" style="margin-top:0.4rem">Bloco ITEM — projeto Basic</div>
+    <div class="cb"><span class="kw">ITEM</span> <span class="ref">@smith2024</span>
+  citation: <span class="str">"People here look out for each other.</span>
+  <span class="str">          When the flood came, nobody waited</span>
+  <span class="str">          for official help — neighbors just</span>
+  <span class="str">          organized themselves."</span>
+
+  note: Participant describes spontaneous
+        collective action as a resilience mechanism.
+
+  code: Social_Cohesion, Collective_Action
+<span class="kw">END ITEM</span></div>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Campos do ITEM básico</div>
+    <table class="mt">
+      <tr><td>citation</td><td class="prose">Excerto literal e autocontido da fonte</td></tr>
+      <tr><td>note</td><td class="prose">Interpretação analítica distinta da citação</td></tr>
+      <tr><td>code</td><td class="prose">Um ou mais conceitos existentes na ontologia</td></tr>
+    </table>
+    <div class="col-hd" style="margin-top:0.4rem">Múltiplos codes</div>
+    <div class="cb"><span class="cmt"># Formas equivalentes:</span>
+code: Conceito_A, Conceito_B   <span class="cmt">← vírgula</span>
+code: Conceito_A               <span class="cmt">← linhas</span>
+code: Conceito_B               <span class="cmt">    separadas</span></div>
+    <div class="note" style="margin-top:0.35rem">
+      <strong>Linkagem:</strong> a relação ITEM → SOURCE é estabelecida pelo compilador via @bibref compartilhado — não por aninhamento. SOURCE e ITEM podem estar em arquivos .syn diferentes.
+    </div>
+    <div class="col-hd">Erros frequentes</div>
+    <div class="error-block">
+    <div class="err-row">
+      <span class="err-num">E002</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">ITEM sem SOURCE correspondente</span>
+      <span class="err-fix">Crie um SOURCE @bibref incluído no projeto</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E004</span><span class="err-lvl"><span class="pill warn">AVISO</span></span>
+      <span class="err-msg">Código não definido na ontologia</span>
+      <span class="err-fix">Adicione ONTOLOGY no .syno</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E020</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Campo REQUIRED ausente</span>
+      <span class="err-fix">Ver REQUIRED no .synt</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E023</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Bloco ITEM vazio</span>
+      <span class="err-fix">Adicione pelo menos um campo</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E022</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Campo desconhecido no bloco</span>
+      <span class="err-fix">Defina FIELD no .synt ou corrija o nome</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E003</span><span class="err-lvl"><span class="pill warn">AVISO</span></span>
+      <span class="err-msg">SOURCE sem ITEMs</span>
+      <span class="err-fix">Adicione pelo menos um ITEM</span>
+    </div>
+    </div>
+    <div class="note" style="margin-top:0.35rem">
+      Keywords case-insensitive: <code>SOURCE</code>, <code>source</code> e <code>Source</code> são equivalentes.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     ROW 5 — .syno
+════════════════════════════════════════ -->
+<div class="file-row">
+  <div class="row-label syno">
+    <span class="row-ext">.syno</span>
+    <span class="row-role">Ontologia</span>
+    <span class="row-purpose">Define o vocabulário controlado. Todo code: usado nas anotações deve existir aqui.</span>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Bloco ONTOLOGY</div>
+    <div class="cb"><span class="kw">ONTOLOGY</span> <span class="val">Social_Cohesion</span>
+  definition: The degree to which community members
+              trust, support, and cooperate with one another.
+  group: Community_Resilience
+<span class="kw">END ONTOLOGY</span>
+
+<span class="kw">ONTOLOGY</span> <span class="val">Collective_Action</span>
+  definition: Coordinated efforts by community members
+              to address shared challenges.
+  group: Community_Resilience
+<span class="kw">END ONTOLOGY</span></div>
+  </div>
+
+  <div class="row-col">
+    <div class="col-hd">Regras de nomenclatura e GROUP</div>
+    <table class="mt">
+      <tr><td style="color:var(--c-syno)">Espaços</td><td class="prose">Proibidos no nome do conceito. Use _ como separador: <strong>Solar_Energy</strong></td></tr>
+      <tr><td style="color:var(--c-syno)">group</td><td class="prose">Campo TYPE TOPIC: valor aberto, sem aspas e sem espaços</td></tr>
+      <tr><td style="color:var(--c-syno)">Cypher-safe</td><td class="prose">Nomes compatíveis com Neo4j por convenção</td></tr>
+      <tr><td style="color:var(--c-syno)">Duplicatas</td><td class="prose">Mesmo conceito definido 2× → E068</td></tr>
+    </table>
+    <div class="col-hd" style="margin-top:0.4rem">Agrupamento via TYPE TOPIC</div>
+    <div class="cb"><span class="cmt"># group usa TYPE TOPIC no template</span>
+<span class="kw">ONTOLOGY</span> <span class="val">Social_Cohesion</span>
+  group: <span class="str">Community_Resilience</span>
+<span class="kw">END ONTOLOGY</span>
+
+<span class="kw">ONTOLOGY</span> <span class="val">Collective_Action</span>
+  group: <span class="str">Community_Resilience</span>
+<span class="kw">END ONTOLOGY</span>
+<span class="cmt"># Ambos aparecem no mesmo agrupamento temático</span></div>
+    <div class="col-hd">Erros frequentes</div>
+    <div class="error-block">
+    <div class="err-row">
+      <span class="err-num">E004</span><span class="err-lvl"><span class="pill warn">AVISO</span></span>
+      <span class="err-msg">code: usa conceito inexistente</span>
+      <span class="err-fix">Adicione ONTOLOGY conceito aqui</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E032</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Valor TOPIC com espaço</span>
+      <span class="err-fix">Use _ em vez de espaço no valor</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E068</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Conceito definido duas vezes</span>
+      <span class="err-fix">Remova a definição duplicada</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">W071</span><span class="err-lvl"><span class="pill warn">AVISO</span></span>
+      <span class="err-msg">definition duplicada entre conceitos</span>
+      <span class="err-fix">Revise se conceitos são realmente distintos</span>
+    </div>
+    <div class="err-row">
+      <span class="err-num">E005</span><span class="err-lvl"><span class="pill err">ERRO</span></span>
+      <span class="err-msg">Projeto inclui .syno mas template sem ONTOLOGY FIELDS</span>
+      <span class="err-fix">Adicione ONTOLOGY FIELDS no .synt</span>
+    </div>
+    </div>
+    <div class="note" style="margin-top:0.35rem">
+      <strong>Dependência crítica:</strong> todo <code>code:</code> do projeto Basic deve existir como <code>ONTOLOGY nome</code> aqui. Em templates avançados, referências em <code>chain:</code> seguem a mesma regra.
+    </div>
+  </div>
+</div>
+
+<!-- ── Connections diagram ─────────────── -->
+<div class="diagram-block">
+  <div class="col-hd">Como os arquivos e blocos se conectam</div>
+  <svg class="diagram-svg" viewBox="0 0 1020 190" role="img" aria-label="Diagrama de conexões entre BibTeX, SOURCE, ITEM, CODE, ONTOLOGY e TOPIC">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#3D5A7A"></path>
+      </marker>
+    </defs>
+
+    <rect class="diagram-node" x="15" y="55" width="170" height="72" stroke="#8B4A3C"></rect>
+    <text class="diagram-file" x="30" y="79" fill="#8B4A3C">references.bib</text>
+    <text class="diagram-detail" x="30" y="101">@article{smith2024, ...}</text>
+
+    <rect class="diagram-node" x="225" y="55" width="170" height="72" stroke="#3D5A7A"></rect>
+    <text class="diagram-file" x="240" y="79" fill="#3D5A7A">SOURCE @smith2024</text>
+    <text class="diagram-detail" x="240" y="101">description: ...</text>
+
+    <rect class="diagram-node" x="435" y="55" width="150" height="72" stroke="#3D5A7A"></rect>
+    <text class="diagram-file" x="450" y="79" fill="#3D5A7A">ITEM @smith2024</text>
+    <text class="diagram-detail" x="450" y="101">citation, note, code</text>
+
+    <rect class="diagram-node" x="625" y="55" width="175" height="72" stroke="#A8905A"></rect>
+    <text class="diagram-file" x="640" y="79" fill="#A8905A">ONTOLOGY conceito</text>
+    <text class="diagram-detail" x="640" y="101">definition, group</text>
+
+    <rect class="diagram-node" x="840" y="55" width="165" height="72" stroke="#4A6741"></rect>
+    <text class="diagram-file" x="855" y="79" fill="#4A6741">TOPIC / group</text>
+    <text class="diagram-detail" x="855" y="101">Community_Resilience</text>
+
+    <path class="diagram-edge" d="M 185 91 L 225 91"></path>
+    <text class="diagram-label" x="188" y="145">chave BibTeX</text>
+
+    <path class="diagram-edge" d="M 395 91 L 435 91"></path>
+    <text class="diagram-label" x="401" y="145">@bibref</text>
+
+    <path class="diagram-edge" d="M 585 91 L 625 91"></path>
+    <text class="diagram-label" x="591" y="145">code:</text>
+
+    <path class="diagram-edge" d="M 800 91 L 840 91"></path>
+    <text class="diagram-label" x="805" y="145">group:</text>
+  </svg>
+  <div class="note">
+    <strong>Leitura:</strong> a chave BibTeX liga a referência ao <code>SOURCE</code>; o mesmo <code>@bibref</code> liga cada <code>ITEM</code> ao <code>SOURCE</code>; cada valor de <code>code:</code> aponta para um bloco <code>ONTOLOGY</code>; e o campo <code>group</code>, declarado como <code>TYPE TOPIC</code>, reúne conceitos no mesmo tema.
+  </div>
+  <details class="mermaid-source">
+    <summary>Ver código Mermaid</summary>
+    <div class="cb">flowchart LR
+  B["references.bib&lt;br/&gt;@article{smith2024}"]
+  S["SOURCE @smith2024"]
+  I["ITEM @smith2024"]
+  O["ONTOLOGY conceito"]
+  T["TOPIC / group&lt;br/&gt;Community_Resilience"]
+
+  B -- "chave BibTeX" --&gt; S
+  S -- "@bibref" --&gt; I
+  I -- "code:" --&gt; O
+  O -- "group: TYPE TOPIC" --&gt; T</div>
+  </details>
+</div>
+
+<!-- ── Workflow strip ──────────────────── -->
+<div class="workflow">
+  <span class="wf-lbl">Workflow</span>
+  <div class="wf-step"><span class="wf-n">01</span><span class="wf-t">Criar</span>&nbsp;<span class="pill" style="font-size:0.58rem;">.synp</span></div>
+  <span class="wf-arr">→</span>
+  <div class="wf-step"><span class="wf-n">02</span><span class="wf-t">Definir contrato</span>&nbsp;<span class="pill sage" style="font-size:0.58rem;">.synt</span></div>
+  <span class="wf-arr">→</span>
+  <div class="wf-step"><span class="wf-n">03</span><span class="wf-t">Preparar referências</span>&nbsp;<span class="pill terr" style="font-size:0.58rem;">.bib</span></div>
+  <span class="wf-arr">→</span>
+  <div class="wf-step"><span class="wf-n">04</span><span class="wf-t">Anotar dados</span>&nbsp;<span class="pill" style="font-size:0.58rem;">.syn</span></div>
+  <span class="wf-arr">→</span>
+  <div class="wf-step"><span class="wf-n">05</span><span class="wf-t">Definir conceitos</span>&nbsp;<span class="pill gold" style="font-size:0.58rem;">.syno</span></div>
+  <span class="wf-arr">→</span>
+  <div class="wf-step"><span class="wf-n">06</span><span class="wf-cmd">synesis check project.synp</span></div>
+  <span class="wf-arr">→</span>
+  <div class="wf-step"><span class="wf-n">07</span><span class="wf-cmd">synesis compile project.synp --json basic_out.json</span></div>
+  <span class="wf-arr" style="color:rgba(126,200,160,0.45)">→</span>
+  <div class="wf-step"><span class="wf-out">JSON · CSV · Excel · Alpaca JSONL</span></div>
+</div>
+
+<!-- ── Export example ──────────────────── -->
+<div class="export-example">
+  <div class="col-hd">Exportação do projeto Basic</div>
+  <div class="cb"><span class="cmt"># JSON canônico v3.0</span>
+<span class="ok">synesis compile</span> project.synp --json basic_out.json
+
+<span class="cmt"># Dataset Alpaca JSONL para fine-tuning</span>
+<span class="ok">synesis compile</span> project.synp --alpaca basic_alpaca.jsonl
+
+<span class="cmt"># Os dois artefatos podem ser gerados na mesma execução</span>
+<span class="ok">synesis compile</span> project.synp \
+        --json basic_out.json \
+        --alpaca basic_alpaca.jsonl</div>
+  <div class="note" style="margin-top:0.35rem">
+    Execute os comandos dentro de <code>case-studies/Basic</code>. O JSON preserva o projeto compilado; o arquivo Alpaca contém pares de instrução e resposta derivados dos dados validados.
+  </div>
+</div>
+
+<!-- ── Footer ─────────────────────────── -->
+<div class="doc-footer">
+  <span>Synesis Language · Cheat Sheet · projeto Basic</span>
+  <span>Keywords case-insensitive · LALR(1) parser · compilação determinística</span>
+</div>
+
+</div>
+</body>
+</html>

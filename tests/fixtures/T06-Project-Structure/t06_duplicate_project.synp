@@ -1,0 +1,22 @@
+# =============================================================================
+# T06_DUPLICATE_PROJECT.SYNP — Erro 66: dois blocos PROJECT no mesmo arquivo
+# =============================================================================
+# ERRO 66 (ERRO):
+#   Este arquivo contém dois blocos PROJECT.
+#   Esperado: ERRO "Este arquivo de projeto contém dois blocos PROJECT"..
+
+PROJECT T06_Projeto_Um
+
+    TEMPLATE "t06.synt"
+    INCLUDE BIBLIOGRAPHY "t06.bib"
+    INCLUDE ANNOTATIONS "t06.syn"
+
+END PROJECT
+
+PROJECT T06_Projeto_Dois
+
+    TEMPLATE "t06.synt"
+    INCLUDE BIBLIOGRAPHY "t06.bib"
+    INCLUDE ANNOTATIONS "t06.syn"
+
+END PROJECT

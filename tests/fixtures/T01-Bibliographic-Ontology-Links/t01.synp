@@ -1,0 +1,8 @@
+PROJECT T01_Bibliographic_Ontology_Links
+
+    TEMPLATE "t01.synt"
+    INCLUDE BIBLIOGRAPHY "t01.bib"
+    INCLUDE ANNOTATIONS "t01.syn"
+    INCLUDE ONTOLOGY "t01.syno"
+
+END PROJECT

@@ -1,0 +1,36 @@
+# Ontologia mínima para T02 — todos os conceitos necessários estão definidos aqui.
+
+ONTOLOGY Custo
+    definition: Fator econômico representando custos de instalação ou operação.
+    group: Economia
+END ONTOLOGY
+
+ONTOLOGY Aceitacao
+    definition: Grau de aprovação ou rejeição de uma tecnologia pela comunidade.
+    group: Social
+END ONTOLOGY
+
+ONTOLOGY Percepcao_Risco
+    definition: Avaliação subjetiva dos riscos associados a uma tecnologia.
+    group: Cognitivo
+END ONTOLOGY
+
+ONTOLOGY Beneficio
+    definition: Vantagem percebida associada a uma tecnologia ou política.
+    group: Economia
+END ONTOLOGY
+
+# NOTA: "INFLUENCES" e "CONSTRAINS" são nomes de RELAÇÕES neste projeto,
+# não conceitos — não devem ter blocos ONTOLOGY.
+# Mas para testar o erro 14 (ambiguidade conceito/relação), definimos abaixo
+# um conceito com o mesmo nome de uma relação declarada no template.
+# ---------------------------------------------------------------------------
+# ERRO 14 (ERRO):
+#   Nome de conceito idêntico ao nome de uma relação do mesmo campo.
+#   "INFLUENCES" está definido como relação em t02.synt E como ONTOLOGY aqui.
+#   Esperado: ERRO "O elemento INFLUENCES aparece em posição de conceito mas também está declarado como relação".
+# ---------------------------------------------------------------------------
+ONTOLOGY INFLUENCES
+    definition: Conceito com mesmo nome que uma relação — provoca ambiguidade.
+    group: Teste_Ambiguidade
+END ONTOLOGY

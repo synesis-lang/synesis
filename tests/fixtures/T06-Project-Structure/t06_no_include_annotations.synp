@@ -1,0 +1,17 @@
+# =============================================================================
+# T06_NO_INCLUDE_ANNOTATIONS.SYNP — Erro 61
+# =============================================================================
+# ERRO 61 (ERRO):
+#   Arquivo .syn referenciado sem bloco INCLUDE ANNOTATIONS no .synp.
+#   Este projeto declara o template e bibliografia mas omite o INCLUDE ANNOTATIONS.
+#   Esperado: ERRO "O arquivo de projeto não possui um bloco INCLUDE ANNOTATIONS".
+#   (O compilador detecta que há arquivos .syn na pasta mas nenhum está incluído.)
+
+PROJECT T06_No_Include_Annotations
+
+    TEMPLATE "t06.synt"
+    INCLUDE BIBLIOGRAPHY "t06.bib"
+    INCLUDE ONTOLOGY "t06.syno"
+    # INCLUDE ANNOTATIONS ausente intencionalmente
+
+END PROJECT

@@ -1,0 +1,28 @@
+# Anotações para T06 — válidas, os erros estão nos arquivos .synp e .synt.
+
+SOURCE @autor2024
+    summary: Fonte para testes de estrutura de projeto.
+END SOURCE
+
+ITEM @autor2024
+    citation: Trecho qualquer para permitir a compilação dos testes de projeto.
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 61 (ERRO):
+#   Arquivo .syn incluído sem bloco INCLUDE ANNOTATIONS no .synp.
+#   Este cenário só é detectado pelo compilador quando um arquivo .syn é
+#   passado diretamente (fora de um .synp) ou quando o compilador verifica
+#   referências cruzadas entre arquivos.
+#   Para testar: compilar t06.syn sem um arquivo .synp que o inclua,
+#   ou criar um .synp sem o INCLUDE ANNOTATIONS.
+# ---------------------------------------------------------------------------
+# Ver t06_no_include_annotations.synp para o teste direto do erro 61.
+
+
+# ---------------------------------------------------------------------------
+# ERRO 62 (ERRO):
+#   Arquivo .syno incluído sem bloco INCLUDE ONTOLOGY no .synp.
+#   Ver t06_no_include_ontology.synp para o teste direto do erro 62.
+# ---------------------------------------------------------------------------

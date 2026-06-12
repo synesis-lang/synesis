@@ -1,0 +1,201 @@
+# =============================================================================
+# T04.SYN — Erros de campos obrigatórios, tipos e escopo
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# ERRO 21 (ERRO — MissingRequiredField):
+#   Campo declarado REQUIRED ausente no bloco SOURCE.
+#   "source_date" é REQUIRED em SOURCE FIELDS, mas está ausente aqui.
+#   Esperado: ERRO "O campo 'source_date' é obrigatório neste bloco SOURCE, mas não foi encontrado".
+# ---------------------------------------------------------------------------
+SOURCE @autor2024
+    summary: Fonte sem a data obrigatória — provoca erro 21.
+    # "source_date" ausente
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# ITEM de base para erros de ITEM — este SOURCE tem o campo obrigatório correto.
+# ---------------------------------------------------------------------------
+SOURCE @autor2024
+    source_date: 2024-03-15
+    summary: Fonte com todos os campos obrigatórios preenchidos.
+END SOURCE
+
+# NOTA: O segundo SOURCE @autor2024 acima já provocaria erro 70 (bibref duplicada).
+# Para este projeto, o foco é em erros de tipo e escopo, então usamos só um SOURCE.
+# Remova o primeiro SOURCE @autor2024 incompleto acima se quiser testar apenas os erros deste arquivo.
+
+
+# ---------------------------------------------------------------------------
+# ERRO 20 (ERRO — MissingRequiredField):
+#   Campo declarado REQUIRED ausente no bloco ITEM.
+#   "citation" é REQUIRED em ITEM FIELDS, mas está ausente aqui.
+#   Esperado: ERRO "O campo 'citation' é obrigatório neste bloco ITEM, mas não foi encontrado".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    memo: Item sem citation obrigatório — provoca erro 20.
+    rating: 3
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 23 (ERRO):
+#   ITEM sem nenhum campo (bloco vazio).
+#   Esperado: ERRO "Este bloco ITEM está vazio".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 25 (ERRO — ScaleOutOfRange):
+#   Valor fora do intervalo FORMAT em campo SCALE.
+#   "rating" aceita [1..5], mas recebe 8.
+#   Esperado: ERRO "O valor 8 está fora do intervalo permitido para 'rating'. Intervalo: [1..5]".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Valor de rating fora do intervalo permitido.
+    rating: 8
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 26 (ERRO):
+#   Valor decimal em campo SCALE com intervalo inteiro.
+#   "rating" aceita [1..5] (inteiros), mas recebe 3.5.
+#   Esperado: ERRO "O valor 3.5 tem casas decimais, mas o campo 'rating' aceita apenas inteiros".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Valor decimal em campo de escala inteira.
+    rating: 3.5
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 27 (ERRO — InvalidEnumeratedValue):
+#   Valor não declarado em VALUES de campo ENUMERATED.
+#   "Cancelado" não está nos VALUES de "status".
+#   Esperado: ERRO "O valor 'Cancelado' não é reconhecido para o campo 'status'".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Valor inválido em campo ENUMERATED.
+    status: Cancelado
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 28 (ERRO — InvalidOrderedValue):
+#   Valor não declarado em VALUES de campo ORDERED.
+#   "Critica" não está nos VALUES de "importance".
+#   Esperado: ERRO "O valor 'Critica' não é válido para o campo 'importance'".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Valor inválido em campo ORDERED.
+    importance: Critica
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 29 (ERRO — InvalidFieldType):
+#   Data em formato inválido em campo DATE.
+#   "source_date" aceita AAAA-MM-DD, mas recebe formato invertido.
+#   (Testado via SOURCE abaixo)
+# ---------------------------------------------------------------------------
+SOURCE @autor2024
+    source_date: 15/03/2024
+    summary: Data em formato inválido — provoca erro 29.
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# ERRO 30 (ERRO — InvalidFieldType):
+#   Valor numérico em campo TEXT ou QUOTATION.
+#   "citation" espera texto, mas recebe apenas um número.
+#   Esperado: ERRO "O campo 'citation' espera texto, mas recebeu um valor que parece ser apenas um número".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: 42
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 31 (AVISO):
+#   Campo CODE com o mesmo código repetido na mesma ocorrência.
+#   "Aceitacao_Social" aparece duas vezes no mesmo campo "tag".
+#   Esperado: AVISO "O código Aceitacao_Social aparece mais de uma vez no campo 'tag' neste bloco".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Código duplicado no mesmo campo CODE.
+    tag: Aceitacao_Social, Aceitacao_Social
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 32 (ERRO):
+#   Campo TOPIC recebendo valor com espaços.
+#   "group" é TYPE TOPIC mas recebe valor com espaço.
+#   (Testado via ONTOLOGY em t04.syno — ver abaixo)
+# ---------------------------------------------------------------------------
+# NOTA: Para testar erro 32 diretamente em .syn seria necessário um campo TOPIC com SCOPE SOURCE/ITEM.
+# Como TOPIC é SCOPE ONTOLOGY no template, este erro será visível no arquivo .syno.
+
+
+# ---------------------------------------------------------------------------
+# ERRO 34 (ERRO — ForbiddenFieldPresent):
+#   Campo com SCOPE ITEM usado em bloco SOURCE.
+#   "citation" tem SCOPE ITEM, mas aparece em SOURCE abaixo.
+#   Esperado: ERRO "O campo 'citation' só pode ser usado em blocos ITEM, mas foi encontrado em SOURCE".
+# ---------------------------------------------------------------------------
+SOURCE @autor2024
+    source_date: 2024-01-01
+    citation: Campo de ITEM usado indevidamente em SOURCE — erro 34.
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# ERRO 35 (ERRO — ForbiddenFieldPresent):
+#   Campo com SCOPE SOURCE usado em bloco ITEM.
+#   "source_date" tem SCOPE SOURCE, mas aparece em ITEM abaixo.
+#   Esperado: ERRO "O campo 'source_date' só pode ser usado em blocos SOURCE, mas foi encontrado em ITEM".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Campo de SOURCE usado indevidamente em ITEM — erro 35.
+    source_date: 2024-06-01
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 36 (ERRO — ForbiddenFieldPresent):
+#   Campo com SCOPE ONTOLOGY usado em bloco ITEM ou SOURCE.
+#   "group" tem SCOPE ONTOLOGY, mas aparece em ITEM abaixo.
+#   Esperado: ERRO "O campo 'group' só pode ser usado em blocos ONTOLOGY, mas foi encontrado em ITEM".
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Campo de ONTOLOGY usado indevidamente em ITEM — erro 36.
+    group: Economia
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 37 (ERRO — ForbiddenFieldPresent):
+#   Campo TOPIC (SCOPE ONTOLOGY) usado fora de bloco ONTOLOGY.
+#   "category" é TYPE TOPIC com SCOPE ONTOLOGY, mas aparece em SOURCE.
+#   Esperado: ERRO "O campo 'category' é exclusivo de blocos ONTOLOGY e não pode ser usado em SOURCE".
+# ---------------------------------------------------------------------------
+SOURCE @autor2024
+    source_date: 2024-02-01
+    category: Economia_Energia
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# ERRO 38 (ERRO — ForbiddenFieldPresent):
+#   Campo CHAIN (SCOPE ITEM) usado em bloco ONTOLOGY.
+#   "chain" é TYPE CHAIN com SCOPE ITEM, mas aparece em ONTOLOGY (ver t04.syno).
+# ---------------------------------------------------------------------------
+# NOTA: Para testar este erro, seria necessário um conceito ONTOLOGY que usasse
+# "chain". Como o validador de escopo age sobre qualquer bloco que use
+# o campo fora do seu escopo, esse erro seria disparado se alguém escrevesse
+# "chain: ..." dentro de um bloco ONTOLOGY no .syno.
+# Ver anotação em t04.syno abaixo.

@@ -1,0 +1,97 @@
+# =============================================================================
+# T04.SYNT — Template para T04
+# Define campos de múltiplos tipos para cobrir erros de tipo e escopo.
+# =============================================================================
+
+TEMPLATE t04
+
+SOURCE FIELDS
+    REQUIRED source_date
+    OPTIONAL summary
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+    OPTIONAL rating, status, importance, tag, chain, memo
+    # "source_date" é SCOPE SOURCE — não deve aparecer em ITEM (erro 35)
+    # "group" é SCOPE ONTOLOGY — não deve aparecer em ITEM (erro 36)
+    # "category" é SCOPE ONTOLOGY TYPE TOPIC — não deve aparecer em ITEM (erro 37)
+    # "chain" é SCOPE ITEM TYPE CHAIN — não deve aparecer em ONTOLOGY (erro 38)
+END ITEM FIELDS
+
+ONTOLOGY FIELDS
+    REQUIRED definition, group
+    OPTIONAL category
+END ONTOLOGY FIELDS
+
+# ------ Campos de SOURCE ------
+
+FIELD source_date TYPE DATE
+    SCOPE SOURCE
+    DESCRIPTION Data de publicação da fonte no formato AAAA-MM-DD.
+END FIELD
+
+FIELD summary TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+# ------ Campos de ITEM ------
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+FIELD memo TYPE MEMO
+    SCOPE ITEM
+END FIELD
+
+FIELD tag TYPE CODE
+    SCOPE ITEM
+END FIELD
+
+FIELD chain TYPE CHAIN
+    SCOPE ITEM
+    ARITY >= 2
+    RELATIONS
+        INFLUENCES: Efeito causal direto
+    END RELATIONS
+END FIELD
+
+FIELD rating TYPE SCALE
+    SCOPE ITEM
+    FORMAT [1..5]
+    DESCRIPTION Avaliação numérica de 1 a 5. Apenas inteiros.
+END FIELD
+
+FIELD status TYPE ENUMERATED
+    SCOPE ITEM
+    VALUES
+        Ativo:    Atualmente em uso ou relevante
+        Inativo:  Não mais relevante no contexto estudado
+        Pendente: Aguardando validação
+    END VALUES
+END FIELD
+
+FIELD importance TYPE ORDERED
+    SCOPE ITEM
+    VALUES
+        [1] Baixa:  Importância menor, mencionado de passagem
+        [2] Media:  Importância moderada, discutido com alguma profundidade
+        [3] Alta:   Importância central, argumento principal do trecho
+    END VALUES
+END FIELD
+
+# ------ Campos de ONTOLOGY ------
+
+FIELD definition TYPE TEXT
+    SCOPE ONTOLOGY
+END FIELD
+
+FIELD group TYPE TOPIC
+    SCOPE ONTOLOGY
+END FIELD
+
+FIELD category TYPE TOPIC
+    SCOPE ONTOLOGY
+    DESCRIPTION Categoria temática secundária do conceito.
+END FIELD

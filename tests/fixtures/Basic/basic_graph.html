@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>demo — Synesis Graph</title>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js" crossorigin="anonymous"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:       #0f0f1a;
+    --panel:    #1a1a2e;
+    --border:   #2a2a4e;
+    --track:    #3a3a5e;
+    --text:     #e0e0e0;
+    --text-dim: #aaa;
+    --muted:    #777;
+    --inactive: #555;
+    --accent:   #4E79A7;
+    --item-hover: #2a2a4e;
+  }
+  body.light {
+    --bg:       #f4f4f8;
+    --panel:    #ffffff;
+    --border:   #d0d0e0;
+    --track:    #c0c0d0;
+    --text:     #1a1a2e;
+    --text-dim: #444;
+    --muted:    #666;
+    --inactive: #999;
+    --accent:   #2c5f8a;
+    --item-hover: #e8e8f0;
+  }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; height: 100vh; overflow: hidden; }
+  #graph { flex: 1; min-width: 0; background: var(--bg); transition: background .2s; }
+  #resize-handle { width: 5px; background: var(--panel); border-left: 1px solid var(--border); cursor: col-resize; flex-shrink: 0; transition: background .15s; }
+  #resize-handle:hover, #resize-handle.dragging { background: var(--accent); }
+  #sidebar { width: 280px; min-width: 180px; max-width: 560px; background: var(--panel); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  #search-wrap { padding: 12px; border-bottom: 1px solid var(--border); }
+  #search { width: 100%; background: var(--bg); border: 1px solid var(--track); color: var(--text); padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; }
+  #search:focus { border-color: var(--accent); }
+  #search-results { max-height: 140px; overflow-y: auto; padding: 4px 12px; border-bottom: 1px solid var(--border); display: none; }
+  .search-item { padding: 4px 6px; cursor: pointer; border-radius: 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-item:hover { background: var(--item-hover); }
+  #info-panel { flex: 0 1 auto; max-height: 45vh; overflow-y: auto; padding: 14px; border-bottom: 1px solid var(--border); }
+  #info-panel h3 { font-size: 11px; color: var(--muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+  #info-content { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+  #info-content .field { margin-bottom: 8px; }
+  #info-content .field b { color: var(--text); display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; margin-bottom: 1px; }
+  #info-content .field-val { color: var(--text-dim); }
+  #info-content .field-inline b { display: inline; font-size: 13px; text-transform: none; letter-spacing: 0; opacity: 1; }
+  #info-content .empty { color: var(--inactive); font-style: italic; }
+  .neighbor-link { display: block; padding: 2px 6px; margin: 2px 0; border-radius: 3px; cursor: pointer; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 3px solid var(--track); }
+  .neighbor-link:hover { background: var(--item-hover); }
+  #neighbors-list { max-height: 160px; overflow-y: auto; margin-top: 4px; }
+  #legend-wrap { flex: 1; overflow-y: hidden; display: flex; flex-direction: column; min-height: 0; }
+  #grouping-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #grouping-tabs:empty { display: none; }
+  .g-tab { font-size: 10px; padding: 3px 10px; border-radius: 10px; cursor: pointer; border: 1px solid var(--track); background: transparent; color: var(--text-dim); font-family: inherit; transition: all .15s; white-space: nowrap; }
+  .g-tab:hover { border-color: var(--accent); color: var(--text); }
+  .g-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #legend-inner { flex: 1; overflow-y: auto; padding: 10px 12px; min-height: 0; }
+  .legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; border-radius: 4px; font-size: 12px; }
+  .legend-item:hover { background: var(--item-hover); padding-left: 4px; }
+  .legend-item.dimmed { opacity: 0.35; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .legend-count { color: var(--inactive); font-size: 11px; }
+  #stats { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 11px; color: var(--inactive); }
+  #legend-controls { display: flex; gap: 6px; margin-bottom: 8px; }
+  #legend-controls button { flex: 1; background: var(--bg); border: 1px solid var(--track); color: var(--text-dim); padding: 4px 0; border-radius: 4px; font-size: 11px; cursor: pointer; }
+  #legend-controls button:hover { border-color: var(--accent); color: var(--text); }
+  /* Mode toggle */
+  #mode-wrap { display: flex; gap: 1px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg); flex-shrink: 0; }
+  .mode-btn { flex: 1; background: var(--panel); border: 1px solid var(--border); color: var(--inactive); padding: 6px 0; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; border-radius: 4px; transition: all .15s; font-family: inherit; }
+  .mode-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .mode-btn:first-child { border-radius: 4px 0 0 4px; }
+  .mode-btn:last-child  { border-radius: 0 4px 4px 0; }
+  .mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .mode-btn:hover:not(.active):not(:disabled) { border-color: var(--accent); color: var(--text-dim); }
+  /* Evidence table */
+  .ev-count { font-size: 10px; color: var(--inactive); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 8px; }
+  .ev-wrap { overflow-x: auto; }
+  .ev-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .ev-table th { font-size: 10px; color: var(--inactive); text-transform: uppercase; letter-spacing: .08em; padding: 3px 6px 6px; border-bottom: 1px solid var(--border); text-align: left; font-weight: 500; white-space: nowrap; }
+  .ev-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .ev-table tbody tr:hover td { background: var(--item-hover); }
+  .ev-src { color: var(--accent); white-space: nowrap; font-size: 10px; max-width: 70px; overflow: hidden; text-overflow: ellipsis; }
+  .ev-badge { display: inline-block; background: var(--border); color: var(--text-dim); padding: 1px 5px; border-radius: 3px; font-size: 10px; white-space: nowrap; }
+  .ev-text { color: var(--text-dim); line-height: 1.45; max-width: 130px; }
+  .ev-note { display: block; color: var(--muted); font-style: italic; margin-top: 2px; font-size: 10px; }
+  .ev-empty { color: var(--inactive); font-style: italic; font-size: 12px; }
+  .src-label { font-size: 12px; color: var(--muted); font-family: monospace; word-break: break-all; margin-bottom: 10px; }
+  .src-stat  { font-size: 11px; color: var(--inactive); margin-bottom: 8px; }
+  /* HUD */
+  #hud { position: fixed; left: 10px; bottom: 10px; z-index: 5; display: flex; flex-direction: column; gap: 4px; }
+  #hud button { background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--track); color: var(--text-dim); width: 36px; height: 36px; border-radius: 7px; font-size: 17px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: border-color .15s, color .15s; }
+  #hud button:hover { border-color: var(--accent); color: var(--text); }
+  #hud button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  /* Degree filter */
+  #degree-wrap { flex-shrink: 0; padding: 12px 14px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  #degree-header { display: flex; justify-content: space-between; align-items: center; }
+  #degree-header span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  #degree-badge { background: var(--border); color: var(--text); font-size: 11px; padding: 1px 7px; border-radius: 10px; }
+  #degree-slider { width: 100%; accent-color: var(--accent); cursor: pointer; }
+  #degree-slider::-webkit-slider-runnable-track { height: 4px; background: #3a3a5e; border-radius: 2px; }
+  #degree-slider::-moz-range-track { height: 4px; background: #3a3a5e; border-radius: 2px; }
+  #degree-slider::-webkit-slider-thumb { margin-top: -4px; }
+  #degree-slider::-moz-range-progress { background: #4E79A7; height: 4px; border-radius: 2px; }
+  #degree-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #555; }
+  #degree-row button { background: none; border: none; color: #4E79A7; font-size: 11px; cursor: pointer; padding: 0; }
+  #degree-row button:hover { color: #76b0d0; }
+</style>
+</head>
+<body>
+<script>
+window.onerror = function(msg, src, line, col, err) {
+  var d = document.getElementById('_err');
+  if (!d) {
+    d = document.createElement('div'); d.id = '_err';
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#c00;color:#fff;font:13px monospace;padding:8px 12px;white-space:pre-wrap;max-height:40vh;overflow:auto;pointer-events:none';
+    document.body.appendChild(d);
+  }
+  d.textContent += '⚠ ' + (src||'?').split('/').pop() + ':' + line + ' — ' + msg + '\n';
+  return false;
+};
+</script>
+<div id="_loading" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;color:#4E79A7;font:15px monospace;pointer-events:none">Loading graph...</div>
+<div id="hud">
+  <button onclick="zoomIn()" title="Zoom In">+</button>
+  <button onclick="zoomOut()" title="Zoom Out">&minus;</button>
+  <button onclick="fitView()" title="Fit All" style="font-size:13px;letter-spacing:-.5px">FIT</button>
+  <button id="btn-lock" onclick="toggleLock()" title="Lock / unlock node positions" style="font-size:14px">&#128275;</button>
+  <button onclick="exportPNG()" title="Export PNG" style="font-size:11px;letter-spacing:-.5px">PNG</button>
+  <button id="btn-theme" onclick="toggleTheme()" title="Toggle dark / light mode" style="font-size:14px">☀</button>
+</div>
+<div id="graph"></div>
+<div id="resize-handle"></div>
+<div id="sidebar">
+  <div id="mode-wrap">
+    <button id="btn-onto" class="mode-btn active" onclick="setMode('ONTOLOGY')">Ontologia</button>
+    <button id="btn-evid" class="mode-btn" onclick="setMode('EVIDENCE')">Evidência</button>
+  </div>
+  <div id="search-wrap">
+    <input id="search" type="text" placeholder="Search nodes..." autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+  <div id="info-panel">
+    <h3>Node Info</h3>
+    <div id="info-content"><span class="empty">Clique em um nó ou aresta</span></div>
+  </div>
+  <div id="degree-wrap">
+    <div id="degree-header">
+      <span>Min connections</span>
+      <span id="degree-badge">0</span>
+    </div>
+    <input id="degree-slider" type="range" min="0" value="0">
+    <div id="degree-row">
+      <span id="degree-visible"></span>
+      <button onclick="resetDegree()">Reset</button>
+    </div>
+  </div>
+  <div id="legend-wrap">
+    <div id="grouping-tabs"></div>
+    <div id="legend-inner">
+      <div id="legend-controls">
+        <button onclick="toggleAllCommunities(false)">Show All</button>
+        <button onclick="toggleAllCommunities(true)">Hide All</button>
+      </div>
+      <div id="legend"></div>
+    </div>
+  </div>
+  <div id="stats">2 nodes · 0 edges · 1 communities</div>
+  <div id="help-panel" style="border-top:1px solid var(--border);padding:12px 14px;font-size:11px;color:var(--text-dim);line-height:1.6">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Como explorar este grafo</div>
+    <div style="margin-bottom:6px"><span style="color:var(--text)">Navegar</span> — arraste os nós, use scroll para zoom ou os botões +/− no canto inferior esquerdo. <strong>FIT</strong> recentra tudo.</div>
+    <div style="margin-bottom:6px"><span style="color:var(--text)">Inspecionar</span> — clique em qualquer nó para ver suas propriedades no painel acima. Clique numa aresta para ver as relações que ela agrupa.</div>
+    <div style="margin-bottom:6px"><span style="color:var(--text)">Filtrar por grau</span> — o controle "Min connections" oculta nós com poucas conexões, revelando o núcleo mais denso da rede.</div>
+    <div style="margin-bottom:6px"><span style="color:var(--text)">Filtrar por grupo</span> — clique nas entradas da legenda para mostrar ou ocultar comunidades inteiras. "Show All / Hide All" reseta.</div>
+    <div style="margin-bottom:6px"><span style="color:var(--text)">Buscar</span> — digite na caixa de pesquisa para localizar um nó pelo nome e centralizar a visualização nele.</div>
+    <div style="margin-bottom:6px"><span style="color:var(--text)">Evidência</span> — se o botão <em>Evidência</em> estiver ativo, alterne o modo para ver as relações causais individuais com as citações textuais que as sustentam.</div>
+    <div style="margin-bottom:6px"><span style="color:var(--text)">Exportar</span> — o botão <strong>PNG</strong> salva uma captura da visualização atual. O botão ☀/🌙 alterna entre tema escuro e claro.</div>
+    <div style="color:var(--inactive);font-size:10px;margin-top:8px">Este arquivo HTML é autossuficiente — funciona offline após o primeiro carregamento e pode ser partilhado sem dependências adicionais.</div>
+  </div>
+</div>
+<script>
+if (typeof vis === 'undefined') {
+  var ld = document.getElementById('_loading');
+  if (ld) { ld.style.color='#E15759'; ld.textContent='ERROR: vis-network CDN failed to load. Check internet connection.'; }
+}
+</script>
+<script>
+const RAW_NODES = [{"id": "social_cohesion", "label": "Social_Cohesion", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 8.0, "font": {"size": 12}, "title": "Social_Cohesion", "community": 0, "community_name": "Community_Resilience", "source_file": "smith2024", "file_type": "concept", "degree": 0, "extra": {"definition": "The degree to which community members trust, support, and cooperate", "group": "Community_Resilience"}}, {"id": "collective_action", "label": "Collective_Action", "color": {"background": "#4E79A7", "border": "#4E79A7", "highlight": {"background": "#ffffff", "border": "#4E79A7"}}, "size": 8.0, "font": {"size": 12}, "title": "Collective_Action", "community": 0, "community_name": "Community_Resilience", "source_file": "smith2024", "file_type": "concept", "degree": 0, "extra": {"definition": "Coordinated efforts by community members to address shared challenges", "group": "Community_Resilience"}}];
+const RAW_EDGES = [];
+const ALL_GROUPINGS = {"group": {"title": "Group", "legend": [{"cid": 0, "color": "#4E79A7", "label": "Community_Resilience", "count": 2}], "value_to_cid": {"Community_Resilience": 0}, "value_to_color": {"Community_Resilience": "#4E79A7"}}};
+let activeGrouping = "group";
+const EVIDENCE_DATA      = {};
+const EV_SOURCE_NODES   = [];
+const EV_MENTION_EDGES  = [];
+
+const RELATION_COLORS = {
+  "ENABLES":      "#59A14F",
+  "INFLUENCES":   "#4E79A7",
+  "CONSTRAINS":   "#F28E2B",
+  "CONTESTED_BY": "#E15759",
+  "RELATES_TO":   "#9C755F",
+};
+
+// HTML-escape helper — prevents XSS when injecting graph data into innerHTML
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Build vis datasets
+function _showErr(msg) {
+  var ld = document.getElementById('_loading');
+  if (ld) { ld.style.color='#E15759'; ld.textContent = msg; }
+  var d = document.getElementById('_err') || document.body.appendChild(Object.assign(document.createElement('div'), {id:'_err', style:''}));
+  d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#c00;color:#fff;font:13px monospace;padding:8px 12px;white-space:pre-wrap;max-height:40vh;overflow:auto;pointer-events:none';
+  d.textContent += msg + '\n';
+}
+
+var nodesDS, edgesDS, container, network;
+try {
+  nodesDS = new vis.DataSet(RAW_NODES.map(n => ({
+    id: n.id, label: n.label, color: n.color, size: n.size,
+    font: n.font, title: n.title,
+    _community: n.community, _community_name: n.community_name,
+    _source_file: n.source_file, _file_type: n.file_type, _degree: n.degree,
+    _extra: n.extra || {},
+  })));
+} catch(e) { _showErr('DataSet nodes failed: ' + e.message); throw e; }
+
+try {
+  edgesDS = new vis.DataSet(RAW_EDGES.map((e, i) => ({
+    id: i, from: e.from, to: e.to,
+    label: '',
+    title: e.title,
+    dashes: e.dashes,
+    width: e.width,
+    color: e.color,
+    arrows: e.arrows || { to: { enabled: true, scaleFactor: 0.5 } },
+    _relations: e.relations || [],
+    _total: e.total || 1,
+    _bidir: !!e.bidirectional,
+  })));
+} catch(e) { _showErr('DataSet edges failed: ' + e.message); throw e; }
+
+container = document.getElementById('graph');
+try {
+network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, {
+  physics: {
+    enabled: true,
+    solver: 'forceAtlas2Based',
+    forceAtlas2Based: {
+      gravitationalConstant: -60,
+      centralGravity: 0.005,
+      springLength: 120,
+      springConstant: 0.08,
+      damping: 0.4,
+      avoidOverlap: 0.8,
+    },
+    stabilization: { iterations: 200, fit: true },
+  },
+  interaction: {
+    hover: true,
+    tooltipDelay: 100,
+    hideEdgesOnDrag: true,
+    navigationButtons: false,
+    keyboard: false,
+  },
+  nodes: { shape: 'dot', borderWidth: 1.5, font: { color: '#ffffff', size: 12 } },
+  edges: { smooth: { type: 'continuous', roundness: 0.2 }, selectionWidth: 3 },
+});
+} catch(e) { _showErr('vis.Network() failed: ' + e.message); throw e; }
+
+// Register Evidence-mode nodes/edges into DataSets, hidden by default.
+// Doing this upfront avoids re-adding on every mode switch.
+nodesDS.add(EV_SOURCE_NODES.map(n => ({ ...n, hidden: true })));
+const EV_EDGE_ID_OFFSET = 100000; // avoids collisions with chain edge IDs (0-based index)
+edgesDS.add(EV_MENTION_EDGES.map((e, i) => ({ ...e, id: EV_EDGE_ID_OFFSET + i, hidden: true })));
+
+network.once('stabilizationIterationsDone', () => {
+  network.setOptions({ physics: { enabled: false } });
+  var ld = document.getElementById('_loading');
+  if (ld) ld.remove();
+});
+
+// ── View mode ────────────────────────────────────────────────────────────────
+let currentViewMode = 'ONTOLOGY';
+let currentNodeId = null;
+
+// Node IDs that participate in at least one chain edge (computed once)
+const _evActiveNodes = new Set(
+  edgesDS.get({ filter: e => !!e._ev_chain }).flatMap(e => [e.from, e.to])
+);
+// Disable Evidence mode button if project has no chain evidence
+if (_evActiveNodes.size === 0) {
+  const btnEvid = document.getElementById('btn-evid');
+  btnEvid.disabled = true;
+  btnEvid.title = 'Este projeto não contém relações CHAIN';
+}
+
+function setMode(mode) {
+  if (mode === 'EVIDENCE' && _evActiveNodes.size === 0) return;
+  currentViewMode = mode;
+  document.getElementById('btn-onto').classList.toggle('active', mode === 'ONTOLOGY');
+  document.getElementById('btn-evid').classList.toggle('active', mode === 'EVIDENCE');
+
+  if (mode === 'EVIDENCE') {
+    // Hide grouped ontology edges; show individual chain edges
+    edgesDS.update(
+      edgesDS.get({ filter: e => !e._ev_chain }).map(e => ({ id: e.id, hidden: true }))
+    );
+    edgesDS.update(
+      edgesDS.get({ filter: e => !!e._ev_chain }).map(e => ({ id: e.id, hidden: false }))
+    );
+    // Hide concept nodes that have no chain evidence
+    nodesDS.update(
+      nodesDS.get({ filter: n => !_evActiveNodes.has(n.id) }).map(n => ({ id: n.id, hidden: true }))
+    );
+  } else {
+    // Restore all concept nodes; swap edges back
+    nodesDS.update(
+      nodesDS.get({ filter: n => !!n.hidden }).map(n => ({ id: n.id, hidden: false }))
+    );
+    edgesDS.update(
+      edgesDS.get({ filter: e => !!e._ev_chain }).map(e => ({ id: e.id, hidden: true }))
+    );
+    edgesDS.update(
+      edgesDS.get({ filter: e => !e._ev_chain }).map(e => ({ id: e.id, hidden: false }))
+    );
+  }
+
+  // Refresh sidebar for currently selected node
+  if (currentNodeId !== null) {
+    const n = nodesDS.get(currentNodeId);
+    if (!n || n.hidden) {
+      document.getElementById('info-content').innerHTML = '<span class="empty">Clique em um nó ou aresta</span>';
+      currentNodeId = null;
+    } else if (mode === 'EVIDENCE') {
+      showEvidenceTable(currentNodeId);
+    } else {
+      showInfo(currentNodeId);
+    }
+  }
+}
+
+function _setActiveNode(nodeId) {
+  currentNodeId = nodeId;
+  if (currentViewMode === 'EVIDENCE') {
+    showEvidenceTable(nodeId);
+  } else {
+    showInfo(nodeId);
+  }
+}
+
+function showInfo(nodeId) {
+  const n = nodesDS.get(nodeId);
+  if (!n) return;
+  const neighborIds = network.getConnectedNodes(nodeId);
+  const neighborItems = neighborIds.map(nid => {
+    const nb = nodesDS.get(nid);
+    const color = nb ? nb.color.background : '#555';
+    return `<span class="neighbor-link" style="border-left-color:${esc(color)}" onclick="focusNode('${nid}')">${esc(nb ? nb.label : nid)}</span>`;
+  }).join('');
+  const groupTitle = ALL_GROUPINGS[activeGrouping] ? ALL_GROUPINGS[activeGrouping].title : 'Group';
+  const groupVal   = (n._extra && n._extra[activeGrouping]) || n._community_name || '-';
+  let extraFields = '';
+  if (n._extra) {
+    Object.entries(n._extra).forEach(([k, v]) => {
+      if (k === activeGrouping) return; // already shown as groupTitle above
+      if (v !== null && v !== undefined && v !== '') {
+        extraFields += `<div class="field"><b>${esc(k)}</b><span class="field-val">${esc(String(v))}</span></div>`;
+      }
+    });
+  }
+  document.getElementById('info-content').innerHTML = `
+    <div class="field field-inline" style="margin-bottom:12px"><b style="font-size:14px;opacity:1;text-transform:none;letter-spacing:0;display:inline">${esc(n.label)}</b></div>
+    <div class="field"><b>${esc(groupTitle)}</b><span class="field-val">${esc(groupVal)}</span></div>
+    <div class="field"><b>Degree</b><span class="field-val">${n._degree || 0}</span></div>
+    ${extraFields}
+    ${neighborIds.length ? `<div class="field" style="margin-top:10px"><b>Neighbors</b><span class="field-val">${neighborIds.length}</span></div><div id="neighbors-list">${neighborItems}</div>` : ''}
+  `;
+}
+
+function showEvidenceTable(nodeId) {
+  const n = nodesDS.get(nodeId);
+  if (!n) return;
+  const records = EVIDENCE_DATA[nodeId] || [];
+  const title = `<div class="field field-inline" style="margin-bottom:10px"><b style="font-size:14px;opacity:1;text-transform:none;letter-spacing:0;display:inline">${esc(n.label)}</b></div>`;
+  if (!records.length) {
+    document.getElementById('info-content').innerHTML = title +
+      '<div class="ev-empty">Nenhuma evidência registada para este conceito.</div>';
+    return;
+  }
+  const rows = records.map(e => {
+    const badgeColor = RELATION_COLORS[e.type] || '#9C755F';
+    return `<tr>
+      <td class="ev-src" title="${esc(e.src)}">${esc(e.src)}</td>
+      <td><span class="ev-badge" style="border-left:2px solid ${esc(badgeColor)}">${esc(e.type||'—')}</span></td>
+      <td class="ev-text">${esc(e.text)}${e.note ? `<span class="ev-note">${esc(e.note)}</span>` : ''}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('info-content').innerHTML = title +
+    `<div class="ev-count">${records.length} registo${records.length !== 1 ? 's' : ''} de evidência</div>
+    <div class="ev-wrap">
+      <table class="ev-table">
+        <thead><tr><th>Fonte</th><th>Tipo</th><th>Anotação</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function showEdgeInfo(edgeId) {
+  const e = edgesDS.get(edgeId);
+  if (!e) return;
+  const fromNode  = nodesDS.get(e.from);
+  const toNode    = nodesDS.get(e.to);
+  const fromLabel = fromNode ? fromNode.label : e.from;
+  const toLabel   = toNode   ? toNode.label   : e.to;
+  const fromColor = fromNode ? fromNode.color.background : 'var(--track)';
+  const toColor   = toNode   ? toNode.color.background   : 'var(--track)';
+
+  const relations = (e._relations && e._relations.length > 0) ? e._relations : [];
+  const relRows = relations.map(r => {
+    const c = RELATION_COLORS[r.type] || '#9C755F';
+    const badge = r.count > 1
+      ? `<span style="background:var(--border);padding:1px 6px;border-radius:3px;font-size:10px;color:var(--text-dim);margin-left:5px">${r.count}×</span>`
+      : '';
+    return `
+      <div style="display:flex;align-items:stretch;margin:4px 0 4px 18px">
+        <div style="width:3px;background:${esc(c)};border-radius:2px;flex-shrink:0;margin-right:8px"></div>
+        <div style="font-size:11px;color:var(--text-dim);padding:2px 0;letter-spacing:.04em">${esc(r.type)}${badge}</div>
+      </div>`;
+  }).join('');
+
+  const bidirBadge = e._bidir
+    ? `<span style="font-size:11px;color:#7B8EC8;background:rgba(78,121,167,0.18);padding:1px 8px;border-radius:10px;letter-spacing:.03em">↔ bidirecional</span>`
+    : '';
+  const countBadge = `<span style="font-size:10px;color:var(--text-dim);background:var(--border);padding:1px 6px;border-radius:3px">${e._total}×</span>`;
+  document.getElementById('info-content').innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+      <span style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;flex:1">Aresta</span>
+      ${bidirBadge}${countBadge}
+    </div>
+    <span class="neighbor-link" style="border-left-color:${esc(fromColor)}" onclick="focusNode('${e.from}')">${esc(fromLabel)}</span>
+    ${relRows}
+    <span class="neighbor-link" style="border-left-color:${esc(toColor)};margin-top:2px" onclick="focusNode('${e.to}')">${esc(toLabel)}</span>
+  `;
+}
+
+function focusNode(nodeId) {
+  network.focus(nodeId, { scale: 1.4, animation: true });
+  network.selectNodes([nodeId]);
+  _setActiveNode(nodeId);
+}
+
+// Track hovered node — hover detection is more reliable than click params
+let hoveredNodeId = null;
+network.on('hoverNode', params => {
+  hoveredNodeId = params.node;
+  container.style.cursor = 'pointer';
+});
+network.on('blurNode', () => {
+  hoveredNodeId = null;
+  container.style.cursor = 'default';
+});
+container.addEventListener('click', () => {
+  if (hoveredNodeId !== null) {
+    network.selectNodes([hoveredNodeId]);
+    _setActiveNode(hoveredNodeId);
+  }
+});
+function showChainEvidence(e) {
+  const fromNode = nodesDS.get(e.from);
+  const toNode   = nodesDS.get(e.to);
+  const fromLabel = fromNode ? fromNode.label : e.from;
+  const toLabel   = toNode   ? toNode.label   : e.to;
+  const fromColor = fromNode ? fromNode.color.background : '#555';
+  const toColor   = toNode   ? toNode.color.background   : '#555';
+  const badgeColor = RELATION_COLORS[e._type] || '#9C755F';
+  // Find text/note from EVIDENCE_DATA where source and type match this edge
+  const records = (EVIDENCE_DATA[e.from] || [])
+    .filter(r => r.src === e._src && r.type === e._type);
+  const rowsHtml = records.length
+    ? records.map(r => `<tr>
+        <td class="ev-src" title="${esc(r.src)}">${esc(r.src)}</td>
+        <td><span class="ev-badge" style="border-left:2px solid ${esc(badgeColor)}">${esc(r.type||'—')}</span></td>
+        <td class="ev-text">${esc(r.text)}${r.note ? `<span class="ev-note">${esc(r.note)}</span>` : ''}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="3" class="ev-text" style="opacity:.5">Sem texto disponível</td></tr>`;
+  document.getElementById('info-content').innerHTML = `
+    <div class="field" style="color:#aaa;font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Evidência — ${esc(e._type||'cadeia')}</div>
+    <div class="field">
+      <span class="neighbor-link" style="border-left-color:${esc(fromColor)};display:inline-block" onclick="focusNode('${e.from}')">${esc(fromLabel)}</span>
+    </div>
+    <div class="field" style="color:var(--inactive);font-size:11px;margin:2px 0 2px 8px">&#8595;</div>
+    <div class="field">
+      <span class="neighbor-link" style="border-left-color:${esc(toColor)};display:inline-block" onclick="focusNode('${e.to}')">${esc(toLabel)}</span>
+    </div>
+    <div class="ev-wrap" style="margin-top:8px">
+      <table class="ev-table">
+        <thead><tr><th>Fonte</th><th>Tipo</th><th>Anotação</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+}
+
+network.on('selectEdge', params => {
+  if (params.edges.length > 0 && params.nodes.length === 0) {
+    currentNodeId = null;
+    const e = edgesDS.get(params.edges[0]);
+    if (e && e._ev_chain) {
+      showChainEvidence(e);
+    } else {
+      showEdgeInfo(params.edges[0]);
+    }
+  }
+});
+network.on('click', params => {
+  if (params.nodes.length > 0) {
+    _setActiveNode(params.nodes[0]);
+  } else if (params.edges.length === 0 && hoveredNodeId === null) {
+    currentNodeId = null;
+    document.getElementById('info-content').innerHTML = '<span class="empty">Clique em um nó ou aresta</span>';
+  }
+});
+
+const searchInput = document.getElementById('search');
+const searchResults = document.getElementById('search-results');
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.toLowerCase().trim();
+  searchResults.innerHTML = '';
+  if (!q) { searchResults.style.display = 'none'; return; }
+  const matches = RAW_NODES.filter(n => n.label.toLowerCase().includes(q)).slice(0, 20);
+  if (!matches.length) { searchResults.style.display = 'none'; return; }
+  searchResults.style.display = 'block';
+  matches.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'search-item';
+    el.textContent = n.label;
+    el.style.borderLeft = `3px solid ${n.color.background}`;
+    el.style.paddingLeft = '8px';
+    el.onclick = () => {
+      network.focus(n.id, { scale: 1.5, animation: true });
+      network.selectNodes([n.id]);
+      showInfo(n.id);
+      searchResults.style.display = 'none';
+      searchInput.value = '';
+    };
+    searchResults.appendChild(el);
+  });
+});
+document.addEventListener('click', e => {
+  if (!searchResults.contains(e.target) && e.target !== searchInput)
+    searchResults.style.display = 'none';
+});
+
+// ── Visibility state ────────────────────────────────────────────────────────
+const hiddenCommunities = new Set();
+let minDegree = 0;
+const maxDegree = Math.max(0, ...RAW_NODES.map(n => n.degree || 0));
+
+function isNodeVisible(n) {
+  const dsNode = nodesDS.get(n.id);
+  const community = dsNode ? dsNode._community : n.community;
+  return !hiddenCommunities.has(community) && (n.degree || 0) >= minDegree;
+}
+
+function refreshVisibility() {
+  const updates = RAW_NODES.map(n => ({ id: n.id, hidden: !isNodeVisible(n) }));
+  nodesDS.update(updates);
+  const visCount = RAW_NODES.filter(n => isNodeVisible(n)).length;
+  document.getElementById('degree-visible').textContent = visCount + ' / ' + RAW_NODES.length + ' nodes';
+}
+
+function toggleAllCommunities(hide) {
+  document.querySelectorAll('.legend-item').forEach(item => {
+    hide ? item.classList.add('dimmed') : item.classList.remove('dimmed');
+  });
+  const legend = ALL_GROUPINGS[activeGrouping] ? ALL_GROUPINGS[activeGrouping].legend : [];
+  legend.forEach(c => {
+    if (hide) hiddenCommunities.add(c.cid); else hiddenCommunities.delete(c.cid);
+  });
+  refreshVisibility();
+}
+
+function renderLegend(legend) {
+  const legendEl = document.getElementById('legend');
+  legendEl.innerHTML = '';
+  legend.forEach(c => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<div class="legend-dot" style="background:${c.color}"></div>
+      <span class="legend-label">${esc(c.label)}</span>
+      <span class="legend-count">${c.count}</span>`;
+    item.onclick = () => {
+      if (hiddenCommunities.has(c.cid)) {
+        hiddenCommunities.delete(c.cid);
+        item.classList.remove('dimmed');
+      } else {
+        hiddenCommunities.add(c.cid);
+        item.classList.add('dimmed');
+      }
+      refreshVisibility();
+    };
+    legendEl.appendChild(item);
+  });
+}
+
+function switchGrouping(field) {
+  if (field === activeGrouping) return;
+  activeGrouping = field;
+
+  document.querySelectorAll('.g-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.field === field);
+  });
+
+  const g = ALL_GROUPINGS[field];
+  const vtc  = g.value_to_color;
+  const vtcid = g.value_to_cid;
+  nodesDS.update(nodesDS.getIds().map(id => {
+    const n = nodesDS.get(id);
+    const val = (n._extra && n._extra[field]) || 'Other';
+    const color = vtc[val] || '#888888';
+    const cid   = vtcid.hasOwnProperty(val) ? vtcid[val] : -1;
+    return { id, _community: cid,
+      color: { background: color, border: color, highlight: { background: '#ffffff', border: color } } };
+  }));
+
+  hiddenCommunities.clear();
+  renderLegend(g.legend);
+  refreshVisibility();
+  if (currentNodeId) showInfo(currentNodeId);
+}
+
+// ── Build grouping tabs ──────────────────────────────────────────────────────
+const tabsEl = document.getElementById('grouping-tabs');
+const groupingKeys = Object.keys(ALL_GROUPINGS);
+if (groupingKeys.length > 1) {
+  groupingKeys.forEach(field => {
+    const btn = document.createElement('button');
+    btn.className = 'g-tab' + (field === activeGrouping ? ' active' : '');
+    btn.dataset.field = field;
+    btn.textContent = ALL_GROUPINGS[field].title;
+    btn.onclick = () => switchGrouping(field);
+    tabsEl.appendChild(btn);
+  });
+}
+renderLegend(ALL_GROUPINGS[activeGrouping].legend);
+
+// ── Degree slider ────────────────────────────────────────────────────────────
+const degSlider = document.getElementById('degree-slider');
+degSlider.max = maxDegree;
+degSlider.addEventListener('input', () => {
+  minDegree = parseInt(degSlider.value, 10);
+  document.getElementById('degree-badge').textContent = minDegree;
+  refreshVisibility();
+});
+
+function resetDegree() {
+  degSlider.value = 0;
+  minDegree = 0;
+  document.getElementById('degree-badge').textContent = '0';
+  refreshVisibility();
+}
+
+// Initialise visible count label
+refreshVisibility();
+
+// ── HUD controls ─────────────────────────────────────────────────────────────
+function zoomIn()  { network.moveTo({ scale: network.getScale() * 1.3, animation: { duration: 200, easingFunction: 'easeInOutQuad' } }); }
+function zoomOut() { network.moveTo({ scale: network.getScale() * 0.77, animation: { duration: 200, easingFunction: 'easeInOutQuad' } }); }
+function fitView() { network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } }); }
+
+let locked = false;
+function toggleLock() {
+  locked = !locked;
+  network.setOptions({ interaction: { dragNodes: !locked } });
+  const btn = document.getElementById('btn-lock');
+  btn.innerHTML = locked ? '&#128274;' : '&#128275;';
+  btn.classList.toggle('active', locked);
+}
+
+// ── Resizable sidebar ─────────────────────────────────────────────────────────
+(function() {
+  const handle  = document.getElementById('resize-handle');
+  const sidebar = document.getElementById('sidebar');
+  let startX, startW;
+  handle.addEventListener('mousedown', e => {
+    startX = e.clientX;
+    startW = sidebar.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    function onMove(e) {
+      const delta = startX - e.clientX;   // drag left = wider sidebar
+      const w = Math.min(560, Math.max(180, startW + delta));
+      sidebar.style.width = w + 'px';
+    }
+    function onUp() {
+      handle.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (typeof network !== 'undefined') network.redraw();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+})();
+
+let _isLight = false;
+function toggleTheme() {
+  _isLight = !_isLight;
+  document.body.classList.toggle('light', _isLight);
+  document.getElementById('btn-theme').textContent = _isLight ? '🌙' : '☀';
+  const labelColor = _isLight ? '#000000' : '#ffffff';
+  // Update all node label colors
+  nodesDS.update(nodesDS.getIds().map(id => ({ id, font: { size: 12, color: labelColor } })));
+  network.setOptions({ nodes: { font: { color: labelColor } } });
+}
+
+function exportPNG() {
+  const src = network.canvas.frame.canvas;
+  const tmp = document.createElement('canvas');
+  tmp.width  = src.width;
+  tmp.height = src.height;
+  const ctx = tmp.getContext('2d');
+  ctx.fillStyle = '#0f0f1a';
+  ctx.fillRect(0, 0, tmp.width, tmp.height);
+  ctx.drawImage(src, 0, 0);
+  const a = document.createElement('a');
+  a.download = (document.title || 'graph').replace(/\s+/g, '_') + '.png';
+  a.href = tmp.toDataURL('image/png');
+  a.click();
+}
+</script>
+<script>
+// Render hyperedges as shaded regions
+const hyperedges = [];
+// afterDrawing passes ctx already transformed to network coordinate space.
+// Draw node positions raw — no manual pan/zoom/DPR math needed.
+// Hyperedge polygons removed for cleaner graph rendering
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+# =============================================================================
+# T01.SYNT — Template para T01
+# Template mínimo e válido para permitir que erros de vínculo sejam testados.
+# =============================================================================
+
+TEMPLATE t01
+
+SOURCE FIELDS
+    OPTIONAL summary
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation, memo, tag
+    OPTIONAL chain
+END ITEM FIELDS
+
+ONTOLOGY FIELDS
+    REQUIRED definition, group
+END ONTOLOGY FIELDS
+
+FIELD summary TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+FIELD memo TYPE MEMO
+    SCOPE ITEM
+END FIELD
+
+FIELD tag TYPE CODE
+    SCOPE ITEM
+END FIELD
+
+FIELD chain TYPE CHAIN
+    SCOPE ITEM
+    ARITY >= 2
+    RELATIONS
+        INFLUENCES: Efeito causal direto entre conceitos
+        CONSTRAINS: Um conceito limita ou restringe outro
+    END RELATIONS
+END FIELD
+
+FIELD definition TYPE TEXT
+    SCOPE ONTOLOGY
+END FIELD
+
+FIELD group TYPE TOPIC
+    SCOPE ONTOLOGY
+END FIELD

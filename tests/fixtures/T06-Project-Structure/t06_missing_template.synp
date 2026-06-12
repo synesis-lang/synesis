@@ -1,0 +1,16 @@
+# =============================================================================
+# T06_MISSING_TEMPLATE.SYNP — Erro 64: arquivo .synt ausente no caminho declarado
+# =============================================================================
+# ERRO 64 (ERRO — MissingTemplateFile):
+#   Arquivo .synt ausente ou não encontrado no caminho declarado.
+#   "nao_existe.synt" não existe no filesystem.
+#   Esperado: ERRO "O arquivo de template 'nao_existe.synt' declarado no projeto não foi encontrado".
+
+PROJECT T06_Missing_Template
+
+    TEMPLATE "nao_existe.synt"
+    INCLUDE BIBLIOGRAPHY "t06.bib"
+    INCLUDE ANNOTATIONS "t06.syn"
+    INCLUDE ONTOLOGY "t06.syno"
+
+END PROJECT

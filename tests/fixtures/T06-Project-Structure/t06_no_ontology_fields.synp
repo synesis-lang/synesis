@@ -1,0 +1,15 @@
+# =============================================================================
+# T06_NO_ONTOLOGY_FIELDS.SYNP — Erro 5
+# =============================================================================
+# ERRO 5 (ERRO):
+#   Template sem ONTOLOGY FIELDS, mas projeto inclui arquivo de ontologia.
+#   Esperado: ERRO "O projeto contém blocos ONTOLOGY, mas o template não declara nenhum campo em ONTOLOGY FIELDS".
+
+PROJECT T06_No_Ontology_Fields
+
+    TEMPLATE "t06_no_ontology_fields.synt"
+    INCLUDE BIBLIOGRAPHY "t06.bib"
+    INCLUDE ANNOTATIONS "t06.syn"
+    INCLUDE ONTOLOGY "t06.syno"
+
+END PROJECT

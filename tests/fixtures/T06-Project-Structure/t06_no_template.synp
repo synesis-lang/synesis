@@ -1,0 +1,14 @@
+# =============================================================================
+# T06_NO_TEMPLATE.SYNP — Erro 65: PROJECT sem TEMPLATE declarado
+# =============================================================================
+# ERRO 65 (ERRO):
+#   O arquivo de projeto não declara nenhum template.
+#   Esperado: ERRO "O arquivo de projeto não declara nenhum template".
+
+PROJECT T06_No_Template
+
+    INCLUDE BIBLIOGRAPHY "t06.bib"
+    INCLUDE ANNOTATIONS "t06.syn"
+    INCLUDE ONTOLOGY "t06.syno"
+
+END PROJECT

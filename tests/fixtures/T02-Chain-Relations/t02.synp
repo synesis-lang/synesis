@@ -1,0 +1,8 @@
+PROJECT T02_Chain_Relations
+
+    TEMPLATE "t02.synt"
+    INCLUDE BIBLIOGRAPHY "t02.bib"
+    INCLUDE ANNOTATIONS "t02.syn"
+    INCLUDE ONTOLOGY "t02.syno"
+
+END PROJECT

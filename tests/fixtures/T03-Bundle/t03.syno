@@ -1,0 +1,9 @@
+ONTOLOGY Aceitacao_Social
+    definition: Grau de aprovação ou rejeição de uma tecnologia.
+    group: Social
+END ONTOLOGY
+
+ONTOLOGY Custo
+    definition: Fator econômico representando custos de instalação.
+    group: Economia
+END ONTOLOGY

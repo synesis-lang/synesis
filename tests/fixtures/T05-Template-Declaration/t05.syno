@@ -1,0 +1,4 @@
+ONTOLOGY Aceitacao_Social
+    definition: Grau de aprovação de uma tecnologia pela comunidade.
+    group: Social
+END ONTOLOGY

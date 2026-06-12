@@ -1,0 +1,241 @@
+# =============================================================================
+# T05.SYNT — Template deliberadamente malformado para testar erros 39–60, 69
+# ATENÇÃO: Este template contém múltiplos erros intencionais de declaração.
+# =============================================================================
+
+TEMPLATE t05
+
+# ---------------------------------------------------------------------------
+# ERRO 39 (ERRO):
+#   Campo listado em SOURCE FIELDS sem FIELD correspondente definido.
+#   "country" está listado abaixo mas não tem bloco FIELD country.
+#   Esperado: UndefinedFieldInScopeFields (scope=SOURCE) para 'country'.
+# ---------------------------------------------------------------------------
+SOURCE FIELDS
+    OPTIONAL resumo, country
+END SOURCE FIELDS
+
+# ---------------------------------------------------------------------------
+# ERRO 40 (ERRO):
+#   Campo listado em ITEM FIELDS sem FIELD correspondente definido.
+#   "palavras_chave" está listado abaixo mas não tem bloco FIELD palavras_chave.
+#   Esperado: UndefinedFieldInScopeFields (scope=ITEM) para 'palavras_chave'.
+# ---------------------------------------------------------------------------
+ITEM FIELDS
+    REQUIRED citacao
+    OPTIONAL nota, palavras_chave
+END ITEM FIELDS
+
+# ---------------------------------------------------------------------------
+# ERRO 41 (ERRO):
+#   Campo listado em ONTOLOGY FIELDS sem FIELD correspondente definido.
+#   "categoria" está listado abaixo mas não tem bloco FIELD categoria.
+#   Esperado: UndefinedFieldInScopeFields (scope=ONTOLOGY) para 'categoria'.
+# ---------------------------------------------------------------------------
+ONTOLOGY FIELDS
+    REQUIRED definicao, grupo
+    OPTIONAL categoria
+END ONTOLOGY FIELDS
+
+# ---------------------------------------------------------------------------
+# ERRO 57 (ERRO):
+#   Dois ou mais blocos ONTOLOGY FIELDS no mesmo template.
+#   O bloco acima já declarou ONTOLOGY FIELDS — este é duplicado.
+#   Esperado: DuplicateScopeBlock (scope=ONTOLOGY).
+# NOTE: Atualmente o parser aceita múltiplos blocos FIELDS e os agrega.
+#       A detecção semântica de bloco duplicado requer rastreamento no
+#       transformer (decisão pendente de implementação futura).
+# ---------------------------------------------------------------------------
+ONTOLOGY FIELDS
+    OPTIONAL campo_extra
+END ONTOLOGY FIELDS
+
+# ------ Definições de campos ------
+
+FIELD resumo TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citacao TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 42 (AVISO):
+#   FIELD definido sem estar listado em nenhum bloco FIELDS.
+#   "campo_orfao" tem definição mas não aparece em SOURCE/ITEM/ONTOLOGY FIELDS.
+#   Esperado: OrphanFieldDefinition (WARNING) para 'campo_orfao'.
+# ---------------------------------------------------------------------------
+FIELD campo_orfao TYPE TEXT
+    SCOPE ITEM
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERROS 43, 44, 45, 46 — CAPTURADOS PELA GRAMÁTICA LARK (não chegam à semântica):
+#   43: FIELD sem SCOPE  → "Expected: SCOPE" (parser LALR rejeita antes)
+#   44: FIELD sem TYPE   → "Expected: TYPE" (parser LALR rejeita antes)
+#   45: SCOPE inválido   → "Unexpected token DOCUMENT" (keyword desconhecida)
+#   46: TYPE duplicado   → "Unexpected token TYPE" (segunda declaração)
+#   Estes erros são de sintaxe — o compilador os reporta via SynesisSyntaxError
+#   ao tentar parsear o template, antes de qualquer validação semântica.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# ERRO 47 (ERRO):
+#   TYPE CHAIN sem ARITY declarada.
+#   "cadeia_sem_aridade" é TYPE CHAIN mas não declara ARITY.
+#   Esperado: ChainWithoutArity para 'cadeia_sem_aridade'.
+# ---------------------------------------------------------------------------
+FIELD cadeia_sem_aridade TYPE CHAIN
+    SCOPE ITEM
+    RELATIONS
+        INFLUENCES: Efeito causal direto
+    END RELATIONS
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 48 (ERRO):
+#   ARITY incompatível com o número de RELATIONS declaradas.
+#   "cadeia_aridade_errada" declara ARITY >= 4 mas tem apenas 1 relação.
+#   Para 4 conceitos em sequência são necessárias 3 relações (4-1=3).
+#   Esperado: ArityRelationsMismatch para 'cadeia_aridade_errada'.
+# ---------------------------------------------------------------------------
+FIELD cadeia_aridade_errada TYPE CHAIN
+    SCOPE ITEM
+    ARITY >= 4
+    RELATIONS
+        INFLUENCES: Efeito causal direto
+    END RELATIONS
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 49 (ERRO):
+#   TYPE ORDERED sem bloco VALUES.
+#   "avaliacao_sem_valores" é TYPE ORDERED mas não define VALUES.
+#   Esperado: OrderedWithoutValues para 'avaliacao_sem_valores'.
+# ---------------------------------------------------------------------------
+FIELD avaliacao_sem_valores TYPE ORDERED
+    SCOPE ITEM
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 50 (ERRO):
+#   TYPE ENUMERATED sem bloco VALUES.
+#   "categoria_sem_valores" é TYPE ENUMERATED mas não define VALUES.
+#   Esperado: EnumeratedWithoutValues para 'categoria_sem_valores'.
+# ---------------------------------------------------------------------------
+FIELD categoria_sem_valores TYPE ENUMERATED
+    SCOPE ITEM
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 51 (ERRO):
+#   TYPE SCALE sem declaração FORMAT.
+#   "intensidade_sem_formato" é TYPE SCALE mas não declara FORMAT.
+#   Esperado: ScaleWithoutFormat para 'intensidade_sem_formato'.
+# ---------------------------------------------------------------------------
+FIELD intensidade_sem_formato TYPE SCALE
+    SCOPE ITEM
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERROS 52 e 53 — CAPTURADOS PELA GRAMÁTICA LARK (não chegam à semântica):
+#   52: FORMAT inválido (ex: FORMAT 1-5)  → parser rejeita o token NUMBER
+#   53: ARITY com operador inválido (ex: ARITY ? 2) → parser rejeita o token
+#   Estes erros são de sintaxe.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# ERRO 54 (ERRO):
+#   FORMAT declarado em campo que não é TYPE SCALE.
+#   "nota_com_formato" é TYPE TEXT mas declara FORMAT.
+#   Esperado: FormatOnNonScale para 'nota_com_formato'.
+# ---------------------------------------------------------------------------
+FIELD nota_com_formato TYPE TEXT
+    SCOPE ITEM
+    FORMAT [1..10]
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 55 (ERRO):
+#   ARITY declarado em campo que não é TYPE CHAIN.
+#   "nota_com_aridade" é TYPE MEMO mas declara ARITY.
+#   Esperado: ArityOnNonChain para 'nota_com_aridade'.
+# ---------------------------------------------------------------------------
+FIELD nota_com_aridade TYPE MEMO
+    SCOPE ITEM
+    ARITY >= 2
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 56 (ERRO):
+#   RELATIONS definido em campo que não é TYPE CHAIN.
+#   "nota_com_relacoes" é TYPE TEXT mas define bloco RELATIONS.
+#   Esperado: RelationsOnNonChain para 'nota_com_relacoes'.
+# ---------------------------------------------------------------------------
+FIELD nota_com_relacoes TYPE TEXT
+    SCOPE ITEM
+    RELATIONS
+        INFLUENCES: Efeito causal direto
+    END RELATIONS
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 58 (ERRO):
+#   Valor em bloco VALUES com espaço no início ou no fim.
+#   "status_espaco" tem o valor "Ativo " (com espaço no final).
+#   Esperado: ValueWithWhitespace para 'status_espaco'.
+# NOTE: Verificar se o transformer preserva espaços nos labels VALUES.
+# ---------------------------------------------------------------------------
+FIELD status_espaco TYPE ENUMERATED
+    SCOPE ITEM
+    VALUES
+        Ativo : Valor com espaço antes dos dois pontos
+        Inativo: Valor sem espaço — válido
+    END VALUES
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 59 (ERRO):
+#   Valores duplicados dentro de um mesmo bloco VALUES.
+#   "status_duplicado" declara "Ativo" duas vezes.
+#   Esperado: DuplicateValue para 'status_duplicado'.
+# ---------------------------------------------------------------------------
+FIELD status_duplicado TYPE ENUMERATED
+    SCOPE ITEM
+    VALUES
+        Ativo:   Atualmente em uso
+        Inativo: Não mais relevante
+        Ativo:   Declaração duplicada — erro 59
+    END VALUES
+END FIELD
+
+FIELD nota TYPE MEMO
+    SCOPE ITEM
+END FIELD
+
+FIELD definicao TYPE TEXT
+    SCOPE ONTOLOGY
+END FIELD
+
+FIELD grupo TYPE TOPIC
+    SCOPE ONTOLOGY
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 69 (ERRO):
+#   Dois campos FIELD com o mesmo nome no template.
+#   "nota" já foi definido acima — esta é a declaração duplicada.
+#   Esperado: DuplicateFieldName para 'nota'.
+# ---------------------------------------------------------------------------
+FIELD nota TYPE MEMO
+    SCOPE ITEM
+    DESCRIPTION Segundo campo nota — duplicata para testar erro 69.
+END FIELD
+
+# ---------------------------------------------------------------------------
+# ERRO 60 — CAPTURADO PELA GRAMÁTICA LARK (não chega à semântica):
+#   GUIDELINES sem END GUIDELINES → parser exige KW_GUIDELINES ou NEWLINE
+#   antes do próximo FIELD, então falha com syntax error.
+#   Este erro é de sintaxe — reportado via SynesisSyntaxError.
+# ---------------------------------------------------------------------------

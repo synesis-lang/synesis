@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from synesis.compiler import SynesisCompiler
 
-TESTS_ROOT = Path(__file__).parent.parent.parent / "case-studies" / "Tests"
+TESTS_ROOT = Path(__file__).parent / "fixtures"
 
 
 def _compile(project_name, synp_filename=None):
@@ -80,7 +80,7 @@ class TestT06:
 
 class TestRealProjectRegression:
     def test_basic_project_no_fase4_false_positives(self):
-        basic = Path(__file__).parent.parent.parent / "case-studies" / "Basic" / "project.synp"
+        basic = Path(__file__).parent / "fixtures" / "Basic" / "project.synp"
         if not basic.exists():
             pytest.skip("Projeto Basic nao encontrado")
         result = SynesisCompiler(basic).compile().validation_result

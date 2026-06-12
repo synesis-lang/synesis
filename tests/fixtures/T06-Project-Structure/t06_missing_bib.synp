@@ -1,0 +1,16 @@
+# =============================================================================
+# T06_MISSING_BIB.SYNP — Erro 63: arquivo .bib ausente no caminho declarado
+# =============================================================================
+# ERRO 63 (ERRO):
+#   Arquivo .bib ausente ou não encontrado no caminho declarado.
+#   "nao_existe.bib" não existe no filesystem.
+#   Esperado: ERRO "O arquivo de referências 'nao_existe.bib' declarado no projeto não foi encontrado".
+
+PROJECT T06_Missing_Bib
+
+    TEMPLATE "t06.synt"
+    INCLUDE BIBLIOGRAPHY "nao_existe.bib"
+    INCLUDE ANNOTATIONS "t06.syn"
+    INCLUDE ONTOLOGY "t06.syno"
+
+END PROJECT

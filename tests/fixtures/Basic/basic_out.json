@@ -1,0 +1,269 @@
+{
+  "version": "3.0",
+  "export_metadata": {
+    "timestamp": "2026-06-02T00:59:23.987924+00:00",
+    "compiler_version": "1.1",
+    "export_mode": "universal",
+    "chain_count": 0,
+    "item_count": 1,
+    "source_count": 1,
+    "concept_count": 2
+  },
+  "project": {
+    "name": "demo",
+    "template_path": "template.synt",
+    "includes": [
+      {
+        "include_type": "BIBLIOGRAPHY",
+        "path": "references.bib",
+        "location": {
+          "file": "..\\case-studies\\Basic\\project.synp",
+          "line": 3,
+          "column": 5
+        }
+      },
+      {
+        "include_type": "ANNOTATIONS",
+        "path": "annotations.syn",
+        "location": {
+          "file": "..\\case-studies\\Basic\\project.synp",
+          "line": 4,
+          "column": 5
+        }
+      },
+      {
+        "include_type": "ONTOLOGY",
+        "path": "ontology.syno",
+        "location": {
+          "file": "..\\case-studies\\Basic\\project.synp",
+          "line": 5,
+          "column": 5
+        }
+      }
+    ],
+    "metadata": {},
+    "description": null,
+    "location": {
+      "file": "..\\case-studies\\Basic\\project.synp",
+      "line": 1,
+      "column": 1
+    }
+  },
+  "template": {
+    "name": "",
+    "metadata": {},
+    "field_specs": {
+      "description": {
+        "name": "description",
+        "type": "TEXT",
+        "scope": "SOURCE",
+        "format": null,
+        "description": "General context, summary, or bibliographic details of the data source",
+        "values": null,
+        "relations": null,
+        "arity": null,
+        "guidelines": "Summarize the source purpose and context in 1-2 sentences.\nUse only information supported by the source.\nDo not add analytical interpretation.",
+        "location": {
+          "file": "..\\case-studies\\Basic\\template.synt",
+          "line": 9,
+          "column": 1
+        }
+      },
+      "citation": {
+        "name": "citation",
+        "type": "QUOTATION",
+        "scope": "ITEM",
+        "format": null,
+        "description": "Direct quote or selected excerpt from the data source",
+        "values": null,
+        "relations": null,
+        "arity": null,
+        "guidelines": "Extract a complete, self-contained excerpt of 1-3 sentences.\nPreserve the original wording and punctuation.\nProvide enough context for the excerpt to be understood independently.\nDo not paraphrase.",
+        "location": {
+          "file": "..\\case-studies\\Basic\\template.synt",
+          "line": 28,
+          "column": 1
+        }
+      },
+      "note": {
+        "name": "note",
+        "type": "MEMO",
+        "scope": "ITEM",
+        "format": null,
+        "description": "Analytical memo recording interpretations, emerging patterns, or causal reasoning",
+        "values": null,
+        "relations": null,
+        "arity": null,
+        "guidelines": "Explain the analytical significance of the excerpt in 1-3 sentences.\nIdentify patterns, mechanisms, or relevant interpretations.\nDo not merely restate the citation.\nDistinguish textual evidence from your interpretation.",
+        "location": {
+          "file": "..\\case-studies\\Basic\\template.synt",
+          "line": 39,
+          "column": 1
+        }
+      },
+      "code": {
+        "name": "code",
+        "type": "CODE",
+        "scope": "ITEM",
+        "format": null,
+        "description": "Codes or descriptors applied to this specific excerpt (tags)",
+        "values": null,
+        "relations": null,
+        "arity": null,
+        "guidelines": "Apply one or more ontology codes directly supported by the excerpt.\nPrefer existing codes and avoid redundant synonyms.\nAdd a new code only for a distinct and analytically relevant concept.\nEvery code must have a corresponding ONTOLOGY entry.",
+        "location": {
+          "file": "..\\case-studies\\Basic\\template.synt",
+          "line": 50,
+          "column": 1
+        }
+      },
+      "definition": {
+        "name": "definition",
+        "type": "TEXT",
+        "scope": "ONTOLOGY",
+        "format": null,
+        "description": "Clear definition of the code, indicating inclusion/exclusion criteria for when to apply it",
+        "values": null,
+        "relations": null,
+        "arity": null,
+        "guidelines": "Define the code in 1-3 sentences.\nState when the code should be applied and, when useful, when it should not.\nDistinguish it from closely related codes.",
+        "location": {
+          "file": "..\\case-studies\\Basic\\template.synt",
+          "line": 70,
+          "column": 1
+        }
+      },
+      "group": {
+        "name": "group",
+        "type": "TOPIC",
+        "scope": "ONTOLOGY",
+        "format": null,
+        "description": "Broader theme, category, or thematic domain that groups these codes together",
+        "values": null,
+        "relations": null,
+        "arity": null,
+        "guidelines": "Assign one broad parent-level thematic category.\nReuse an existing group whenever possible.\nAvoid creating a group that applies to only one narrowly defined code.",
+        "location": {
+          "file": "..\\case-studies\\Basic\\template.synt",
+          "line": 80,
+          "column": 1
+        }
+      }
+    },
+    "required_fields": {
+      "SOURCE": [],
+      "ITEM": [
+        "citation",
+        "note",
+        "code"
+      ],
+      "ONTOLOGY": [
+        "definition",
+        "group"
+      ]
+    },
+    "optional_fields": {
+      "SOURCE": [
+        "description"
+      ],
+      "ITEM": [],
+      "ONTOLOGY": []
+    },
+    "forbidden_fields": {
+      "SOURCE": [],
+      "ITEM": [],
+      "ONTOLOGY": []
+    },
+    "bundled_fields": {
+      "SOURCE": [],
+      "ITEM": [],
+      "ONTOLOGY": []
+    },
+    "location": {
+      "file": "..\\case-studies\\Basic\\template.synt",
+      "line": 1,
+      "column": 1
+    }
+  },
+  "bibliography": {
+    "smith2024": {
+      "pages": "45--67",
+      "volume": "12",
+      "year": "2024",
+      "journal": "Journal of Social Research",
+      "title": "Understanding Community Resilience",
+      "author": "Smith, Jane",
+      "ENTRYTYPE": "article",
+      "ID": "smith2024",
+      "description": "Qualitative study on community resilience strategies in urban contexts."
+    }
+  },
+  "indices": {
+    "hierarchy": {},
+    "triples": [],
+    "topics": {
+      "Community_Resilience": [
+        "Social_Cohesion",
+        "Collective_Action"
+      ]
+    },
+    "code_frequency": {
+      "social_cohesion": 1,
+      "collective_action": 1
+    }
+  },
+  "ontology": {
+    "Collective_Action": {
+      "concept": "Collective_Action",
+      "definition": "Coordinated efforts by community members to address shared challenges",
+      "group": "Community_Resilience",
+      "location": {
+        "file": "..\\case-studies\\Basic\\ontology.syno",
+        "line": 8,
+        "column": 1
+      },
+      "frequency": 1,
+      "source_count": 1
+    },
+    "Social_Cohesion": {
+      "concept": "Social_Cohesion",
+      "definition": "The degree to which community members trust, support, and cooperate",
+      "group": "Community_Resilience",
+      "location": {
+        "file": "..\\case-studies\\Basic\\ontology.syno",
+        "line": 1,
+        "column": 1
+      },
+      "frequency": 1,
+      "source_count": 1
+    }
+  },
+  "corpus": [
+    {
+      "id": "smith2024_item0001",
+      "source_ref": "@smith2024",
+      "data": {
+        "citation": "\"People here look out for each other. When the flood came, nobody waited",
+        "note": [
+          "Participant describes spontaneous collective action as a primary resilience"
+        ],
+        "code": [
+          "Social_Cohesion",
+          "Collective_Action"
+        ],
+        "definition": [
+          "The degree to which community members trust, support, and cooperate",
+          "Coordinated efforts by community members to address shared challenges"
+        ],
+        "group": [
+          "Community_Resilience",
+          "Community_Resilience"
+        ]
+      },
+      "traceability": {
+        "file": "..\\case-studies\\Basic\\annotations.syn",
+        "line": 5
+      }
+    }
+  ]
+}

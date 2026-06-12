@@ -1,0 +1,77 @@
+# =============================================================================
+# T02.SYN — Erros de estrutura de CHAIN e de vinculo de relacoes
+# Erros cobertos: 7, 9, 10, 12, 14, 15.
+# =============================================================================
+
+SOURCE @autor2024
+    summary: Fonte para todos os testes de erros de cadeia.
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# ERRO 7 (ERRO — InvalidChainRelation):
+#   RELATION usada em chain qualificada nao declarada em RELATIONS do template.
+#   CORRELATES nao esta declarada em t02.synt.
+#   Esperado: InvalidChainRelation para CORRELATES.
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Correlacao nao declarada no template de relacoes.
+    chain: Custo -> CORRELATES -> Aceitacao
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 9 (ERRO — SimpleChainWithRelationsRequired):
+#   chain simples (sem relacoes) usada quando template define RELATIONS.
+#   O template exige relacoes nomeadas mas a cadeia foi escrita sem elas.
+#   Esperado: SimpleChainWithRelationsRequired.
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Cadeia simples em campo que exige relacoes nomeadas.
+    chain: Custo -> Aceitacao
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 10 (ERRO — MalformedQualifiedChain):
+#   Numero par de elementos — estrutura invalida para chain qualificada.
+#   Esperado: MalformedQualifiedChain.
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Estrutura mal formada — numero par de elementos.
+    chain: Custo -> Aceitacao -> Percepcao_Risco -> Beneficio
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 12 (ERRO — ChainArityViolation):
+#   chain com apenas 1 conceito quando ARITY >= 2.
+#   Esperado: ChainArityViolation (1 < 2).
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Cadeia com elemento unico — viola ARITY.
+    chain: Custo -> INFLUENCES -> Aceitacao
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 14 (ERRO — ConceptNameMatchesRelation):
+#   Nome de conceito identico ao nome de uma relacao declarada no template.
+#   INFLUENCES e relacao no template E conceito aqui.
+#   Esperado: ConceptNameMatchesRelation para INFLUENCES.
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Conceito com mesmo nome de relacao.
+    chain: INFLUENCES -> CONSTRAINS -> Aceitacao
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 15 (ERRO — ConceptWithSpaces):
+#   Conceito em chain contendo espacos.
+#   Esperado: ConceptWithSpaces para 'Aceitacao Social'.
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Conceito com espaco no nome.
+    chain: Custo -> INFLUENCES -> Aceitacao Social
+END ITEM

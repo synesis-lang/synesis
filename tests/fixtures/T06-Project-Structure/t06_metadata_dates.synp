@@ -1,0 +1,21 @@
+# =============================================================================
+# T06_METADATA_DATES.SYNP — Erro 67: data MODIFIED anterior à CREATED no METADATA
+# =============================================================================
+# ERRO 67 (AVISO):
+#   Data de modificação (2023-01-10) é anterior à data de criação (2024-06-01).
+#   Esperado: AVISO "A data de modificação '2023-01-10' é anterior à data de criação '2024-06-01'".
+
+PROJECT T06_Metadata_Dates
+
+    TEMPLATE "t06.synt"
+    INCLUDE BIBLIOGRAPHY "t06.bib"
+    INCLUDE ANNOTATIONS "t06.syn"
+    INCLUDE ONTOLOGY "t06.syno"
+
+    METADATA
+        author: Pesquisador Teste
+        created: 2024-06-01
+        modified: 2023-01-10
+    END METADATA
+
+END PROJECT

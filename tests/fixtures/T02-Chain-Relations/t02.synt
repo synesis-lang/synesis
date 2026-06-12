@@ -1,0 +1,47 @@
+# =============================================================================
+# T02.SYNT — Template para T02
+# Define campo de cadeia qualificada COM relacoes declaradas.
+# Erros cobertos: 7, 8, 9, 10, 11, 12, 13, 14, 15.
+# =============================================================================
+
+TEMPLATE t02
+
+SOURCE FIELDS
+    OPTIONAL summary
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+    OPTIONAL chain
+END ITEM FIELDS
+
+ONTOLOGY FIELDS
+    REQUIRED definition, group
+END ONTOLOGY FIELDS
+
+FIELD summary TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+# Campo com RELATIONS declaradas — erros 7, 8, 9, 10, 11, 12, 13, 14, 15 usam este campo.
+FIELD chain TYPE CHAIN
+    SCOPE ITEM
+    ARITY >= 2
+    RELATIONS
+        INFLUENCES: Efeito causal direto entre conceitos
+        CONSTRAINS: Um conceito limita ou restringe outro
+        ENABLES:    Um conceito e condicao necessaria para outro
+    END RELATIONS
+END FIELD
+
+FIELD definition TYPE TEXT
+    SCOPE ONTOLOGY
+END FIELD
+
+FIELD group TYPE TOPIC
+    SCOPE ONTOLOGY
+END FIELD

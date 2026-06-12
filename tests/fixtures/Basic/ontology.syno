@@ -1,0 +1,13 @@
+ONTOLOGY Social_Cohesion
+    definition: The degree to which community members trust, support, and cooperate
+        with one another. Applies when participants describe solidarity, mutual aid,
+        or a shared sense of belonging.
+    group: Community_Resilience
+END ONTOLOGY
+
+ONTOLOGY Collective_Action
+    definition: Coordinated efforts by community members to address shared challenges
+        without formal institutional direction. Applies when groups self-organize in
+        response to a problem or crisis.
+    group: Community_Resilience
+END ONTOLOGY

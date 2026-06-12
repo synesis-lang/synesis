@@ -1,0 +1,91 @@
+# =============================================================================
+# T01.SYN — Erros de vínculo bibliográfico e de vínculo entre SOURCE e ITEM
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# ERRO 1 (AVISO — UnregisteredSource):
+#   @bibref em SOURCE inexistente no .bib.
+#   Esperado: AVISO "Fonte @garcia2022 não encontrada no arquivo .bib".
+# ---------------------------------------------------------------------------
+SOURCE @garcia2022
+    summary: Estudo sobre aceitação social de tecnologias renováveis.
+END SOURCE
+
+ITEM @garcia2022
+    citation: A comunidade local demonstrou resistência inicial à instalação dos painéis.
+    memo: Resistência motivada por desconhecimento dos benefícios econômicos.
+    tag: Resistencia_Social
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 2 (ERRO — OrphanItem):
+#   ITEM sem SOURCE correspondente no mesmo arquivo.
+#   @orphan_ref não tem bloco SOURCE neste arquivo.
+#   Esperado: ERRO "Este ITEM referencia @orphan_ref, mas não há nenhum bloco SOURCE".
+# ---------------------------------------------------------------------------
+ITEM @orphan_ref
+    citation: Trecho sem fonte correspondente declarada neste arquivo.
+    memo: Este item não tem SOURCE — teste do erro de item órfão.
+    tag: Aceitacao_Social
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 24 (AVISO — SourceWithoutItems):
+#   SOURCE sem nenhum ITEM associado.
+#   @jones2023 tem SOURCE mas nenhum ITEM usa essa referência.
+#   Esperado: AVISO "SOURCE @jones2023 não possui ITEMs associados".
+# ---------------------------------------------------------------------------
+SOURCE @jones2023
+    summary: Estudo urbano sem unidades de análise extraídas.
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# ERRO 3 (AVISO — UndefinedCode):
+#   code: referenciando conceito ausente na ontologia.
+#   "Custo_Inexistente" não está definido em t01.syno.
+#   Esperado: AVISO "O código Custo_Inexistente não está definido na ontologia".
+# ---------------------------------------------------------------------------
+SOURCE @smith2024
+    summary: Fonte válida para testes de erros de código e cadeia.
+END SOURCE
+
+ITEM @smith2024
+    citation: Os custos de instalação foram citados como principal barreira.
+    memo: Custo como fator determinante de resistência.
+    tag: Custo_Inexistente, Aceitacao_Social
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 4 (AVISO — UndefinedCode):
+#   Nó de conceito em chain: (posição ímpar) referenciando conceito ausente.
+#   "Conceito_Fantasma" não está definido na ontologia.
+#   Esperado: AVISO "O conceito Conceito_Fantasma usado nesta cadeia não está definido".
+# ---------------------------------------------------------------------------
+ITEM @smith2024
+    citation: A percepção de risco influencia diretamente a aceitação da tecnologia.
+    memo: Cadeia com conceito não definido na ontologia.
+    tag: Aceitacao_Social
+    chain: Percepcao_Risco -> INFLUENCES -> Conceito_Fantasma
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# ERRO 70 (ERRO):
+#   Mesmo @bibref declarado em dois blocos SOURCE distintos no mesmo arquivo.
+#   @smith2024 aparece novamente abaixo — já foi declarado acima.
+#   Esperado: ERRO "A referência @smith2024 aparece em dois blocos SOURCE diferentes".
+# ---------------------------------------------------------------------------
+SOURCE @smith2024
+    summary: Declaração duplicada de SOURCE para teste de erro 70.
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# ERRO 71 (AVISO):
+#   Dois blocos ONTOLOGY com description idêntica — ver t01.syno.
+#   (Não provoca erro aqui no .syn, apenas no .syno)
+# ---------------------------------------------------------------------------

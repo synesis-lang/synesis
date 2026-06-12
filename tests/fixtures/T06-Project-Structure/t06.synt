@@ -1,0 +1,46 @@
+# =============================================================================
+# T06.SYNT — Template válido usado pelos projetos de estrutura de T06.
+# Também testa erros 5 e 6 via blocos de ONTOLOGY FIELDS incompletos.
+# =============================================================================
+
+TEMPLATE t06
+
+SOURCE FIELDS
+    OPTIONAL summary
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+END ITEM FIELDS
+
+# ---------------------------------------------------------------------------
+# ERRO 5 (ERRO):
+#   ONTOLOGY definido mas nenhum campo configurado em ONTOLOGY FIELDS no template.
+#   Para provocar este erro: remova o bloco ONTOLOGY FIELDS abaixo completamente.
+#   (Para testar o erro 5, use t06_no_ontology_fields.synt separadamente.)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# ERRO 6 (ERRO):
+#   Campo declarado em ONTOLOGY FIELDS sem FIELD correspondente com SCOPE ONTOLOGY.
+#   "missing_field_def" está listado abaixo mas não tem bloco FIELD definido.
+#   Esperado: ERRO "O campo 'missing_field_def' está listado em ONTOLOGY FIELDS, mas não há definição FIELD com SCOPE ONTOLOGY".
+# ---------------------------------------------------------------------------
+ONTOLOGY FIELDS
+    REQUIRED definition
+    OPTIONAL missing_field_def
+END ONTOLOGY FIELDS
+
+FIELD summary TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+FIELD definition TYPE TEXT
+    SCOPE ONTOLOGY
+END FIELD
+
+# "missing_field_def" NÃO tem bloco FIELD aqui — provoca erro 6.

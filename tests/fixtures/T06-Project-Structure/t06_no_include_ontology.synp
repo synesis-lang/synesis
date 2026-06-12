@@ -1,0 +1,17 @@
+# =============================================================================
+# T06_NO_INCLUDE_ONTOLOGY.SYNP — Erro 62
+# =============================================================================
+# ERRO 62 (ERRO):
+#   Arquivo .syno referenciado sem bloco INCLUDE ONTOLOGY no .synp.
+#   Este projeto omite INCLUDE ONTOLOGY, mas t06.syn usa códigos que precisariam
+#   de validação ontológica.
+#   Esperado: ERRO "O arquivo de projeto não possui um bloco INCLUDE ONTOLOGY".
+
+PROJECT T06_No_Include_Ontology
+
+    TEMPLATE "t06.synt"
+    INCLUDE BIBLIOGRAPHY "t06.bib"
+    INCLUDE ANNOTATIONS "t06.syn"
+    # INCLUDE ONTOLOGY ausente intencionalmente
+
+END PROJECT

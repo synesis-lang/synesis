@@ -1,0 +1,8 @@
+PROJECT T05_Template_Declaration
+
+    TEMPLATE "t05.synt"
+    INCLUDE BIBLIOGRAPHY "t05.bib"
+    INCLUDE ANNOTATIONS "t05.syn"
+    INCLUDE ONTOLOGY "t05.syno"
+
+END PROJECT

@@ -1,0 +1,65 @@
+# =============================================================================
+# T03.SYNT — Template para T03
+#
+# Declara dois bundles:
+#   "bundle_par": REQUIRED BUNDLE com dois campos (note + chain) — válido
+#   "bundle_singular": REQUIRED BUNDLE com apenas um campo — erro 18
+# =============================================================================
+
+TEMPLATE t03
+
+SOURCE FIELDS
+    OPTIONAL summary
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+    # Bundle válido com dois campos: note e chain devem aparecer juntos e na mesma quantidade.
+    REQUIRED BUNDLE note, chain
+    # ---------------------------------------------------------------------------
+    # ERRO 18 (ERRO):
+    #   BUNDLE declarado com apenas um campo.
+    #   Um bundle precisa de pelo menos dois campos para fazer sentido.
+    #   Esperado: ERRO "O bundle foi declarado com apenas um campo".
+    # ---------------------------------------------------------------------------
+    REQUIRED BUNDLE lone_field
+END ITEM FIELDS
+
+ONTOLOGY FIELDS
+    REQUIRED definition, group
+END ONTOLOGY FIELDS
+
+FIELD summary TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+FIELD note TYPE MEMO
+    SCOPE ITEM
+    DESCRIPTION Memo analítico — deve aparecer junto com chain (bundle).
+END FIELD
+
+FIELD chain TYPE CHAIN
+    SCOPE ITEM
+    ARITY >= 2
+    RELATIONS
+        INFLUENCES: Efeito causal direto entre conceitos
+    END RELATIONS
+    DESCRIPTION Cadeia causal — deve aparecer junto com note (bundle).
+END FIELD
+
+FIELD lone_field TYPE MEMO
+    SCOPE ITEM
+    DESCRIPTION Campo que forma um bundle sozinho — para testar erro 18.
+END FIELD
+
+FIELD definition TYPE TEXT
+    SCOPE ONTOLOGY
+END FIELD
+
+FIELD group TYPE TOPIC
+    SCOPE ONTOLOGY
+END FIELD

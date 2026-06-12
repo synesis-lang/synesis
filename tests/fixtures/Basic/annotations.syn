@@ -1,0 +1,13 @@
+SOURCE @smith2024
+    description: Qualitative study on community resilience strategies in urban contexts.
+END SOURCE
+
+ITEM @smith2024
+    citation: "People here look out for each other. When the flood came, nobody waited
+        for official help — neighbors just organized themselves."
+
+    note: Participant describes spontaneous collective action as a primary resilience
+        mechanism, bypassing formal institutions. Suggests strong bonding social capital.
+
+    code: Social_Cohesion, Collective_Action, Teste_IEBT
+END ITEM

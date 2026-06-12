@@ -1,0 +1,43 @@
+# =============================================================================
+# T01.SYNO — Ontologia para T01
+# =============================================================================
+
+# Conceito válido — usado corretamente em t01.syn.
+ONTOLOGY Aceitacao_Social
+    definition: Grau de aprovação ou rejeição de uma tecnologia por parte da comunidade local.
+    group: Fatores_Sociais
+END ONTOLOGY
+
+# Conceito válido — usado em chains do t01.syn.
+ONTOLOGY Percepcao_Risco
+    definition: Avaliação subjetiva dos riscos associados a uma tecnologia ou intervenção.
+    group: Fatores_Cognitivos
+END ONTOLOGY
+
+# ---------------------------------------------------------------------------
+# ERRO 68 (ERRO):
+#   Dois blocos ONTOLOGY com o mesmo nome de conceito.
+#   "Aceitacao_Social" já foi definido acima.
+#   Esperado: ERRO "O conceito Aceitacao_Social está definido mais de uma vez na ontologia".
+# ---------------------------------------------------------------------------
+ONTOLOGY Aceitacao_Social
+    definition: Definição duplicada — usado para testar erro 68.
+    group: Duplicatas
+END ONTOLOGY
+
+
+# ---------------------------------------------------------------------------
+# ERRO 71 (AVISO):
+#   Dois blocos ONTOLOGY com description idêntica.
+#   "Conceito_A" e "Conceito_B" têm a mesma definition.
+#   Esperado: AVISO "Os conceitos Conceito_A e Conceito_B têm exatamente a mesma descrição".
+# ---------------------------------------------------------------------------
+ONTOLOGY Conceito_A
+    definition: Fator que influencia positivamente a adoção de tecnologias limpas.
+    group: Fatores_Gerais
+END ONTOLOGY
+
+ONTOLOGY Conceito_B
+    definition: Fator que influencia positivamente a adoção de tecnologias limpas.
+    group: Fatores_Gerais
+END ONTOLOGY

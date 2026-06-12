@@ -1,0 +1,8 @@
+PROJECT T04_Fields_Types_Scope
+
+    TEMPLATE "t04.synt"
+    INCLUDE BIBLIOGRAPHY "t04.bib"
+    INCLUDE ANNOTATIONS "t04.syn"
+    INCLUDE ONTOLOGY "t04.syno"
+
+END PROJECT
