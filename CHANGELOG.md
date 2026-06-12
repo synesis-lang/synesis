@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-06-11
+
+### Changed
+
+- **CLI rewritten with Unix-style output, colors, and English-only interface** (`synesis/cli.py`)
+  - Replaced the ad-hoc `_print_help()` function with a `_SynesisGroup` / `_SynesisCommand` architecture identical to the synesis-coder CLI pattern.
+  - `_build_main_help()`: fully custom help rendered via `sys.stdout.buffer` with explicit UTF-8 encoding, bypassing Click's codec path to prevent character corruption on Windows terminals.
+  - Commands grouped into three semantic sections: "Project Management", "Compilation & Export", "Validation & Debugging".
+  - ANSI colors applied consistently: section headers in yellow/bold, command names in green/bold, option flags in cyan — colors suppressed automatically when stdout is not a TTY.
+  - Global column alignment computed once across all groups (`col = max(cmd_names_len) + 2`), ensuring all command names align at the same column regardless of group.
+  - `_SynesisCommand` subclass overrides `format_epilog` to write epilog lines verbatim (no Click reflowing), enabling structured `Examples:` blocks per subcommand.
+  - `_ex(*lines)` helper colorizes example blocks: `synesis` in green/bold, subcommand names in green, `--flags` in cyan, `# comments` in bright_black.
+  - All four subcommands (`compile`, `check`, `validate-template`, `init`) now carry colored `Examples:` epilogs.
+  - `--version` handled via `@click.version_option`; `--help` via `get_help()` override — both paths write UTF-8 directly.
+  - All user-facing strings translated to English; internal variable names and comments unchanged.
+
 ## [0.5.4] - 2026-06-10
 
 ### Changed

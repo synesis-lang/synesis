@@ -48,6 +48,147 @@ from synesis.exporters.xls_export import export_xls
 from synesis.parser.lexer import SynesisSyntaxError, parse_file
 from synesis.parser.template_loader import TemplateLoadError, load_template
 
+
+# ---------------------------------------------------------------------------
+# Helpers de estilo
+# ---------------------------------------------------------------------------
+
+def _tty() -> bool:
+    return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+
+def _c(text: str, **kwargs) -> str:
+    return click.style(text, **kwargs) if _tty() else text
+
+
+def _build_main_help() -> str:
+    title = _c("SYNESIS COMPILER", fg="green", bold=True) + f" (v{VERSION})"
+    desc = "Semantic compiler for knowledge engineering."
+    usage = _c("Usage:", fg="yellow", bold=True) + " synesis [COMMAND] [OPTIONS]"
+
+    groups = [
+        ("Project Management", [
+            ("init",              "Creates the minimal structure for a new project"),
+        ]),
+        ("Compilation & Export", [
+            ("compile",           "Compiles the project and generates artifacts (JSON, CSV, XLS, Alpaca)"),
+        ]),
+        ("Validation & Debugging", [
+            ("check",             "Validates the syntax and integrity of a single file"),
+            ("validate-template", "Verifies the structure and consistency of a template file"),
+        ]),
+    ]
+
+    col = max(len(name) for _, rows in groups for name, _ in rows) + 2
+
+    def _render_group(label, rows):
+        lines = [_c("  " + label, fg="yellow", bold=True)]
+        for name, desc_ in rows:
+            lines.append(f"    {_c(name.ljust(col), fg='green', bold=True)}  {desc_}")
+        return "\n".join(lines)
+
+    commands = _c("Commands:", fg="yellow", bold=True) + "\n\n" + "\n\n".join(
+        _render_group(label, rows) for label, rows in groups
+    )
+
+    hint = _c(
+        "Run 'synesis COMMAND --help' for specific parameters, output formats, and examples.",
+        fg="bright_black",
+    )
+
+    return "\n\n".join([title, desc, usage, commands, hint]) + "\n"
+
+
+class _SynesisCommand(click.Command):
+    def format_epilog(self, ctx, formatter):
+        if self.epilog:
+            formatter.write("\n")
+            for line in self.epilog.splitlines():
+                formatter.write(line + "\n")
+
+
+class _SynesisGroup(click.Group):
+    command_class = _SynesisCommand
+
+    def format_help(self, ctx, formatter):
+        pass
+
+    def get_help(self, ctx):
+        out = _build_main_help()
+        if hasattr(sys.stdout, "buffer"):
+            sys.stdout.buffer.write(out.encode("utf-8"))
+            sys.stdout.buffer.flush()
+            raise SystemExit(0)
+        return out
+
+
+def _ex(*lines: str) -> str:
+    import re
+    out = [_c("Examples:", fg="yellow", bold=True)]
+    for line in lines:
+        stripped = line.lstrip()
+        indent = line[: len(line) - len(stripped)]
+        if stripped.startswith("#"):
+            out.append(indent + _c(stripped, fg="bright_black"))
+        else:
+            tokens = re.split(r"(\s+)", stripped)
+            result = []
+            for tok in tokens:
+                if tok == "synesis":
+                    result.append(_c(tok, fg="green", bold=True))
+                elif re.match(r"^--[\w-]+=?", tok):
+                    result.append(_c(tok, fg="cyan"))
+                elif tok in ("compile", "check", "validate-template", "init"):
+                    result.append(_c(tok, fg="green"))
+                else:
+                    result.append(tok)
+            out.append(indent + "".join(result))
+    return "\n".join(out)
+
+
+_EPILOG_COMPILE = _ex(
+    "  # Compile and export to JSON",
+    "  synesis compile project.synp --json output.json",
+    "",
+    "  # Compile and export to CSV directory",
+    "  synesis compile project.synp --csv output_csv/",
+    "",
+    "  # Compile and export to Excel",
+    "  synesis compile project.synp --xls output.xlsx",
+    "",
+    "  # Export Alpaca JSONL for LLM fine-tuning",
+    "  synesis compile project.synp --alpaca dataset.jsonl",
+    "",
+    "  # Combine multiple export formats",
+    "  synesis compile project.synp --json out.json --csv out_csv/ --alpaca dataset.jsonl",
+    "",
+    "  # Show compilation statistics",
+    "  synesis compile project.synp --stats",
+)
+
+_EPILOG_CHECK = _ex(
+    "  # Validate a single annotations file",
+    "  synesis check annotations.syn",
+    "",
+    "  # Validate a template file syntax",
+    "  synesis check template.synt",
+)
+
+_EPILOG_VALIDATE_TEMPLATE = _ex(
+    "  # Verify a template before running compile",
+    "  synesis validate-template template.synt",
+)
+
+_EPILOG_INIT = _ex(
+    "  # Initialize a new project in the current directory",
+    "  synesis init",
+)
+
+
+# ---------------------------------------------------------------------------
+# Spinner
+# ---------------------------------------------------------------------------
+
 class _Spinner:
     """Spinner animado para etapas do pipeline. Desativa-se se stdout nao for TTY."""
 
@@ -103,37 +244,23 @@ class _Spinner:
         sys.stderr.flush()
 
 
-HELP_EPILOG = (
-    "\b\n"
-    "Output formats:\n"
-    "  --json   file.json    Canonical JSON v3.0 (ontology, corpus, indices)\n"
-    "  --csv    dir/         CSV tables: sources, items, ontologies, chains\n"
-    "  --xls    file.xlsx    Excel workbook (one sheet per CSV table)\n"
-    "  --alpaca file.jsonl   Alpaca JSONL for LLM fine-tuning\n"
-    "\n"
-    "\b\n"
-    "Examples:\n"
-    "  synesis compile projeto.synp --json saida.json\n"
-    "  synesis compile projeto.synp --csv saida_csv/\n"
-    "  synesis compile projeto.synp --xls resultado.xlsx\n"
-    "  synesis compile projeto.synp --alpaca dataset.jsonl\n"
-    "  synesis compile projeto.synp --json saida.json --csv saida_csv/ --alpaca dataset.jsonl\n"
-)
 
 
-@click.group(invoke_without_command=True)
-@click.option("--version", is_flag=True, help="Show version and exit")
+@click.group(cls=_SynesisGroup, invoke_without_command=True)
+@click.version_option(version=VERSION, prog_name="synesis")
 @click.pass_context
-def main(ctx, version: bool) -> None:
-    """Synesis - Compile yout thinking"""
-    if version:
-        click.echo(f"Synesis Compiler v{VERSION}")
-        raise SystemExit(0)
+def main(ctx) -> None:
+    """Compilador semântico para validação e consolidação de conhecimento."""
     if ctx.invoked_subcommand is None:
-        _print_help()
+        out = _build_main_help()
+        if hasattr(sys.stdout, "buffer"):
+            sys.stdout.buffer.write(out.encode("utf-8"))
+            sys.stdout.buffer.flush()
+        else:
+            click.echo(out)
 
 
-@main.command(epilog=HELP_EPILOG)
+@main.command(cls=_SynesisCommand, epilog=_EPILOG_COMPILE)
 @click.argument("project", type=click.Path(exists=True))
 @click.option("--json", "json_path", type=click.Path(), help="Export canonical JSON v3.0")
 @click.option("--csv", "csv_dir", type=click.Path(), help="Export CSV tables to directory")
@@ -274,10 +401,10 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
         raise SystemExit(1)
 
 
-@main.command()
+@main.command(cls=_SynesisCommand, epilog=_EPILOG_CHECK)
 @click.argument("file", type=click.Path(exists=True))
 def check(file: str) -> None:
-    """Validate a single Synesis file without full compilation."""
+    """Validate the syntax and integrity of a single Synesis file."""
     try:
         parse_file(Path(file))
         click.echo(click.style("OK", fg="green"))
@@ -287,10 +414,10 @@ def check(file: str) -> None:
         raise SystemExit(1)
 
 
-@main.command()
+@main.command(cls=_SynesisCommand, epilog=_EPILOG_VALIDATE_TEMPLATE)
 @click.argument("template", type=click.Path(exists=True))
 def validate_template(template: str) -> None:
-    """Validate a template file."""
+    """Verify the structure and consistency of a template file."""
     try:
         load_template(Path(template))
         click.echo(click.style("OK", fg="green"))
@@ -300,9 +427,9 @@ def validate_template(template: str) -> None:
         raise SystemExit(1)
 
 
-@main.command()
+@main.command(cls=_SynesisCommand, epilog=_EPILOG_INIT)
 def init() -> None:
-    """Create a minimal project structure in current directory."""
+    """Create the minimal structure for a new project in the current directory."""
     cwd = Path.cwd()
     project_path = cwd / "project.synp"
     template_path = cwd / "template.synt"
@@ -439,7 +566,7 @@ def init() -> None:
             "\n"
             "    note: Participant describes spontaneous collective action as a primary resilience\n"
             "        mechanism, bypassing formal institutions. Suggests strong bonding social capital.\n"
-            "\n"            
+            "\n"
             "    code: Social_Cohesion, Collective_Action\n"
             "END ITEM\n",
             encoding="utf-8",
@@ -470,7 +597,6 @@ def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | N
     color = "red" if severity_label == "ERROR" else "yellow"
     label_color = "red" if severity_label == "ERROR" else "yellow"
 
-    # Formata location com caminho relativo
     def _fmt_location(loc) -> str:
         try:
             rel = Path(loc.file).relative_to(base_dir) if base_dir else Path(loc.file)
@@ -478,7 +604,6 @@ def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | N
             rel = Path(loc.file).name
         return f"{rel}:{loc.line}:{loc.column}"
 
-    # Pre-formata para calcular alinhamento
     formatted = [
         (_fmt_location(err.location), err.to_cli_line())
         for err in errors
@@ -513,53 +638,6 @@ def _print_stats(stats) -> None:
 
 def _format_syntax_error(error: SynesisSyntaxError) -> str:
     return f"{error.location}: [ERROR] {error.message}"
-
-
-def _print_help() -> None:
-    """Print help message with examples when no command is provided."""
-    click.echo(click.style(f"Synesis Compiler v{VERSION}", fg="cyan", bold=True))
-    click.echo(click.style("Compiler for qualitative research corpora", fg="cyan"))
-    click.echo()
-    click.echo(click.style("Usage:", fg="yellow", bold=True))
-    click.echo("  synesis [COMMAND] [OPTIONS]")
-    click.echo()
-    click.echo(click.style("Commands:", fg="yellow", bold=True))
-    click.echo("  compile           Compile a Synesis project")
-    click.echo("  check             Validate a single Synesis file")
-    click.echo("  validate-template Validate a template file")
-    click.echo("  init              Create a minimal project structure")
-    click.echo()
-    click.echo(click.style("Output formats:", fg="yellow", bold=True))
-    click.echo("  --json   <file.json>    Canonical JSON v3.0 (ontology, corpus, indices)")
-    click.echo("  --csv    <dir/>         CSV tables: sources, items, ontologies, chains")
-    click.echo("  --xls    <file.xlsx>    Excel workbook (one sheet per CSV table)")
-    click.echo("  --alpaca <file.jsonl>   Alpaca JSONL for LLM fine-tuning")
-    click.echo()
-    click.echo(click.style("Examples:", fg="yellow", bold=True))
-    click.echo("  # Compile project and export to JSON")
-    click.echo("  synesis compile projeto.synp --json saida.json")
-    click.echo()
-    click.echo("  # Compile and export to CSV directory")
-    click.echo("  synesis compile projeto.synp --csv saida_csv/")
-    click.echo()
-    click.echo("  # Compile and export to XLS (Excel)")
-    click.echo("  synesis compile projeto.synp --xls resultado.xlsx")
-    click.echo()
-    click.echo("  # Export Alpaca JSONL for LLM fine-tuning")
-    click.echo("  synesis compile projeto.synp --alpaca dataset.jsonl")
-    click.echo()
-    click.echo("  # Combine multiple export formats")
-    click.echo("  synesis compile projeto.synp --json saida.json --csv saida_csv/ --alpaca dataset.jsonl")
-    click.echo()
-    click.echo("  # Initialize a new project")
-    click.echo("  synesis init")
-    click.echo()
-    click.echo("  # Show compilation statistics")
-    click.echo("  synesis compile projeto.synp --stats")
-    click.echo()
-    click.echo(click.style("For more information on a command:", fg="yellow", bold=True))
-    click.echo("  synesis [COMMAND] --help")
-    click.echo()
 
 
 if __name__ == "__main__":
