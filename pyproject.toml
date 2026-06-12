@@ -55,7 +55,7 @@ dev = [
     "build >= 0.10",
     "twine >= 4.0",
     "ruff == 0.15.17",
-    "mypy == 1.15.0",
+    "mypy == 1.16.0",
 ]
 
 [project.urls]
