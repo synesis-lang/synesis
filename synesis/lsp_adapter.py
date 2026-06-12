@@ -45,10 +45,13 @@ Gerado conforme: Especificação Synesis v1.1 + ADR-002 LSP + ADR-003 Project Di
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from synesis.ast.results import ValidationError
 
 from synesis.ast.nodes import (
     ItemNode,
@@ -231,7 +234,6 @@ def _parse_with_error_handling(
         - nodes: lista de nós da AST (vazia se erro)
         - errors: lista de SyntaxError ValidationErrors
     """
-    from synesis.ast.results import ValidationError
 
     errors = []
 
@@ -351,7 +353,7 @@ def discover_context(file_uri: str) -> tuple[ValidationContext, List["Validation
     Returns:
         Tupla (ValidationContext, lista de warnings de descoberta)
     """
-    from synesis.ast.results import MissingProjectFile, ValidationError
+    from synesis.ast.results import MissingProjectFile
 
     warnings: List[ValidationError] = []
 
@@ -626,8 +628,7 @@ def _load_context_from_project(
     Returns:
         Tupla (ValidationContext, lista de ValidationErrors)
     """
-    from synesis.ast.nodes import ProjectNode
-    from synesis.ast.results import MissingTemplateFile, InvalidProjectFile, ValidationError
+    from synesis.ast.results import InvalidProjectFile, MissingTemplateFile
 
     errors: List[ValidationError] = []
     template = None
@@ -712,7 +713,7 @@ def _load_context_from_project(
 # ============================================
 
 # Define novo tipo de erro sintático para integração com ValidationResult
-from synesis.ast.results import ErrorSeverity, ValidationError as BaseValidationError
+from synesis.ast.results import ValidationError as BaseValidationError
 
 
 @dataclass(frozen=True)

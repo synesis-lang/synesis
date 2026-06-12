@@ -34,19 +34,17 @@ from typing import Any, Dict, List, Optional
 from synesis.ast.nodes import (
     FieldType,
     ItemNode,
-    OntologyNode,
     Scope,
     SourceNode,
     TemplateNode,
 )
-from synesis.semantic.linker import LinkedProject
 from synesis.exporters._helpers import (
     _get_field_names_for_scope,
     _get_field_names_for_scope_and_types,
     _get_item_field_value,
     _get_ontology_field_value,
 )
-
+from synesis.semantic.linker import LinkedProject
 
 CsvTable = tuple[List[str], List[Dict[str, Any]]]
 

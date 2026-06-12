@@ -32,7 +32,7 @@ from __future__ import annotations
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, List, Optional
 
 from synesis.ast.nodes import (
     ItemNode,
@@ -42,7 +42,6 @@ from synesis.ast.nodes import (
     SourceNode,
     TemplateNode,
 )
-from synesis.parser.bib_loader import BibEntry
 from synesis.ast.results import (
     DuplicateProjectBlock,
     MalformedBibliographyEntry,
@@ -58,12 +57,12 @@ from synesis.exporters.alpaca_export import export_alpaca
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
-from synesis.parser.bib_loader import detect_malformed_entries, load_bibliography
+from synesis.parser.bib_loader import BibEntry, detect_malformed_entries, load_bibliography
 from synesis.parser.lexer import parse_file
 from synesis.parser.parse_cache import get_cached_nodes, put_cached_nodes
 from synesis.parser.template_loader import load_template, validate_template
 from synesis.parser.transformer import SynesisTransformer
-from synesis.semantic.linker import Linker, LinkedProject
+from synesis.semantic.linker import LinkedProject, Linker
 from synesis.semantic.validator import SemanticValidator
 
 
@@ -388,7 +387,7 @@ class SynesisCompiler:
             return None, result
         try:
             return load_template(template_path), result
-        except Exception as exc:
+        except Exception:
             result.add(MissingTemplateFile(
                 location=project.location,
                 template_path=str(project.template_path),

@@ -51,7 +51,7 @@ from synesis.parser.bib_loader import (
 from synesis.parser.lexer import parse_string
 from synesis.parser.template_loader import load_template_from_string
 from synesis.parser.transformer import SynesisTransformer
-from synesis.semantic.linker import Linker, LinkedProject
+from synesis.semantic.linker import LinkedProject, Linker
 from synesis.semantic.validator import SemanticValidator
 
 

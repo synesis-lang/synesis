@@ -50,14 +50,14 @@ from synesis.ast.nodes import (
     SourceNode,
     TemplateNode,
 )
-from synesis.parser.bib_loader import BibEntry
-from synesis.semantic.linker import LinkedProject
 from synesis.exporters._helpers import (
     _get_field_names_for_scope,
     _get_field_names_for_scope_and_types,
     _get_item_field_value,
     _get_ontology_field_value,
 )
+from synesis.parser.bib_loader import BibEntry
+from synesis.semantic.linker import LinkedProject
 
 _ITEM_INDEX_WIDTH = 4
 

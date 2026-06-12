@@ -63,8 +63,19 @@ graph TD
 | [synesis-lsp](https://github.com/synesis-lang/synesis-lsp) | Python | Language Server — diagnostics, hover, completion, semantic tokens |
 | [synesis-explorer](https://github.com/synesis-lang/synesis-explorer) | JS/TS | VS Code extension — tree views, graph viewer, themes |
 | [zotero-synesis-export](https://github.com/synesis-lang/zotero-synesis-export) | JavaScript | Zotero 7 plugin — exports PDF highlights and tags as plain `.syn` (no chains or ontology codes) |
-| [synesis2neo4j](https://github.com/synesis-lang/synesis2neo4j) | Python | Import compiled knowledge into Neo4j / Memgraph |
+| [synesis-graph](https://github.com/synesis-lang/synesis-graph) | Python | Import compiled knowledge into Neo4j / GraphQLite, render interactive HTML graphs |
 | [synesis-coder](https://github.com/synesis-lang/synesis-coder) | Python | AI-assisted annotation — generates fully coded `.syn` files (chains, codes, fields) conforming to the project template |
+
+### Compatibility matrix
+
+Downstream tools pin to the compiler version they require:
+
+| Package | Latest version | Requires `synesis` | Python |
+|---|---|---|---|
+| synesis | 0.5.5 | — | ≥3.10 |
+| synesis-coder | 0.4.1 | ≥0.5.5 | ≥3.10 |
+| synesis-lsp | 0.15.4 | ≥0.5.5 | ≥3.10 |
+| synesis-graph | 0.2.0 | ≥0.5.5 | ≥3.10 |
 
 ---
 

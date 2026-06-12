@@ -37,8 +37,6 @@ from synesis.ast.results import (
     ArityOnNonChain,
     ArityRelationsMismatch,
     ChainWithoutArity,
-    DuplicateFieldName,
-    DuplicateScopeBlock,
     DuplicateValue,
     EnumeratedWithoutValues,
     FieldScopeListMismatch,
@@ -54,7 +52,7 @@ from synesis.ast.results import (
     ValidationResult,
     ValueWithWhitespace,
 )
-from synesis.parser.lexer import parse_file, parse_string
+from synesis.parser.lexer import parse_string
 from synesis.parser.transformer import SynesisTransformer
 
 

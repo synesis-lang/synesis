@@ -26,6 +26,7 @@ Gerado conforme: Especificacao Synesis v1.1
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 import time
@@ -48,7 +49,6 @@ from synesis.exporters.xls_export import export_xls
 from synesis.parser.lexer import SynesisSyntaxError, parse_file
 from synesis.parser.template_loader import TemplateLoadError, load_template
 
-
 # ---------------------------------------------------------------------------
 # Helpers de estilo
 # ---------------------------------------------------------------------------
@@ -59,6 +59,19 @@ def _tty() -> bool:
 
 def _c(text: str, **kwargs) -> str:
     return click.style(text, **kwargs) if _tty() else text
+
+
+def _configure_logging(verbose: int, quiet: int) -> None:
+    """Set root log level: -q → WARNING/ERROR, default → INFO, -v → DEBUG."""
+    if quiet >= 2:
+        level = logging.ERROR
+    elif quiet == 1:
+        level = logging.WARNING
+    elif verbose >= 1:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    logging.basicConfig(level=level, format="[%(levelname)s] %(message)s")
 
 
 def _build_main_help() -> str:
@@ -79,7 +92,21 @@ def _build_main_help() -> str:
         ]),
     ]
 
-    col = max(len(name) for _, rows in groups for name, _ in rows) + 2
+    opt_rows = [
+        ("-v, --verbose",  "Increase log verbosity (DEBUG). Repeatable."),
+        ("-q, --quiet",    "Decrease log verbosity (-q WARNING, -qq ERROR). Repeatable."),
+        ("--version",      "Show version and exit"),
+        ("--help",         "Show this message and exit"),
+    ]
+
+    cmd_names_len = max(len(name) for _, rows in groups for name, _ in rows)
+    opt_names_len = max(len(name) for name, _ in opt_rows)
+    col = max(cmd_names_len, opt_names_len) + 2
+
+    options = _c("Global Options:", fg="yellow", bold=True) + "\n" + "\n".join(
+        f"  {_c(name.ljust(col), fg='cyan')}  {desc_}"
+        for name, desc_ in opt_rows
+    )
 
     def _render_group(label, rows):
         lines = [_c("  " + label, fg="yellow", bold=True)]
@@ -96,7 +123,7 @@ def _build_main_help() -> str:
         fg="bright_black",
     )
 
-    return "\n\n".join([title, desc, usage, commands, hint]) + "\n"
+    return "\n\n".join([title, desc, usage, options, commands, hint]) + "\n"
 
 
 class _SynesisCommand(click.Command):
@@ -248,9 +275,14 @@ class _Spinner:
 
 @click.group(cls=_SynesisGroup, invoke_without_command=True)
 @click.version_option(version=VERSION, prog_name="synesis")
+@click.option("-v", "--verbose", count=True, default=0,
+              help="Increase log verbosity (-v for DEBUG). Repeatable.")
+@click.option("-q", "--quiet", count=True, default=0,
+              help="Decrease log verbosity (-q for WARNING, -qq for ERROR). Repeatable.")
 @click.pass_context
-def main(ctx) -> None:
+def main(ctx, verbose: int, quiet: int) -> None:
     """Compilador semântico para validação e consolidação de conhecimento."""
+    _configure_logging(verbose, quiet)
     if ctx.invoked_subcommand is None:
         out = _build_main_help()
         if hasattr(sys.stdout, "buffer"):
@@ -594,7 +626,6 @@ def init() -> None:
 
 
 def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | None = None) -> None:
-    color = "red" if severity_label == "ERROR" else "yellow"
     label_color = "red" if severity_label == "ERROR" else "yellow"
 
     def _fmt_location(loc) -> str:

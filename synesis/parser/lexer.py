@@ -35,8 +35,8 @@ from pathlib import Path
 from typing import Optional
 
 from lark import Lark, Tree
-from lark.indenter import Indenter
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken
+from lark.indenter import Indenter
 
 from synesis.ast.nodes import SourceLocation
 from synesis.error_handler import create_pedagogical_error
@@ -102,15 +102,19 @@ def create_parser() -> Lark:
 def _make_parser_instance() -> Lark:
     """Cria uma instancia do parser com SynesisIndenter proprio."""
     try:
-        import synesis.grammar.synesis_standalone as _sa
+        from lark import Token as _LarkToken
+
         # O modulo standalone define classes proprias (Tree, Token, excecoes) que
         # sao incompativeis com o Transformer e error handlers do Lark.
         # Substituimos pelas classes oficiais antes de instanciar o parser:
         #   - Tree/Token: para que isinstance() no Transformer funcione corretamente
         #   - UnexpectedToken/UnexpectedCharacters: para que os except em parse_string
         #     capturem os erros lancados pelo parser standalone
-        from lark import Tree as _LarkTree, Token as _LarkToken
-        from lark.exceptions import UnexpectedToken as _UT, UnexpectedCharacters as _UC
+        from lark import Tree as _LarkTree
+        from lark.exceptions import UnexpectedCharacters as _UC
+        from lark.exceptions import UnexpectedToken as _UT
+
+        import synesis.grammar.synesis_standalone as _sa
         _sa.Tree = _LarkTree
         _sa.Token = _LarkToken
         _sa.UnexpectedToken = _UT

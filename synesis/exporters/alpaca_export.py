@@ -40,18 +40,15 @@ from synesis.ast.nodes import (
     FieldSpec,
     FieldType,
     ItemNode,
-    OntologyNode,
     Scope,
-    SourceNode,
     TemplateNode,
 )
-from synesis.parser.bib_loader import BibEntry
-from synesis.semantic.linker import LinkedProject
 from synesis.exporters._helpers import (
-    _get_field_names_for_scope,
     _get_item_field_value,
     _get_ontology_field_value,
 )
+from synesis.parser.bib_loader import BibEntry
+from synesis.semantic.linker import LinkedProject
 
 AlpacaPair = Dict[str, str]
 _MIN_OUTPUT_LEN = 5

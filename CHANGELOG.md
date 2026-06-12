@@ -5,7 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-06-12
+
+### Added
+
+- **Verbosity flags `-v`/`-q` on `synesis` CLI** (`synesis/cli.py`)
+  - `-v` / `--verbose` (count): raises log level to DEBUG. Repeatable.
+  - `-q` / `--quiet` (count): lowers to WARNING (`-q`) or ERROR (`-qq`). Repeatable.
+  - Implemented via `_configure_logging(verbose, quiet)` helper using `logging.basicConfig`.
+  - `Global Options:` section added to `_build_main_help()` output — consistent with synesis-coder style.
+  - No impact on compilation output; only controls Python logging channel.
+
 ## [0.5.5] - 2026-06-11
+
+### Added
+
+- **Quality toolchain and CI** (`pyproject.toml`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml`)
+  - `ruff==0.15.17` and `mypy==1.15.0` added to `dev` extras (pinned, shared across ecosystem).
+  - `[tool.ruff]`: `line-length=100`, `target-version="py310"`; lint rules `["E","F","I","UP","B","SIM","C4"]`.
+  - `[tool.mypy]`: `ignore_missing_imports=true`, `disallow_untyped_defs=false` (lenient baseline).
+  - `.pre-commit-config.yaml`: `ruff` (lint + `--fix`), `ruff-format`, `mypy`, `end-of-file-fixer`, `trailing-whitespace`, `check-yaml`, `check-toml`, `check-merge-conflict`.
+  - CI workflow (3 OS × 3 Python versions): `test` (pytest + coverage), `lint` (ruff + mypy), `build` (wheel + twine check), `integration` (`synesis --help/--version`).
+
+- **CLI snapshot tests** (`tests/test_cli.py`)
+  - Subprocess-based tests asserting structural anchors in `--help` output (title, `Usage:`, `Commands:`, subcommand names) and `--version` correctness — serve as regression guard for CLI refactors.
 
 ### Changed
 

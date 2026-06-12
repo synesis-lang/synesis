@@ -48,6 +48,7 @@ from synesis.ast.nodes import (
 )
 from synesis.parser.lexer import SynesisSyntaxError
 
+
 def _source_location(file_path: Path, meta: Any) -> SourceLocation:
     return SourceLocation(file=file_path, line=meta.line, column=meta.column)
 

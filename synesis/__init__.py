@@ -23,9 +23,10 @@ Compilador CLI (synesis.SynesisCompiler):
 Gerado conforme: Especificacao Synesis v1.1
 """
 
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
-from pathlib import Path
 import re
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+from pathlib import Path
 
 
 def _read_version_from_pyproject() -> str:
@@ -39,40 +40,40 @@ def _read_version_from_pyproject() -> str:
 
 # API em memoria (NOVO)
 from synesis.api import (
-    load,
-    compile_string,
-    MemoryCompilationResult,
     CompilationStats,
-)
-
-# Compilador tradicional
-from synesis.compiler import (
-    SynesisCompiler,
-    CompilationResult,
+    MemoryCompilationResult,
+    compile_string,
+    load,
 )
 
 # AST Nodes
 from synesis.ast.nodes import (
-    Scope,
+    ChainNode,
+    FieldSpec,
     FieldType,
-    SourceLocation,
-    ProjectNode,
-    SourceNode,
+    IncludeNode,
     ItemNode,
     OntologyNode,
-    TemplateNode,
-    FieldSpec,
-    ChainNode,
-    IncludeNode,
     OrderedValue,
+    ProjectNode,
+    Scope,
+    SourceLocation,
+    SourceNode,
+    TemplateNode,
 )
 
 # Result types
 from synesis.ast.results import (
-    Ok,
     Err,
-    ValidationResult,
+    Ok,
     ValidationError,
+    ValidationResult,
+)
+
+# Compilador tradicional
+from synesis.compiler import (
+    CompilationResult,
+    SynesisCompiler,
 )
 
 # Semantic

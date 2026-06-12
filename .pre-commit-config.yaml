@@ -1,0 +1,22 @@
+# Pre-commit hooks for synesis (compiler).
+# Install: pip install pre-commit && pre-commit install
+# Run on all files: pre-commit run --all-files
+#
+# Note: ruff-format and mypy are intentionally NOT enforced here yet.
+# - ruff-format: deferred until the one-time style reflow lands.
+# - mypy: runs in CI (non-blocking) until the type-error backlog is cleared.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict

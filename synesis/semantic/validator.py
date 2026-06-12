@@ -45,6 +45,7 @@ from synesis.ast.nodes import (
     SourceNode,
     TemplateNode,
 )
+from synesis.ast.normalize import normalize_code
 from synesis.ast.results import (
     BundleCountMismatch,
     ChainArityViolation,
@@ -74,7 +75,6 @@ from synesis.ast.results import (
     ValidationError,
     ValidationResult,
 )
-from synesis.ast.normalize import normalize_code
 from synesis.parser.bib_loader import suggest_bibref
 
 
