@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Synesis: A DSL compiler for knowledge engineering"
+abstract: >
+  Synesis is a domain-specific language (DSL) and compiler for qualitative research
+  annotation. It transforms structured annotations in .syn files into canonical knowledge
+  structures exportable as JSON, CSV, Excel, and Neo4j knowledge graphs. The ecosystem
+  includes a Language Server Protocol (LSP) implementation, a VSCode extension, an
+  LLM-assisted annotation tool (synesis-coder), a Zotero export plugin, and a
+  graph database integration layer.
+authors:
+  - family-names: De Britto
+    given-names: Christian Maciel
+    orcid: "https://orcid.org/0000-0003-1431-3924"
+version: "0.5.7"
+date-released: "2026-06-16"
+license: MIT
+repository-code: "https://github.com/synesis-lang/synesis"
+url: "https://synesis-lang.github.io/synesis-docs"
+keywords:
+  - qualitative-research
+  - knowledge-engineering
+  - domain-specific-language
+  - compiler
+  - ontology
+  - bibliometrics
+  - annotation
+  - knowledge-graph
+  - research-tools
