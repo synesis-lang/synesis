@@ -2,6 +2,7 @@
 test_api.py - Testes da API em memoria synesis.load()
 
 Cobre: compilacao completa, erros semanticos, warnings, stats e exportacao.
+       to_diagnostics(verbose=False): formato compacto para o usuario pesquisador.
 
 Gerado conforme: Especificacao Synesis v1.1
 """
@@ -300,3 +301,159 @@ END ITEM
         from synesis.ast.nodes import SourceNode, ItemNode
         assert any(isinstance(n, SourceNode) for n in nodes)
         assert any(isinstance(n, ItemNode) for n in nodes)
+
+
+# ===========================================================================
+# to_diagnostics(verbose=False) — formato compacto para o usuario pesquisador
+# ===========================================================================
+
+class TestDiagnosticsCompact:
+    """Verifica que verbose=False agrega UndefinedCode e usa uma linha por erro."""
+
+    # Template sem ontology para forcar UndefinedCode warnings
+    _TEMPLATE_NO_ONTOLOGY = """\
+TEMPLATE test_compact
+
+SOURCE FIELDS
+    OPTIONAL summary
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+    OPTIONAL tag
+END ITEM FIELDS
+
+FIELD summary TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+FIELD tag TYPE CODE
+    SCOPE ITEM
+END FIELD
+"""
+
+    def _load(self, annotations: str, ontology: str = "") -> "MemoryCompilationResult":
+        import synesis
+        kw = dict(
+            project_content=PROJECT_CONTENT,
+            template_content=self._TEMPLATE_NO_ONTOLOGY,
+            annotation_contents={"annotations.syn": annotations},
+            bibliography_content=BIBLIOGRAPHY_BASIC,
+        )
+        if ontology:
+            kw["ontology_contents"] = {"ontology.syno": ontology}
+        return synesis.load(**kw)
+
+    def test_verbose_true_default_preserves_full_text(self):
+        """verbose=True (default) deve conter o bloco pedagogico completo."""
+        ann = """\
+SOURCE @smith2024
+    summary: A source.
+END SOURCE
+ITEM @smith2024
+    citation: A quote.
+    tag: Alpha
+END ITEM
+"""
+        result = self._load(ann)
+        diag = result.get_diagnostics()  # verbose=True por padrao
+        assert "ONTOLOGY Alpha" in diag
+        assert "END ONTOLOGY" in diag
+
+    def test_compact_groups_undefined_codes(self):
+        """verbose=False deve agrupar UndefinedCode por codigo, sem repeticao."""
+        ann = """\
+SOURCE @smith2024
+    summary: A source.
+END SOURCE
+ITEM @smith2024
+    citation: First quote.
+    tag: Alpha
+END ITEM
+ITEM @smith2024
+    citation: Second quote.
+    tag: Alpha
+END ITEM
+ITEM @smith2024
+    citation: Third quote.
+    tag: Beta
+END ITEM
+"""
+        result = self._load(ann)
+        diag = result.get_diagnostics(verbose=False)
+
+        # Deve ter exatamente uma linha para Alpha (nao duas)
+        alpha_lines = [l for l in diag.splitlines() if "Alpha" in l]
+        assert len(alpha_lines) == 1, f"Alpha deve aparecer 1 vez, achou: {alpha_lines}"
+
+        # Deve indicar 2 ocorrencias de Alpha e 1 de Beta
+        assert "2 ocorrencia" in diag or "2 ocorrencias" in diag
+        assert "Beta" in diag
+
+    def test_compact_has_dica_when_undefined_codes(self):
+        """verbose=False deve incluir dica de synesis-coder ontology."""
+        ann = """\
+SOURCE @smith2024
+    summary: A source.
+END SOURCE
+ITEM @smith2024
+    citation: A quote.
+    tag: UndefinedCode
+END ITEM
+"""
+        result = self._load(ann)
+        diag = result.get_diagnostics(verbose=False)
+        assert "synesis-coder ontology" in diag
+
+    def test_compact_no_redundant_ontology_block(self):
+        """verbose=False NAO deve conter o bloco ONTOLOGY ... END ONTOLOGY como exemplo."""
+        ann = """\
+SOURCE @smith2024
+    summary: A source.
+END SOURCE
+ITEM @smith2024
+    citation: A quote.
+    tag: SomeCode
+END ITEM
+"""
+        result = self._load(ann)
+        diag = result.get_diagnostics(verbose=False)
+        assert "END ONTOLOGY" not in diag
+
+    def test_compact_no_undefined_codes_no_dica(self):
+        """verbose=False sem UndefinedCode nao deve conter a dica."""
+        ann = """\
+SOURCE @smith2024
+    summary: A source.
+END SOURCE
+ITEM @smith2024
+    citation: A quote.
+    tag: Social_Cohesion
+END ITEM
+"""
+        ontology = """\
+ONTOLOGY Social_Cohesion
+    definition: Degree of trust among community members.
+END ONTOLOGY
+"""
+        result = self._load(ann, ontology=ontology)
+        diag = result.get_diagnostics(verbose=False)
+        assert "synesis-coder ontology" not in diag
+
+    def test_verbose_default_true_unchanged(self):
+        """Chamada sem kwarg deve ter comportamento identico a verbose=True."""
+        ann = """\
+SOURCE @smith2024
+    summary: A source.
+END SOURCE
+ITEM @smith2024
+    citation: A quote.
+    tag: CodeA
+END ITEM
+"""
+        result = self._load(ann)
+        assert result.get_diagnostics() == result.get_diagnostics(verbose=True)

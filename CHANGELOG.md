@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.5.7] - 2026-06-15
+
+### Changed
+
+- **`ValidationResult.to_diagnostics(verbose=False)`** — novo modo compacto para exibição ao usuário pesquisador (`synesis/ast/results.py`)
+  - `verbose=True` (padrão): comportamento inalterado — mensagens pedagógicas completas para o LSP e para o LLM de auto-correção.
+  - `verbose=False`: usa `to_cli_line()` por erro; agrupa todos os avisos `UndefinedCode` em um bloco único com contagem de ocorrências por código, ordenados por frequência; acrescenta dica `synesis-coder ontology` quando há códigos sem definição. Reduz saída de centenas de linhas repetidas para ~10 linhas no caso típico.
+- **`MemoryCompilationResult.get_diagnostics(verbose=True)`** e **`CompilationResult.get_diagnostics(verbose=True)`** — repassa o kwarg `verbose` para `to_diagnostics()`. Default retrocompatível; nenhum chamador existente quebra.
+
 ## [0.5.6] - 2026-06-12
 
 ### Added

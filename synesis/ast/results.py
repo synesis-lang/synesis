@@ -1492,7 +1492,21 @@ class ValidationResult:
             info=self.info + other.info,
         )
 
-    def to_diagnostics(self) -> str:
+    def to_diagnostics(self, *, verbose: bool = True) -> str:
+        """Retorna mensagens de erro/warning formatadas.
+
+        Args:
+            verbose: Se True (padrão), usa mensagens pedagógicas completas —
+                adequado para o LLM de auto-correção e para o LSP.
+                Se False, usa mensagens compactas de uma linha (to_cli_line()),
+                agrupando UndefinedCode por código com contagem de ocorrências —
+                adequado para exibição ao usuário pesquisador.
+        """
+        if verbose:
+            return self._to_diagnostics_verbose()
+        return self._to_diagnostics_compact()
+
+    def _to_diagnostics_verbose(self) -> str:
         lines: list[str] = []
         if self.errors:
             lines.append("=== ERROS ===")
@@ -1509,6 +1523,76 @@ class ValidationResult:
             for inf in self.info:
                 lines.append(inf.to_diagnostic())
                 lines.append("")
+        return "\n".join(lines)
+
+    def _to_diagnostics_compact(self) -> str:
+        """Versão enxuta: uma linha por erro; UndefinedCode agrupados por código."""
+        from collections import defaultdict
+
+        lines: list[str] = []
+
+        # --- ERROS (todos compactos, uma linha cada) ---
+        if self.errors:
+            lines.append("=== ERROS ===")
+            for err in self.errors:
+                lines.append(f"[!] {err.to_cli_line()}")
+
+        # --- AVISOS: separar UndefinedCode dos demais ---
+        undefined_code_counts: dict[str, int] = defaultdict(int)
+        undefined_code_suggestions: dict[str, list[str]] = {}
+        other_warnings: list[ValidationError] = []
+
+        for warn in self.warnings:
+            if isinstance(warn, UndefinedCode):
+                undefined_code_counts[warn.code] += 1
+                if warn.suggestions and warn.code not in undefined_code_suggestions:
+                    undefined_code_suggestions[warn.code] = warn.suggestions
+            else:
+                other_warnings.append(warn)
+
+        has_warnings = bool(undefined_code_counts or other_warnings)
+        if has_warnings:
+            if lines:
+                lines.append("")
+            lines.append("=== AVISOS ===")
+
+            # Outros warnings (compactos, uma linha cada)
+            for warn in other_warnings:
+                lines.append(f"[!] {warn.to_cli_line()}")
+
+            # UndefinedCode agrupados por código, ordenados por frequência desc
+            if undefined_code_counts:
+                n_codes = len(undefined_code_counts)
+                total_occ = sum(undefined_code_counts.values())
+                header = (
+                    f"[!] {n_codes} codigo(s) usados nas anotacoes sem definicao na ontologia"
+                    f" ({total_occ} ocorrencia(s) no total):"
+                )
+                lines.append(header)
+                max_name_len = max(len(c) for c in undefined_code_counts)
+                for code, count in sorted(
+                    undefined_code_counts.items(), key=lambda x: -x[1]
+                ):
+                    suffix = ""
+                    if code in undefined_code_suggestions:
+                        suffix = f"  (voce quis dizer `{undefined_code_suggestions[code][0]}`?)"
+                    occ_label = "ocorrencia" if count == 1 else "ocorrencias"
+                    lines.append(
+                        f"    - {code.ljust(max_name_len)}  ({count} {occ_label}){suffix}"
+                    )
+                lines.append("")
+                lines.append(
+                    "Dica: execute `synesis-coder ontology` para gerar as definicoes automaticamente."
+                )
+
+        # --- INFO (compactos, uma linha cada) ---
+        if self.info:
+            if lines:
+                lines.append("")
+            lines.append("=== INFORMACOES ===")
+            for inf in self.info:
+                lines.append(f"[i] {inf.to_cli_line()}")
+
         return "\n".join(lines)
 
 

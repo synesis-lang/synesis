@@ -91,8 +91,8 @@ class CompilationResult:
     def has_warnings(self) -> bool:
         return self.validation_result.has_warnings()
 
-    def get_diagnostics(self) -> str:
-        return self.validation_result.to_diagnostics()
+    def get_diagnostics(self, *, verbose: bool = True) -> str:
+        return self.validation_result.to_diagnostics(verbose=verbose)
 
     def to_json(self, path: Path) -> None:
         if self.has_errors() or not self.linked_project:

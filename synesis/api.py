@@ -105,9 +105,14 @@ class MemoryCompilationResult:
         """Retorna True se houver warnings de validacao."""
         return self.validation_result.has_warnings()
 
-    def get_diagnostics(self) -> str:
-        """Retorna mensagens de erro/warning formatadas."""
-        return self.validation_result.to_diagnostics()
+    def get_diagnostics(self, *, verbose: bool = True) -> str:
+        """Retorna mensagens de erro/warning formatadas.
+
+        Args:
+            verbose: Se True (padrão), mensagens completas pedagógicas (para LLM/LSP).
+                Se False, mensagens compactas agregadas (para exibição ao usuário).
+        """
+        return self.validation_result.to_diagnostics(verbose=verbose)
 
     def to_json_dict(self) -> Dict[str, Any]:
         """
