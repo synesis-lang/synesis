@@ -150,7 +150,8 @@ def _has_chain_data(linked: LinkedProject) -> bool:
 
 
 def _collect_item_bundle_fields(template: TemplateNode) -> set[str]:
-    bundles = template.bundled_fields.get(Scope.ITEM, [])
+    bundles = list(template.bundled_fields.get(Scope.ITEM, []))
+    bundles += list(template.optional_bundles.get(Scope.ITEM, []))
     return {name for bundle in bundles for name in bundle}
 
 

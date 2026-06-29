@@ -78,6 +78,89 @@ class TestT06:
     def test_ontology_without_template_fields(self): assert "SYNESIS_E005" in ecodes(_compile("T06-Project-Structure", "t06_no_ontology_fields.synp"))
 
 
+class TestT07NoBibliography:
+    """WI-1: projetos sem INCLUDE BIBLIOGRAPHY tratam bibrefs como chaves internas."""
+
+    def test_no_bibliography_no_e001(self):
+        r = _compile("T07-No-Bibliography")
+        assert "SYNESIS_E001" not in ecodes(r)
+
+    def test_no_bibliography_compiles_clean(self):
+        r = _compile("T07-No-Bibliography")
+        assert not r.errors, f"erros inesperados: {ecodes(r)}"
+
+
+class TestT10CustomChainName:
+    """WI-2: campo TYPE CHAIN com nome customizado exporta relacoes nomeadas no JSON."""
+
+    def _triples(self):
+        from synesis.exporters.json_export import build_json_payload
+        project_dir = TESTS_ROOT / "T10-Custom-Chain-Name"
+        synp = sorted(project_dir.glob("*.synp"))[0]
+        result = SynesisCompiler(synp).compile()
+        data = build_json_payload(result.linked_project, result.template, result.bibliography)
+        triples = []
+
+        def walk(o):
+            if isinstance(o, dict):
+                if "from" in o and "relation" in o:
+                    triples.append(o)
+                for v in o.values():
+                    walk(v)
+            elif isinstance(o, list):
+                for v in o:
+                    walk(v)
+
+        walk(data)
+        return triples
+
+    def test_named_relation_preserved(self):
+        triples = self._triples()
+        assert any(t["relation"] == "INFLUENCES" for t in triples), \
+            f"relacao nomeada perdida (esperado INFLUENCES): {[t['relation'] for t in triples]}"
+
+    def test_no_implicit_relation(self):
+        triples = self._triples()
+        assert all(t["relation"] != "IMPLICIT" for t in triples), \
+            "cadeia qualificada exportada como simples (IMPLICIT)"
+
+
+class TestT09OptionalBundle:
+    """WI-4: OPTIONAL BUNDLE — ausência total válida; parcial e mismatch geram erros."""
+
+    def test_template_loads_optional_bundle(self):
+        from synesis.parser.template_loader import load_template
+        from synesis.ast.nodes import Scope
+        project_dir = TESTS_ROOT / "T09-OptionalBundle"
+        template = load_template(project_dir / "t09.synt")
+        assert Scope.ITEM in template.optional_bundles
+        assert ("period", "region") in template.optional_bundles[Scope.ITEM]
+
+    def test_partial_presence_generates_e016(self):
+        r = _compile("T09-OptionalBundle")
+        assert "SYNESIS_E016" in ecodes(r), \
+            f"esperado E016 (MissingBundleField) — erros presentes: {ecodes(r)}"
+
+    def test_count_mismatch_generates_e017(self):
+        r = _compile("T09-OptionalBundle")
+        assert "SYNESIS_E017" in ecodes(r), \
+            f"esperado E017 (BundleCountMismatch) — erros presentes: {ecodes(r)}"
+
+    def test_total_absence_and_complete_bundle_produce_no_extra_errors(self):
+        r = _compile("T09-OptionalBundle")
+        bundle_errors = [e for e in r.errors if e.CODE in ("SYNESIS_E016", "SYNESIS_E017")]
+        # Exatamente 2 erros de bundle: cenário B (E016) e cenário C (E017).
+        assert len(bundle_errors) == 2, \
+            f"esperado exatamente 2 erros de bundle, encontrado {len(bundle_errors)}: {[e.CODE for e in bundle_errors]}"
+
+    def test_required_bundle_unaffected(self):
+        """T03 (REQUIRED BUNDLE) continua gerando E016/E017/E018 — sem regressão."""
+        r = _compile("T03-Bundle")
+        assert "SYNESIS_E016" in ecodes(r)
+        assert "SYNESIS_E017" in ecodes(r)
+        assert "SYNESIS_E018" in ecodes(r)
+
+
 class TestRealProjectRegression:
     def test_basic_project_no_fase4_false_positives(self):
         basic = Path(__file__).parent / "fixtures" / "Basic" / "project.synp"

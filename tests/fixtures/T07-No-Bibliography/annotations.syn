@@ -1,0 +1,15 @@
+SOURCE @entrevista_01
+    description: Entrevista de campo com gestor municipal
+END SOURCE
+
+ITEM @entrevista_01
+    quotation: A decisao foi tomada sem consulta publica
+END ITEM
+
+SOURCE @doc_institucional
+    description: Relatorio anual da instituicao
+END SOURCE
+
+ITEM @doc_institucional
+    quotation: Os indicadores apontam crescimento sustentado
+END ITEM

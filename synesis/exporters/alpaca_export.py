@@ -678,9 +678,11 @@ def _add(
 
 
 def _build_bundle_map(template: TemplateNode, scope: Scope) -> Dict[str, List[str]]:
-    """Mapeia campo -> lista de parceiros de bundle no mesmo scope."""
+    """Mapeia campo -> lista de parceiros de bundle no mesmo scope (REQUIRED e OPTIONAL)."""
     result: Dict[str, List[str]] = {}
-    for bundle in template.bundled_fields.get(scope, []):
+    all_bundles = list(template.bundled_fields.get(scope, []))
+    all_bundles += list(template.optional_bundles.get(scope, []))
+    for bundle in all_bundles:
         for name in bundle:
             result[name] = [other for other in bundle if other != name]
     return result

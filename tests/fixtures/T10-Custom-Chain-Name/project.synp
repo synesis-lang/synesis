@@ -1,0 +1,4 @@
+PROJECT custom_chain_demo
+    TEMPLATE "template.synt"
+    INCLUDE ANNOTATIONS "annotations.syn"
+END PROJECT

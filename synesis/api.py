@@ -300,7 +300,10 @@ def load(
     template = load_template_from_string(template_content, template_filename)
 
     # 3. Load bibliography (se fornecido)
-    bibliography: Dict[str, BibEntry] = {}
+    # None quando nenhum conteudo .bib e passado: os identificadores de SOURCE sao
+    # tratados como chaves internas e a validacao de bibref (E001) e desativada,
+    # espelhando compiler.load_bibliography(). {} so ocorreria com .bib vazio explicito.
+    bibliography: Optional[Dict[str, BibEntry]] = None
     if bibliography_content:
         bibliography = load_bibliography_from_string(bibliography_content)
 

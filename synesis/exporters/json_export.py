@@ -180,11 +180,12 @@ def _has_chain_relations(template: Optional[TemplateNode]) -> bool:
     if not template:
         return False
 
-    chain_spec = template.field_specs.get("chain")
-    if not chain_spec:
-        return False
-
-    return bool(chain_spec.relations)
+    # Detecta por tipo, nao por nome literal: campos TYPE CHAIN podem ter qualquer
+    # nome (ex: causal_chain). Espelha semantic/linker.py:_has_chain_relations.
+    for spec in template.field_specs.values():
+        if spec.type == FieldType.CHAIN and spec.relations:
+            return True
+    return False
 
 
 def _build_triples_index(

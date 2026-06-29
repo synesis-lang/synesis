@@ -876,6 +876,26 @@ class InvalidArityOperator(ValidationError):
 
 
 @dataclass(frozen=True)
+class NonIntegerArityValue(ValidationError):
+    """Valor de ARITY nao e um inteiro (ex: 2.0). (erro 60)"""
+
+    field_name: str
+    value: str
+    CODE: ClassVar[str] = "SYNESIS_E060"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"A declaracao `ARITY` do campo '{self.field_name}' usa o valor\n"
+            f"  `{self.value}`, que nao e um numero inteiro.\n"
+            f"  ARITY conta conceitos por cadeia e deve ser um inteiro.\n"
+            f"  Por exemplo: `ARITY >= 2`, nao `ARITY >= 2.0`."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"ARITY do campo `{self.field_name}` usa valor nao-inteiro `{self.value}` — use um inteiro (ex: 2)"
+
+
+@dataclass(frozen=True)
 class FormatOnNonScale(ValidationError):
     """FORMAT declarado em campo que nao e TYPE SCALE. (erro 54)"""
 

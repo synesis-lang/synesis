@@ -1,0 +1,53 @@
+# =============================================================================
+# T09.SYN — Cenários de OPTIONAL BUNDLE
+# =============================================================================
+
+SOURCE @autor2024
+    title: Fonte para testes de OPTIONAL BUNDLE.
+END SOURCE
+
+
+# ---------------------------------------------------------------------------
+# CENÁRIO A (VÁLIDO — ausência total do bundle):
+#   Nenhum dos campos period ou region está presente.
+#   Esperado: 0 erros relacionados ao bundle.
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Item sem contexto — ausência total do bundle opcional é válida.
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# CENÁRIO B (ERRO — MissingBundleField, presença parcial):
+#   Apenas "period" está presente; "region" (parceiro do bundle) está ausente.
+#   Esperado: ERRO MissingBundleField (bundle parcial).
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Item com apenas period — viola o bundle opcional.
+    period: Século XXI
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# CENÁRIO C (ERRO — BundleCountMismatch, contagens divergentes):
+#   "period" aparece 2 vezes, "region" aparece apenas 1 vez.
+#   Esperado: ERRO BundleCountMismatch.
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Item com period e region em quantidades diferentes.
+    period: Século XX
+    region: América do Sul
+    period: Século XXI
+END ITEM
+
+
+# ---------------------------------------------------------------------------
+# CENÁRIO D (VÁLIDO — bundle completo com contagens iguais):
+#   period e region presentes, cada um 1 vez.
+#   Esperado: 0 erros relacionados ao bundle.
+# ---------------------------------------------------------------------------
+ITEM @autor2024
+    citation: Item com bundle opcional completo e balanceado.
+    period: Século XXI
+    region: Europa
+END ITEM

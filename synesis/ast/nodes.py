@@ -264,6 +264,7 @@ class TemplateNode:
     optional_fields: Dict[Scope, List[str]]
     forbidden_fields: Dict[Scope, List[str]]
     bundled_fields: Dict[Scope, List[Tuple[str, ...]]]
+    optional_bundles: Dict[Scope, List[Tuple[str, ...]]] = field(default_factory=dict)
     location: Optional[SourceLocation] = None
     # Erros detectados durante a construcao do TemplateNode (ex: campos duplicados).
     # Propagados para ValidationResult pelo validate_template() em template_loader.py.
@@ -286,6 +287,10 @@ class TemplateNode:
             "bundled_fields": {
                 k.value: [list(bundle) for bundle in v]
                 for k, v in self.bundled_fields.items()
+            },
+            "optional_bundles": {
+                k.value: [list(bundle) for bundle in v]
+                for k, v in self.optional_bundles.items()
             },
             "location": self.location.to_dict() if self.location else None,
         }

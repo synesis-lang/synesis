@@ -74,9 +74,57 @@ def _configure_logging(verbose: int, quiet: int) -> None:
     logging.basicConfig(level=level, format="[%(levelname)s] %(message)s")
 
 
+_COPYRIGHT = "Copyright (c) 2011-2026 Christian Maciel de Britto"
+_LICENSE   = "MIT (AGPL-3.0-only WITH Synesis-data-output-exception pending)"
+_URL       = "https://github.com/synesis-lang/synesis"
+
+_CREDITS_TEXT = f"""\
+SYNESIS — Intellectual Genealogy
+=================================
+{_COPYRIGHT}
+https://orcid.org/0000-0003-1431-3924
+
+The Synesis compiler is the formal culmination of a research and
+development trajectory spanning more than a decade. The following
+prior works contributed to its architecture:
+
+  BDM — Banco de Dados Multimodal (2011-2013)
+  Master's dissertation, UFPR. DOI:10.13140/RG.2.2.10686.10563
+  First definition of: sources, items, factors, relations,
+  ontology, and knowledge graph as an integrated structure.
+
+  SocioAtlas (2016-2018)
+  Doctoral thesis, UFPR. DOI:10.13140/RG.2.2.26449.17760
+  Integration of annotations, audit trails, Zotero,
+  georeferenced data, and knowledge graphs.
+
+  DSAP annotation pipeline (2019-2020)
+  Professional consultancy, environmental sector.
+  First professional validation of the audit trail:
+  corpus → item → summary → theme → score.
+
+  SocioAtlas para Google Sheets (2022)
+  Independent development, Google Workspace Marketplace.
+  Collaboration and portability; first attempt at systematic
+  theological study within the same framework.
+
+  DGT.7 pipeline (2024)
+  Independent development.
+  Text-file knowledge representation; exposed the need
+  for formal, readable, validatable syntax.
+
+Full history:
+  https://synesis-lang.github.io/synesis-docs/pt/explanation/sobre.html
+  https://synesis-lang.github.io/synesis-docs/en/explanation/about.html
+"""
+
+
 def _build_main_help() -> str:
     title = _c("SYNESIS COMPILER", fg="green", bold=True) + f" (v{VERSION})"
+    copyright_line = _c(_COPYRIGHT, fg="bright_black")
+    url_line       = _c(_URL, fg="bright_black")
     desc = "Semantic compiler for knowledge engineering."
+    license_line = _c(f"Licensed under {_LICENSE}.", fg="bright_black")
     usage = _c("Usage:", fg="yellow", bold=True) + " synesis [COMMAND] [OPTIONS]"
 
     groups = [
@@ -96,6 +144,7 @@ def _build_main_help() -> str:
         ("-v, --verbose",  "Increase log verbosity (DEBUG). Repeatable."),
         ("-q, --quiet",    "Decrease log verbosity (-q WARNING, -qq ERROR). Repeatable."),
         ("--version",      "Show version and exit"),
+        ("--credits",      "Show intellectual genealogy and prior works"),
         ("--help",         "Show this message and exit"),
     ]
 
@@ -123,7 +172,7 @@ def _build_main_help() -> str:
         fg="bright_black",
     )
 
-    return "\n\n".join([title, desc, usage, options, commands, hint]) + "\n"
+    return "\n\n".join([title, copyright_line, url_line, desc, license_line, usage, options, commands, hint]) + "\n"
 
 
 class _SynesisCommand(click.Command):
@@ -273,14 +322,37 @@ class _Spinner:
 
 
 
+def _version_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    lines = [
+        f"synesis {VERSION}",
+        _COPYRIGHT,
+        f"License: {_LICENSE}",
+        _URL,
+    ]
+    click.echo("\n".join(lines))
+    ctx.exit()
+
+
+def _credits_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    click.echo(_CREDITS_TEXT, nl=False)
+    ctx.exit()
+
+
 @click.group(cls=_SynesisGroup, invoke_without_command=True)
-@click.version_option(version=VERSION, prog_name="synesis")
+@click.option("--version", is_flag=True, is_eager=True, expose_value=False,
+              callback=_version_callback, help="Show version and exit.")
+@click.option("--credits", is_flag=True, is_eager=True, expose_value=False,
+              callback=_credits_callback, help="Show intellectual genealogy and prior works.")
 @click.option("-v", "--verbose", count=True, default=0,
               help="Increase log verbosity (-v for DEBUG). Repeatable.")
 @click.option("-q", "--quiet", count=True, default=0,
               help="Decrease log verbosity (-q for WARNING, -qq for ERROR). Repeatable.")
 @click.pass_context
-def main(ctx, verbose: int, quiet: int) -> None:
+def main(ctx: click.Context, verbose: int, quiet: int) -> None:
     """Compilador semântico para validação e consolidação de conhecimento."""
     _configure_logging(verbose, quiet)
     if ctx.invoked_subcommand is None:
