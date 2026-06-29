@@ -147,6 +147,10 @@ class SemanticValidator:
         result.errors.extend(bundle_result.errors)
         result.warnings.extend(bundle_result.warnings)
         result.info.extend(bundle_result.info)
+        opt_bundle_result = self.validate_optional_bundle(node, Scope.SOURCE)
+        result.errors.extend(opt_bundle_result.errors)
+        result.warnings.extend(opt_bundle_result.warnings)
+        result.info.extend(opt_bundle_result.info)
         return result
 
     def validate_item(self, node: ItemNode) -> ValidationResult:
@@ -168,6 +172,10 @@ class SemanticValidator:
         result.errors.extend(bundle_result.errors)
         result.warnings.extend(bundle_result.warnings)
         result.info.extend(bundle_result.info)
+        opt_bundle_result = self.validate_optional_bundle(node, Scope.ITEM)
+        result.errors.extend(opt_bundle_result.errors)
+        result.warnings.extend(opt_bundle_result.warnings)
+        result.info.extend(opt_bundle_result.info)
         return result
 
     def validate_ontology(self, node: OntologyNode) -> ValidationResult:
@@ -178,6 +186,10 @@ class SemanticValidator:
         result.errors.extend(bundle_result.errors)
         result.warnings.extend(bundle_result.warnings)
         result.info.extend(bundle_result.info)
+        opt_bundle_result = self.validate_optional_bundle(node, Scope.ONTOLOGY)
+        result.errors.extend(opt_bundle_result.errors)
+        result.warnings.extend(opt_bundle_result.warnings)
+        result.info.extend(opt_bundle_result.info)
         return result
 
     def validate_ordered_value(
@@ -403,6 +415,63 @@ class SemanticValidator:
                 continue
 
             # Validacao 3: contagens diferentes
+            if len(set(counts.values())) > 1:
+                result.add(
+                    BundleCountMismatch(
+                        location=location,
+                        bundle_fields=bundle,
+                        counts=counts,
+                    )
+                )
+
+        return result
+
+    def validate_optional_bundle(
+        self,
+        node: SourceNode | ItemNode | OntologyNode,
+        scope: Scope,
+    ) -> ValidationResult:
+        """
+        Valida OPTIONAL BUNDLE: ausencia total e valida; presenca parcial ou
+        contagens divergentes sao erro (mesma logica do validate_bundle, mas
+        sem exigir presenca minima).
+        """
+        result = ValidationResult()
+        bundles = self.template.optional_bundles.get(scope, [])
+        if not bundles:
+            return result
+
+        field_values = self._collect_fields(node)
+        location = node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
+
+        for bundle in bundles:
+            counts: Dict[str, int] = {}
+            present_fields = set()
+            if not self._bundle_types_valid(bundle, field_values):
+                continue
+            for field_name in bundle:
+                value = field_values.get(field_name)
+                if value is None:
+                    continue
+                present_fields.add(field_name)
+                counts[field_name] = self._count_value(value)
+
+            # Ausencia total do bundle e valida (diferenca em relacao ao REQUIRED BUNDLE)
+            if not present_fields:
+                continue
+
+            # Presenca parcial: erro
+            if len(present_fields) != len(bundle):
+                result.add(
+                    MissingBundleField(
+                        location=location,
+                        bundle_fields=bundle,
+                        present_fields=present_fields,
+                    )
+                )
+                continue
+
+            # Contagens divergentes: erro
             if len(set(counts.values())) > 1:
                 result.add(
                     BundleCountMismatch(

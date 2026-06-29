@@ -1,0 +1,7 @@
+SOURCE @fonte01
+END SOURCE
+
+ITEM @fonte01
+    quotation: O custo elevado reduz a aceitacao da tecnologia
+    causal_chain: Custo -> INFLUENCES -> Aceitacao
+END ITEM

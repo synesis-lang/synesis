@@ -1,0 +1,8 @@
+PROJECT T09_OptionalBundle
+
+    TEMPLATE "t09.synt"
+    INCLUDE BIBLIOGRAPHY "t09.bib"
+    INCLUDE ANNOTATIONS "t09.syn"
+    INCLUDE ONTOLOGY "t09.syno"
+
+END PROJECT

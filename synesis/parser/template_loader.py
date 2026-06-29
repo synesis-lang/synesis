@@ -43,6 +43,7 @@ from synesis.ast.results import (
     FormatOnNonScale,
     InvalidArityOperator,
     InvalidFormatSyntax,
+    NonIntegerArityValue,
     OrderedWithoutValues,
     OrphanFieldDefinition,
     RelationsOnNonChain,
@@ -179,6 +180,11 @@ def _load_template_impl(content: str, filename: str) -> TemplateNode:
         Scope.ITEM: [],
         Scope.ONTOLOGY: [],
     }
+    optional_bundles: Dict[Scope, List[Tuple[str, ...]]] = {
+        Scope.SOURCE: [],
+        Scope.ITEM: [],
+        Scope.ONTOLOGY: [],
+    }
 
     for block in spec_blocks:
         scope = block["scope"]
@@ -186,9 +192,13 @@ def _load_template_impl(content: str, filename: str) -> TemplateNode:
         optional = block.get("optional", [])
         forbidden = block.get("forbidden", [])
         bundles = block.get("bundles", [])
+        opt_bundles = block.get("optional_bundles", [])
 
         for bundle in bundles:
             bundled_fields[scope].append(tuple(bundle))
+
+        for bundle in opt_bundles:
+            optional_bundles[scope].append(tuple(bundle))
 
         for name in required:
             required_fields[scope].append(name)
@@ -210,6 +220,7 @@ def _load_template_impl(content: str, filename: str) -> TemplateNode:
         optional_fields=optional_fields,
         forbidden_fields=forbidden_fields,
         bundled_fields=bundled_fields,
+        optional_bundles=optional_bundles,
         location=header["location"],
         parse_errors=duplicate_errors,
     )
@@ -276,6 +287,8 @@ def _all_listed_names(template: TemplateNode) -> Dict[str, Set[str]]:
         names.update(template.forbidden_fields.get(scope, []))
         for bundle in template.bundled_fields.get(scope, []):
             names.update(bundle)
+        for bundle in template.optional_bundles.get(scope, []):
+            names.update(bundle)
         result[scope.value] = names
     return result
 
@@ -290,6 +303,8 @@ def _check_fields_without_definition(
         all_names.update(template.optional_fields.get(scope, []))
         all_names.update(template.forbidden_fields.get(scope, []))
         for bundle in template.bundled_fields.get(scope, []):
+            all_names.update(bundle)
+        for bundle in template.optional_bundles.get(scope, []):
             all_names.update(bundle)
         for name in sorted(all_names):
             if name not in template.field_specs:
@@ -311,6 +326,8 @@ def _check_field_scope_mismatch(
         all_names.update(template.optional_fields.get(scope, []))
         all_names.update(template.forbidden_fields.get(scope, []))
         for bundle in template.bundled_fields.get(scope, []):
+            all_names.update(bundle)
+        for bundle in template.optional_bundles.get(scope, []):
             all_names.update(bundle)
         for name in sorted(all_names):
             if name in template.field_specs:
@@ -336,6 +353,8 @@ def _check_orphan_field_definitions(
         all_listed.update(template.forbidden_fields.get(scope, []))
         for bundle in template.bundled_fields.get(scope, []):
             all_listed.update(bundle)
+        for bundle in template.optional_bundles.get(scope, []):
+            all_listed.update(bundle)
 
     for name, spec in sorted(template.field_specs.items()):
         if name not in all_listed:
@@ -349,18 +368,25 @@ def _check_orphan_field_definitions(
 
 def _check_single_field_bundle(template: TemplateNode, result: ValidationResult) -> None:
     """Erro 18: BUNDLE declarado com apenas um campo."""
-    for scope in Scope:
-        for bundle in template.bundled_fields.get(scope, []):
-            if len(bundle) < 2:
-                if bundle and bundle[0] in template.field_specs:
-                    spec = template.field_specs[bundle[0]]
-                    loc = spec.location or template.location
-                else:
-                    loc = template.location
-                result.add(SingleFieldBundle(
-                    location=loc,
-                    bundle_fields=tuple(bundle),
-                ))
+    all_bundles = [
+        bundle
+        for scope in Scope
+        for bundle in (
+            list(template.bundled_fields.get(scope, []))
+            + list(template.optional_bundles.get(scope, []))
+        )
+    ]
+    for bundle in all_bundles:
+        if len(bundle) < 2:
+            if bundle and bundle[0] in template.field_specs:
+                spec = template.field_specs[bundle[0]]
+                loc = spec.location or template.location
+            else:
+                loc = template.location
+            result.add(SingleFieldBundle(
+                location=loc,
+                bundle_fields=tuple(bundle),
+            ))
 
 
 def _check_chain_without_arity(template: TemplateNode, result: ValidationResult) -> None:
@@ -448,6 +474,17 @@ def _check_invalid_arity_operator(template: TemplateNode, result: ValidationResu
                     location=loc,
                     field_name=name,
                     operator=op,
+                ))
+            else:
+                # Operador valido mas valor nao-inteiro (ex: "= 2.0"): erro 60.
+                # Sem este check, _validate_chain_arity faz int("2.0") -> ValueError
+                # capturado silenciosamente, desativando a validacao de ARITY.
+                val_match = re.match(r"^\s*(?:>=|<=|>|<|=)\s*(.+?)\s*$", spec.arity)
+                value = val_match.group(1) if val_match else spec.arity.strip()
+                result.add(NonIntegerArityValue(
+                    location=spec.location or template.location,
+                    field_name=name,
+                    value=value,
                 ))
 
 

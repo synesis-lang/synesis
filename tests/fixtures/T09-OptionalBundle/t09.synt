@@ -1,0 +1,46 @@
+# =============================================================================
+# T09.SYNT — Template para T09 (OPTIONAL BUNDLE)
+#
+# Declara um OPTIONAL BUNDLE "context" com dois campos (period, region).
+# Semântica: se nenhum dos dois aparece, é válido (ausência total OK).
+#            se apenas um aparece, é erro (MissingBundleField).
+#            se os dois aparecem em quantidades diferentes, é erro (BundleCountMismatch).
+#            se os dois aparecem na mesma quantidade, é válido.
+# =============================================================================
+
+TEMPLATE t09
+
+SOURCE FIELDS
+    REQUIRED title
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+    OPTIONAL BUNDLE period, region
+END ITEM FIELDS
+
+ONTOLOGY FIELDS
+    REQUIRED definition
+END ONTOLOGY FIELDS
+
+FIELD title TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+FIELD period TYPE TEXT
+    SCOPE ITEM
+    DESCRIPTION Período de tempo ao qual o item se refere.
+END FIELD
+
+FIELD region TYPE TEXT
+    SCOPE ITEM
+    DESCRIPTION Região geográfica à qual o item se refere.
+END FIELD
+
+FIELD definition TYPE TEXT
+    SCOPE ONTOLOGY
+END FIELD

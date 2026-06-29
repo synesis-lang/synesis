@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.6.0] - 2026-06-22
+
+### Added
+
+- **`OPTIONAL BUNDLE` em templates** (`synesis/grammar/synesis.lark`, `synesis/parser/transformer.py`, `synesis/ast/nodes.py`, `synesis/parser/template_loader.py`, `synesis/semantic/validator.py`, `synesis/exporters/csv_export.py`, `synesis/exporters/xls_export.py`, `synesis/exporters/alpaca_export.py`)
+  - Nova cláusula `OPTIONAL BUNDLE field1, field2` em blocos `SCOPE FIELDS`. Semântica: ausência total do bundle é válida; presença parcial gera `MissingBundleField` (E016); contagens divergentes geram `BundleCountMismatch` (E017). O `REQUIRED BUNDLE` existente não foi alterado.
+  - `TemplateNode` ganha o campo `optional_bundles: Dict[Scope, List[Tuple[str, ...]]]` com `default_factory=dict`; `to_dict()` o serializa. Retrocompatível: templates sem `OPTIONAL BUNDLE` produzem dicionário vazio.
+  - `validate_optional_bundle` é uma função separada de `validate_bundle` (classificada CRITICAL pelo GitNexus) — sem alteração na lógica de REQUIRED BUNDLE.
+  - Exporters CSV, XLS e Alpaca incluem campos de `optional_bundles` nas funções de expansão de linhas e mapeamento de bundle (`_collect_item_bundle_fields`, `_build_bundle_map`).
+  - `synesis_standalone.py` regenerado com `compress=True` a partir da gramática atualizada.
+  - Fixture `tests/fixtures/T09-OptionalBundle/` com 4 cenários: ausência total (válido), presença parcial (E016), contagem divergente (E017), bundle completo (válido).
+
+### Fixed
+
+- **E001 (`UnregisteredSource`) espúrio em projetos sem `INCLUDE BIBLIOGRAPHY`** (`synesis/compiler.py`, `synesis/api.py`)
+  - `compiler.load_bibliography()` retornava `{}` quando não havia declaração `INCLUDE BIBLIOGRAPHY`. O validador, com guarda `if self.bibliography is None`, interpretava `{}` como "bib declarada mas vazia" e validava todos os `@bibref` contra um dicionário vazio, gerando E001 em cascata.
+  - Correção: `load_bibliography()` retorna `None` quando não há `INCLUDE BIBLIOGRAPHY`. A distinção semântica é preservada: `None` → sem declaração, validação desativada; `{}` → bib declarada mas vazia, validação ativa e reporta E001. A guarda `is None` no validador permanece intocada.
+  - O check E070 (`DuplicateSourceBibref`) é ortogonal à bibliografia e sobrevive à correção: projetos sem bib com `@silva2026` + `@SILVA2026` produzem 0× E001 e 1× E070, conforme verificado empiricamente.
+
+- **`_has_chain_relations` ignorava campos `TYPE CHAIN` com nome customizado** (`synesis/exporters/json_export.py`)
+  - `_has_chain_relations()` buscava `template.field_specs.get("chain")` — nome literal. Campos `TYPE CHAIN` renomeados (ex.: `causal_chain`) eram invisíveis à função, fazendo com que os triples do JSON saíssem com `relation='IMPLICIT'` em vez das relações nomeadas declaradas.
+  - Correção: a função agora itera `template.field_specs.values()` verificando `spec.type == FieldType.CHAIN and spec.relations`, espelhando o padrão já adotado em `semantic/linker.py`.
+
+- **`ARITY = 2.0` desativava silenciosamente a validação de aridade** (`synesis/parser/template_loader.py`, `synesis/ast/results.py`)
+  - `_validate_chain_arity` chamava `int("2.0")`, que lançava `ValueError` capturado com `return None`, desativando toda a validação de arity para aquele campo sem nenhum aviso ao usuário.
+  - Correção: `_check_invalid_arity_operator` em `template_loader.py` detecta operador válido com valor não-inteiro e emite `NonIntegerArityValue` (novo erro E060) antes que a execução chegue ao `int()`. O erro é explícito e pedagógico.
+
+- **Bibrefs puramente numéricos (`@2026`, `@001`) eram rejeitados pelo parser** (`synesis/grammar/synesis.lark`, `synesis/grammar/synesis_standalone.py`)
+  - `BIBREF: "@" /[a-zA-Z][a-zA-Z0-9_-]*/` exigia letra como primeiro caractere, herança da convenção BibTeX. Com SOURCE como unidade de evidência genérica, identificadores numéricos são casos de uso legítimos (entrevistas numeradas, anos, IDs institucionais).
+  - Correção: primeiro caractere relaxado para `[a-zA-Z0-9]`. O `@` inicial é desambiguador suficiente — sem colisão com `NUMBER` nem `TEXT_LINE`. Projetos com bib e chaves numéricas passam a funcionar de ponta a ponta.
+
+- **Nomes de campo que começam com keyword de tipo causavam `UnexpectedToken`** (`synesis/grammar/synesis.lark`, `synesis/grammar/synesis_standalone.py`)
+  - Tokens como `KW_CODE.5: /code/i` venciam `FIELD_NAME.1` no lexer contextual, casando apenas o prefixo (`code` em `code_quality`) e deixando `_quality: x` como `TEXT_LINE` órfão.
+  - Correção: cada keyword-type ganhou lookahead negativo `(?![\p{L}\p{N}_-])` na própria declaração do terminal, bloqueando o match apenas quando a keyword forma o nome inteiro do campo. `code_quality`, `chain_length`, `date_created`, `topic_area` etc. passam a parsear corretamente; keywords exatas (`code`, `chain`) continuam roteadas pelas alternativas explícitas de `field_key`.
+
 ## [0.5.7] - 2026-06-15
 
 ### Changed

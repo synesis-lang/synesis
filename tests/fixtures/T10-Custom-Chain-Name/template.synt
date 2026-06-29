@@ -1,0 +1,19 @@
+TEMPLATE custom_chain
+
+ITEM FIELDS
+    REQUIRED quotation
+    OPTIONAL causal_chain
+END ITEM FIELDS
+
+FIELD quotation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+
+FIELD causal_chain TYPE CHAIN
+    SCOPE ITEM
+    ARITY >= 2
+    RELATIONS
+        INFLUENCES: Efeito causal direto entre conceitos
+        CONSTRAINS: Um conceito limita ou restringe outro
+    END RELATIONS
+END FIELD

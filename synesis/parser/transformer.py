@@ -762,6 +762,7 @@ class SynesisTransformer(Transformer):
         optional: List[str] = []
         forbidden: List[str] = []
         bundles: List[Tuple[str, ...]] = []
+        optional_bundles: List[Tuple[str, ...]] = []
         for clause in clauses:
             if clause[0] == "required":
                 if clause[1]:
@@ -769,7 +770,10 @@ class SynesisTransformer(Transformer):
                 else:
                     required.extend(clause[2])
             elif clause[0] == "optional":
-                optional.extend(clause[1])
+                if clause[1]:
+                    optional_bundles.append(tuple(clause[2]))
+                else:
+                    optional.extend(clause[2])
             elif clause[0] == "forbidden":
                 forbidden.extend(clause[1])
         return {
@@ -778,6 +782,7 @@ class SynesisTransformer(Transformer):
             "optional": optional,
             "forbidden": forbidden,
             "bundles": bundles,
+            "optional_bundles": optional_bundles,
         }
 
     def field_list(self, items: List[Any]) -> List[Any]:
@@ -793,7 +798,9 @@ class SynesisTransformer(Transformer):
             names = items[-1]
             return ("required", has_bundle, names)
         if items[0] == "OPTIONAL":
-            return ("optional", items[1])
+            has_bundle = "BUNDLE" in items
+            names = items[-1]
+            return ("optional", has_bundle, names)
         return ("forbidden", items[1])
 
     def bundle_modifier(self, items: List[Any]) -> str:

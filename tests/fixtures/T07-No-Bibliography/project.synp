@@ -1,0 +1,4 @@
+PROJECT no_bib_demo
+    TEMPLATE "template.synt"
+    INCLUDE ANNOTATIONS "annotations.syn"
+END PROJECT

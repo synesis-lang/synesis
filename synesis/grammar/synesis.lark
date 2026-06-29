@@ -52,21 +52,26 @@ KW_BUNDLE.5: /bundle/i
 KW_TYPE.5: /type/i
 KW_SCOPE.5: /scope/i
 KW_FORMAT.5: /format/i
-KW_DESCRIPTION.5: /description/i
+KW_DESCRIPTION.5: /description(?![\p{L}\p{N}_-])/i
 KW_ARITY.5: /arity/i
 KW_VALUES.5: /values/i
 KW_RELATIONS.5: /relations/i
 KW_METADATA.5: /metadata/i
-KW_QUOTATION.5: /quotation/i
-KW_MEMO.5: /memo/i
-KW_CODE.5: /code/i
-KW_CHAIN.5: /chain/i
-KW_TEXT.5: /text/i
-KW_DATE.5: /date/i
-KW_SCALE.5: /scale/i
-KW_ENUMERATED.5: /enumerated/i
-KW_ORDERED.5: /ordered/i
-KW_TOPIC.5: /topic/i
+// Keywords de tipo usadas tambem como field_key levam um lookahead de fronteira
+// (?![\p{L}\p{N}_-]) para NAO casarem como prefixo de um nome de campo maior.
+// Sem ele, 'texto' tokeniza como KW_TEXT + 'o', 'code_quality' como KW_CODE +
+// '_quality', etc., quebrando o parse. Com o lookahead, KW_TEXT so casa quando
+// 'text' e a palavra inteira; nomes como 'texto'/'code_quality' viram FIELD_NAME.
+KW_QUOTATION.5: /quotation(?![\p{L}\p{N}_-])/i
+KW_MEMO.5: /memo(?![\p{L}\p{N}_-])/i
+KW_CODE.5: /code(?![\p{L}\p{N}_-])/i
+KW_CHAIN.5: /chain(?![\p{L}\p{N}_-])/i
+KW_TEXT.5: /text(?![\p{L}\p{N}_-])/i
+KW_DATE.5: /date(?![\p{L}\p{N}_-])/i
+KW_SCALE.5: /scale(?![\p{L}\p{N}_-])/i
+KW_ENUMERATED.5: /enumerated(?![\p{L}\p{N}_-])/i
+KW_ORDERED.5: /ordered(?![\p{L}\p{N}_-])/i
+KW_TOPIC.5: /topic(?![\p{L}\p{N}_-])/i
 KW_GUIDELINES.5: /guidelines/i
 
 // ============================================
@@ -125,7 +130,7 @@ scope_type: KW_SOURCE | KW_ITEM | KW_ONTOLOGY
 
 field_list: (requirement_clause | NEWLINE)*
 requirement_clause: KW_REQUIRED bundle_modifier? field_names
-                  | KW_OPTIONAL field_names
+                  | KW_OPTIONAL bundle_modifier? field_names
                   | KW_FORBIDDEN field_names
 
 bundle_modifier: KW_BUNDLE
@@ -200,7 +205,10 @@ chain_expr: CHAIN_ELEMENT ("->" CHAIN_ELEMENT)+
 // TOKENS
 // ============================================
 
-BIBREF: "@" /[a-zA-Z][a-zA-Z0-9_-]*/
+// Aceita identificador alfanumerico (inclusive inicio numerico: @2026, @001).
+// A SOURCE e uma unidade de evidencia generica; o identificador nao precisa
+// corresponder a uma chave BibTeX iniciada por letra.
+BIBREF: "@" /[a-zA-Z0-9][a-zA-Z0-9_-]*/
 
 // Permite espaços em conceitos até encontrar ->
 CHAIN_ELEMENT.2: /[\p{L}_](?:(?!->)[\p{L}\p{N}_\- ])*/u

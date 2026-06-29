@@ -222,13 +222,18 @@ class SynesisCompiler:
         return load_template(template_path)
 
     def load_bibliography(self, project: ProjectNode):
+        # Retorna None quando o projeto NAO declara INCLUDE BIBLIOGRAPHY: nesse caso
+        # os identificadores de SOURCE sao chaves internas e a validacao de bibref
+        # (E001) e desativada no SemanticValidator. Quando ha INCLUDE BIBLIOGRAPHY
+        # mas o arquivo nao existe, retorna {} (a falta do arquivo ja e reportada
+        # como E063 por _check_bibliography_file e os bibrefs ainda sao validados).
         for include in project.includes:
             if include.include_type.upper() == "BIBLIOGRAPHY":
                 path = self.project_dir / include.path
                 if not path.exists():
                     return {}
                 return load_bibliography(path)
-        return {}
+        return None
 
     def parse_ontologies(self, project: ProjectNode) -> List[OntologyNode]:
         paths = self._collect_include_paths(project, "ONTOLOGY")

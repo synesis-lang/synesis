@@ -170,6 +170,14 @@ class TestBibref:
         result = validator.validate_source(source)
         assert not result.has_errors()
 
+    def test_empty_dict_bibliography_still_validates(self):
+        # WI-1: distincao semantica entre None (sem INCLUDE BIBLIOGRAPHY -> nao valida)
+        # e {} (bib declarada porem vazia -> ainda valida e reporta E001).
+        validator = SemanticValidator(self.template, {}, {})
+        source = make_source("@anything")
+        result = validator.validate_source(source)
+        assert any(isinstance(e, UnregisteredSource) for e in result.errors)
+
 
 # ===========================================================================
 # Campos desconhecidos
@@ -376,6 +384,22 @@ class TestChainValidation:
         arity_errors = [e for e in result.errors if isinstance(e, ChainArityViolation)]
         assert len(arity_errors) == 0
 
+    def test_decimal_arity_value_generates_e060(self):
+        # WI-5: ARITY = 2.0 deve gerar NonIntegerArityValue (E060) na validacao de
+        # template, em vez de ser silenciosamente ignorado em _validate_chain_arity.
+        from synesis.ast.results import NonIntegerArityValue
+        from synesis.parser.template_loader import validate_template
+        template, _ = self._make_chain_template(arity="= 2.0")
+        result = validate_template(template)
+        assert any(isinstance(e, NonIntegerArityValue) for e in result.errors)
+
+    def test_integer_arity_value_no_e060(self):
+        from synesis.ast.results import NonIntegerArityValue
+        from synesis.parser.template_loader import validate_template
+        template, _ = self._make_chain_template(arity=">= 2")
+        result = validate_template(template)
+        assert not any(isinstance(e, NonIntegerArityValue) for e in result.errors)
+
 
 # ===========================================================================
 # ORDERED
@@ -531,3 +555,77 @@ class TestBundleValidation:
         )
         result = validator.validate_bundle(item, Scope.ITEM)
         assert any(isinstance(e, BundleCountMismatch) for e in result.errors)
+
+
+# ===========================================================================
+# OPTIONAL BUNDLE (WI-4)
+# ===========================================================================
+
+class TestOptionalBundleValidation:
+
+    def _make_optional_bundle_template(self) -> TemplateNode:
+        specs = {
+            "period": make_field_spec("period", FieldType.TEXT),
+            "region": make_field_spec("region", FieldType.TEXT),
+        }
+        return TemplateNode(
+            name="test",
+            metadata={},
+            field_specs=specs,
+            required_fields={},
+            optional_fields={},
+            forbidden_fields={},
+            bundled_fields={},
+            optional_bundles={Scope.ITEM: [("period", "region")]},
+            location=LOC,
+        )
+
+    def test_total_absence_is_valid(self):
+        """Cenário A: nenhum campo do bundle presente → sem erros."""
+        template = self._make_optional_bundle_template()
+        validator = SemanticValidator(template, None, {})
+        item = make_item(field_names=[])
+        result = validator.validate_optional_bundle(item, Scope.ITEM)
+        assert not result.has_errors()
+
+    def test_partial_presence_generates_missing_bundle_field(self):
+        """Cenário B: apenas um campo do bundle → MissingBundleField."""
+        template = self._make_optional_bundle_template()
+        validator = SemanticValidator(template, None, {})
+        item = make_item(extra_fields={"period": "Século XXI"}, field_names=["period"])
+        result = validator.validate_optional_bundle(item, Scope.ITEM)
+        assert any(isinstance(e, MissingBundleField) for e in result.errors)
+
+    def test_count_mismatch_generates_bundle_count_mismatch(self):
+        """Cenário C: dois campos presentes em quantidades diferentes → BundleCountMismatch."""
+        template = self._make_optional_bundle_template()
+        validator = SemanticValidator(template, None, {})
+        item = make_item(
+            extra_fields={"period": ["Século XX", "Século XXI"], "region": "América do Sul"},
+            field_names=["period", "region"],
+        )
+        result = validator.validate_optional_bundle(item, Scope.ITEM)
+        assert any(isinstance(e, BundleCountMismatch) for e in result.errors)
+
+    def test_complete_bundle_no_error(self):
+        """Cenário D: ambos os campos presentes na mesma quantidade → sem erros."""
+        template = self._make_optional_bundle_template()
+        validator = SemanticValidator(template, None, {})
+        item = make_item(
+            extra_fields={"period": "Século XXI", "region": "Europa"},
+            field_names=["period", "region"],
+        )
+        result = validator.validate_optional_bundle(item, Scope.ITEM)
+        assert not result.has_errors()
+
+    def test_required_bundle_still_requires_presence(self):
+        """REQUIRED BUNDLE (validate_bundle) não é afetado pelo OPTIONAL BUNDLE: ausência gera erro."""
+        specs = {
+            "memo": make_field_spec("memo", FieldType.MEMO),
+            "chain": make_field_spec("chain", FieldType.CHAIN),
+        }
+        template = make_template(specs, bundles={Scope.ITEM: [("memo", "chain")]})
+        validator = SemanticValidator(template, None, {})
+        item = make_item(field_names=[])
+        result = validator.validate_bundle(item, Scope.ITEM)
+        assert any(isinstance(e, MissingBundleField) for e in result.errors)
