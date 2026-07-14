@@ -48,6 +48,25 @@ from synesis.semantic.linker import LinkedProject
 
 CsvTable = tuple[List[str], List[Dict[str, Any]]]
 
+# Caracteres que, no inicio de uma celula, fazem o Excel/LibreOffice interpretar
+# o conteudo como formula (=cmd|..., +, -, @) ou disparar DDE. Como o texto das
+# anotacoes e nao-confiavel (circula entre pesquisadores, e gerado por LLM), uma
+# celula "=HYPERLINK(...)" seria executada ao abrir o CSV. Prefixamos com aspa
+# simples para neutralizar sem alterar o valor exibido.
+_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_cell(value: Any) -> Any:
+    """Neutraliza injecao de formula em celulas de texto."""
+    if isinstance(value, str) and value and value[0] in _FORMULA_TRIGGERS:
+        return "'" + value
+    return value
+
+
+def _sanitize_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Aplica _sanitize_cell a todos os valores de uma linha."""
+    return {key: _sanitize_cell(val) for key, val in row.items()}
+
 
 def build_csv_tables(
     linked: LinkedProject,
@@ -129,7 +148,7 @@ def export_csv(linked: LinkedProject, template: Optional[TemplateNode], output_d
                 writer = csv.DictWriter(handle, fieldnames=headers)
                 writer.writeheader()
                 for row in rows:
-                    writer.writerow(row)
+                    writer.writerow(_sanitize_row(row))
 
 
 def _has_fields_for_scope(template: TemplateNode, scope: Scope) -> bool:
@@ -236,7 +255,7 @@ def _write_sources_csv(linked: LinkedProject, template: Optional[TemplateNode], 
         writer = csv.DictWriter(handle, fieldnames=headers)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            writer.writerow(_sanitize_row(row))
 
 
 def _build_items_table(linked: LinkedProject, template: Optional[TemplateNode]) -> CsvTable:
@@ -301,7 +320,7 @@ def _write_items_csv(linked: LinkedProject, template: Optional[TemplateNode], pa
         writer = csv.DictWriter(handle, fieldnames=headers)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            writer.writerow(_sanitize_row(row))
 
 
 def _build_ontologies_table(linked: LinkedProject, template: Optional[TemplateNode]) -> CsvTable:
@@ -373,7 +392,7 @@ def _write_ontologies_csv(linked: LinkedProject, template: Optional[TemplateNode
         writer = csv.DictWriter(handle, fieldnames=headers)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            writer.writerow(_sanitize_row(row))
 
 
 def _build_chains_table(linked: LinkedProject, has_relations: bool = False) -> CsvTable:
@@ -418,7 +437,7 @@ def _write_chains_csv(linked: LinkedProject, path: Path, has_relations: bool = F
         writer = csv.DictWriter(handle, fieldnames=headers)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            writer.writerow(_sanitize_row(row))
 
 
 def _build_codes_table(linked: LinkedProject) -> CsvTable:
@@ -448,7 +467,7 @@ def _write_codes_csv(linked: LinkedProject, path: Path) -> None:
         writer = csv.DictWriter(handle, fieldnames=headers)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            writer.writerow(_sanitize_row(row))
 
 
 def _write_topics_csv(linked: LinkedProject, path: Path) -> None:
@@ -462,7 +481,7 @@ def _write_topics_csv(linked: LinkedProject, path: Path) -> None:
                 "concept_count": len(concepts),
                 "concepts": ";".join(sorted(concepts)),
             }
-            writer.writerow(row)
+            writer.writerow(_sanitize_row(row))
 
 
 def _collect_source_fields(sources: List[SourceNode]) -> List[str]:

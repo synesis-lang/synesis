@@ -65,6 +65,7 @@ from synesis.ast.normalize import normalize_bibref
 from synesis.ast.results import DuplicateSourceBibref, ValidationResult
 from synesis.parser.bib_loader import BibEntry, load_bibliography
 from synesis.parser.lexer import SynesisSyntaxError, parse_string
+from synesis.parser.paths import resolve_include, uri_to_path
 from synesis.parser.template_loader import load_template
 from synesis.parser.transformer import SynesisTransformer
 from synesis.semantic.validator import SemanticValidator
@@ -239,8 +240,7 @@ def _parse_with_error_handling(
 
     try:
         tree = parse_string(source, file_uri)
-        # Converte URI para Path (remove file:// se presente)
-        file_path = Path(file_uri.replace("file://", ""))
+        file_path = uri_to_path(file_uri)
         transformer = SynesisTransformer(file_path)
         nodes = transformer.transform(tree)
         return nodes, errors
@@ -375,15 +375,7 @@ def discover_context(file_uri: str) -> tuple[ValidationContext, List["Validation
 
     if project_result is None:
         # Nenhum .synp encontrado - gerar WARNING
-        if file_uri.startswith("file://"):
-            from urllib.parse import unquote, urlparse
-            _p = urlparse(file_uri)
-            _s = unquote(_p.path or "")
-            if len(_s) >= 3 and _s[0] == "/" and _s[2] == ":":
-                _s = _s[1:]
-            file_path = Path(_s)
-        else:
-            file_path = Path(file_uri)
+        file_path = uri_to_path(file_uri)
         warning = MissingProjectFile(
             location=SourceLocation(file_path, 1, 1), workspace_root=str(workspace_root)
         )
@@ -410,16 +402,16 @@ def discover_context(file_uri: str) -> tuple[ValidationContext, List["Validation
         monitored_files.extend(synp_files)
 
         # .synt (template)
-        template_path = project_dir / project_node.template_path
-        if template_path.exists():
-            monitored_files.append(template_path)
+        template_resolution = resolve_include(project_dir, str(project_node.template_path))
+        if template_resolution.ok:
+            monitored_files.append(template_resolution.path)
 
         # .bib (se presente)
         for include in project_node.includes:
             if include.include_type.upper() == "BIBLIOGRAPHY":
-                bib_path = project_dir / include.path
-                if bib_path.exists():
-                    monitored_files.append(bib_path)
+                bib_resolution = resolve_include(project_dir, include.path)
+                if bib_resolution.ok:
+                    monitored_files.append(bib_resolution.path)
                 break
 
         _set_cached_context(workspace_root, context, monitored_files)
@@ -515,16 +507,7 @@ def find_workspace_root(file_uri: str) -> Optional[Path]:
     Returns:
         Path da raiz do workspace ou None se não encontrado
     """
-    # Remove prefixo file:// se presente (suporte correto a file:///C:/ no Windows)
-    if file_uri.startswith("file://"):
-        from urllib.parse import unquote, urlparse
-        parsed = urlparse(file_uri)
-        path_str = unquote(parsed.path or "")
-        if len(path_str) >= 3 and path_str[0] == "/" and path_str[2] == ":":
-            path_str = path_str[1:]  # /C:/... → C:/...
-        file_path = Path(path_str)
-    else:
-        file_path = Path(file_uri)
+    file_path = uri_to_path(file_uri)
 
     # Garante que é arquivo válido
     if not file_path.exists():
@@ -636,10 +619,11 @@ def _load_context_from_project(
     ontology_index: Dict[str, "OntologyNode"] = {}
 
     # 1. CARREGAR TEMPLATE (obrigatório)
-    template_path = project_dir / project.template_path
+    template_resolution = resolve_include(project_dir, str(project.template_path))
+    template_path = template_resolution.path
 
-    if not template_path.exists():
-        # Template especificado mas não existe
+    if not template_resolution.ok:
+        # Template especificado mas não existe (ou aponta para fora do projeto)
         error = MissingTemplateFile(
             location=project.location,
             template_path=str(template_path),
@@ -664,18 +648,20 @@ def _load_context_from_project(
     # 2. CARREGAR BIBLIOGRAFIA (opcional)
     for include in project.includes:
         if include.include_type.upper() == "BIBLIOGRAPHY":
-            bib_path = project_dir / include.path
+            bib_resolution = resolve_include(project_dir, include.path)
 
-            if bib_path.exists():
+            if bib_resolution.ok:
                 try:
-                    bibliography = load_bibliography(bib_path)
-                    logger.info("Bibliografia carregada: %s", bib_path)
+                    bibliography = load_bibliography(bib_resolution.path)
+                    logger.info("Bibliografia carregada: %s", bib_resolution.path)
                 except Exception as e:
                     # Bibliografia existe mas não pode ser carregada
                     # Não é erro fatal - apenas logar
-                    logger.warning("Erro ao carregar bibliografia %s: %s", bib_path, e)
+                    logger.warning(
+                        "Erro ao carregar bibliografia %s: %s", bib_resolution.path, e
+                    )
             else:
-                logger.warning("Bibliografia nao encontrada: %s", bib_path)
+                logger.warning("Bibliografia nao encontrada: %s", bib_resolution.path)
             break  # Usar apenas primeiro INCLUDE BIBLIOGRAPHY
 
     # 3. CARREGAR ONTOLOGIAS (opcional)
@@ -684,12 +670,13 @@ def _load_context_from_project(
 
     for include in project.includes:
         if include.include_type.upper() == "ONTOLOGY":
-            ont_path = project_dir / include.path
-            if ont_path.exists():
+            ont_resolution = resolve_include(project_dir, include.path)
+            ont_path = ont_resolution.path
+            if ont_resolution.ok:
                 try:
                     tree = parse_file(ont_path)
                     from synesis.parser.transformer import SynesisTransformer
-                    transformer = SynesisTransformer(str(ont_path))
+                    transformer = SynesisTransformer(ont_path)
                     nodes = transformer.transform(tree)
                     for node in nodes:
                         if isinstance(node, OntologyNode):

@@ -44,13 +44,17 @@ from synesis.ast.nodes import (
 )
 from synesis.ast.results import (
     DuplicateProjectBlock,
+    IncludePathEscapesProject,
     MalformedBibliographyEntry,
+    MissingAnnotationsFile,
     MissingAnnotationsInclude,
     MissingBibliographyFile,
+    MissingOntologyFile,
     MissingOntologyInclude,
     MissingTemplateDeclaration,
     MissingTemplateFile,
     ModifiedBeforeCreated,
+    UnreadableIncludedFile,
     ValidationResult,
 )
 from synesis.exporters.alpaca_export import export_alpaca
@@ -58,8 +62,16 @@ from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
 from synesis.parser.bib_loader import BibEntry, detect_malformed_entries, load_bibliography
-from synesis.parser.lexer import parse_file
+from synesis.parser.lexer import SynesisSyntaxError, parse_file, read_source_file
 from synesis.parser.parse_cache import get_cached_nodes, put_cached_nodes
+from synesis.parser.paths import (
+    IncludeError,
+    canonical_path,
+    has_glob,
+    normalize_include_path,
+    resolve_glob,
+    resolve_include,
+)
 from synesis.parser.template_loader import load_template, validate_template
 from synesis.parser.transformer import SynesisTransformer
 from synesis.semantic.linker import LinkedProject, Linker
@@ -153,8 +165,8 @@ class SynesisCompiler:
 
         bibliography = self.load_bibliography(project)
 
-        ontologies = self.parse_ontologies(project)
-        sources, items = self.parse_annotations(project)
+        ontologies, ontology_load_result = self.parse_ontologies(project)
+        sources, items, annotations_load_result = self.parse_annotations(project)
 
         norm_cache: dict = {}
 
@@ -178,6 +190,8 @@ class SynesisCompiler:
         self._merge(validation_result, template_validation)
         self._merge(validation_result, bib_validation)
         self._merge(validation_result, bib_format_validation)
+        self._merge(validation_result, ontology_load_result)
+        self._merge(validation_result, annotations_load_result)
 
         linked_project = self.link_all(
             project=project,
@@ -218,57 +232,79 @@ class SynesisCompiler:
         return project_nodes[0], result
 
     def load_template(self, project: ProjectNode):
-        template_path = self.project_dir / project.template_path
-        return load_template(template_path)
+        resolution = resolve_include(self.project_dir, str(project.template_path))
+        return load_template(resolution.path)
 
     def load_bibliography(self, project: ProjectNode):
         # Retorna None quando o projeto NAO declara INCLUDE BIBLIOGRAPHY: nesse caso
         # os identificadores de SOURCE sao chaves internas e a validacao de bibref
         # (E001) e desativada no SemanticValidator. Quando ha INCLUDE BIBLIOGRAPHY
-        # mas o arquivo nao existe, retorna {} (a falta do arquivo ja e reportada
-        # como E063 por _check_bibliography_file e os bibrefs ainda sao validados).
+        # mas o arquivo nao existe ou nao pode ser lido, retorna {} (a falta do
+        # arquivo ja e reportada como E063/E076 e os bibrefs ainda sao validados).
         for include in project.includes:
             if include.include_type.upper() == "BIBLIOGRAPHY":
-                path = self.project_dir / include.path
-                if not path.exists():
+                resolution = resolve_include(self.project_dir, include.path)
+                if not resolution.ok:
                     return {}
-                return load_bibliography(path)
+                try:
+                    return load_bibliography(resolution.path)
+                except (OSError, UnicodeDecodeError):
+                    return {}
         return None
 
-    def parse_ontologies(self, project: ProjectNode) -> List[OntologyNode]:
-        paths = self._collect_include_paths(project, "ONTOLOGY")
+    def parse_ontologies(
+        self, project: ProjectNode
+    ) -> tuple[List[OntologyNode], ValidationResult]:
+        paths, result = self._collect_include_paths(project, "ONTOLOGY")
         ontologies: List[OntologyNode] = []
         for path in paths:
-            ontologies.extend(self._parse_nodes(path, OntologyNode))
-        return ontologies
+            nodes, parse_result = self._parse_nodes(path, OntologyNode)
+            ontologies.extend(nodes)
+            self._merge(result, parse_result)
+        return ontologies, result
 
-    def parse_annotations(self, project: ProjectNode) -> tuple[List[SourceNode], List[ItemNode]]:
-        paths = self._collect_include_paths(project, "ANNOTATIONS", allow_glob=True)
+    def parse_annotations(
+        self, project: ProjectNode
+    ) -> tuple[List[SourceNode], List[ItemNode], ValidationResult]:
+        paths, result = self._collect_include_paths(project, "ANNOTATIONS", allow_glob=True)
 
         if len(paths) <= 3:
-            return self._parse_annotations_sequential(paths)
+            sources, items, parse_result = self._parse_annotations_sequential(paths)
+            self._merge(result, parse_result)
+            return sources, items, result
 
         with ProcessPoolExecutor(max_workers=min(4, len(paths))) as executor:
             results = list(executor.map(_parse_single_annotation, paths))
 
-        sources: List[SourceNode] = []
-        items: List[ItemNode] = []
-        for file_sources, file_items in results:
+        sources = []
+        items = []
+        for path, (file_sources, file_items, failure) in zip(paths, results):
+            if failure is not None:
+                result.add(UnreadableIncludedFile(
+                    location=SourceLocation(path, 1, 1),
+                    filename=path.name,
+                    reason=failure,
+                ))
+                continue
             sources.extend(file_sources)
             items.extend(file_items)
-        return sources, items
+        return sources, items, result
 
-    def _parse_annotations_sequential(self, paths: List[Path]) -> tuple[List[SourceNode], List[ItemNode]]:
+    def _parse_annotations_sequential(
+        self, paths: List[Path]
+    ) -> tuple[List[SourceNode], List[ItemNode], ValidationResult]:
+        result = ValidationResult()
         sources: List[SourceNode] = []
         items: List[ItemNode] = []
         for path in paths:
-            nodes = self._parse_nodes(path)
+            nodes, parse_result = self._parse_nodes(path)
+            self._merge(result, parse_result)
             for node in nodes:
                 if isinstance(node, SourceNode):
                     sources.append(node)
                 elif isinstance(node, ItemNode):
                     items.append(node)
-        return sources, items
+        return sources, items, result
 
     def validate_all(
         self,
@@ -339,27 +375,31 @@ class SynesisCompiler:
         if not project.template_path or str(project.template_path).strip() == "":
             result.add(MissingTemplateDeclaration(location=loc))
 
-        # Erros 61-62: arquivos .syn/.syno no diretorio nao referenciados no .synp
+        # Erros 61-62: arquivos .syn/.syno no diretorio nao referenciados no .synp.
+        # Os paths sao comparados na caixa real do disco (resolve_include), senao um
+        # .synp que escreve "NOTES.SYN" para o arquivo "notes.syn" produz E061
+        # falso-positivo em sistemas de arquivos case-insensitive.
         included_annotations = set()
         included_ontologies = set()
         for include in project.includes:
             inc_type = include.include_type.upper()
-            raw = include.path
+            raw = normalize_include_path(include.path)
             if inc_type == "ANNOTATIONS":
-                if self._has_glob(raw):
-                    for p in self.project_dir.glob(raw):
-                        included_annotations.add(p.resolve())
+                if has_glob(raw):
+                    inside, _outside = resolve_glob(self.project_dir, raw)
+                    for p in inside:
+                        included_annotations.add(self._canonical(p))
                 else:
-                    included_annotations.add((self.project_dir / raw).resolve())
+                    included_annotations.add(self._canonical(self.project_dir / raw))
             elif inc_type == "ONTOLOGY":
-                included_ontologies.add((self.project_dir / raw).resolve())
+                included_ontologies.add(self._canonical(self.project_dir / raw))
 
         for syn_file in self.project_dir.glob("*.syn"):
-            if syn_file.resolve() not in included_annotations:
+            if self._canonical(syn_file) not in included_annotations:
                 result.add(MissingAnnotationsInclude(location=loc, filename=syn_file.name))
 
         for syno_file in self.project_dir.glob("*.syno"):
-            if syno_file.resolve() not in included_ontologies:
+            if self._canonical(syno_file) not in included_ontologies:
                 result.add(MissingOntologyInclude(location=loc, filename=syno_file.name))
 
         # Erro 67: MODIFIED < CREATED no bloco METADATA
@@ -375,15 +415,26 @@ class SynesisCompiler:
 
         return result
 
+    def _canonical(self, path: Path) -> Path:
+        """Caminho canonico (caixa real do disco) para comparacao entre paths."""
+        return canonical_path(path)
+
     def _safe_load_template(self, project: ProjectNode) -> tuple[Optional[TemplateNode], ValidationResult]:
-        """Carrega o template capturando erros de arquivo ausente. (erros 64, 65)"""
+        """Carrega o template capturando erros de arquivo ausente. (erros 64, 65, 75)"""
         result = ValidationResult()
-        template_path_str = str(project.template_path).strip() if project.template_path else ""
+        template_path_str = normalize_include_path(str(project.template_path)) if project.template_path else ""
         if not template_path_str:
             # Erro 65 já emitido em validate_project_structure; retornar None para abortar cedo
             return None, result
-        template_path = self.project_dir / project.template_path
-        if not template_path.exists():
+
+        resolution = resolve_include(self.project_dir, template_path_str)
+        if resolution.error is IncludeError.ESCAPES_PROJECT:
+            result.add(IncludePathEscapesProject(
+                location=project.location,
+                filename=str(project.template_path),
+            ))
+            return None, result
+        if not resolution.ok:
             result.add(MissingTemplateFile(
                 location=project.location,
                 template_path=str(project.template_path),
@@ -391,7 +442,7 @@ class SynesisCompiler:
             ))
             return None, result
         try:
-            return load_template(template_path), result
+            return load_template(resolution.path), result
         except Exception:
             result.add(MissingTemplateFile(
                 location=project.location,
@@ -401,12 +452,17 @@ class SynesisCompiler:
             return None, result
 
     def _check_bibliography_file(self, project: ProjectNode) -> ValidationResult:
-        """Erro 63: arquivo .bib declarado no projeto nao encontrado."""
+        """Erros 63 e 75: arquivo .bib declarado nao encontrado ou fora do projeto."""
         result = ValidationResult()
         for include in project.includes:
             if include.include_type.upper() == "BIBLIOGRAPHY":
-                path = self.project_dir / include.path
-                if not path.exists():
+                resolution = resolve_include(self.project_dir, include.path)
+                if resolution.error is IncludeError.ESCAPES_PROJECT:
+                    result.add(IncludePathEscapesProject(
+                        location=include.location,
+                        filename=include.path,
+                    ))
+                elif not resolution.ok:
                     result.add(MissingBibliographyFile(
                         location=include.location,
                         filename=include.path,
@@ -415,13 +471,22 @@ class SynesisCompiler:
         return result
 
     def _check_bibliography_format(self, project: ProjectNode) -> ValidationResult:
-        """Erro 72: entradas BibTeX malformadas no arquivo .bib declarado."""
+        """Erros 72 e 76: entradas BibTeX malformadas ou arquivo .bib ilegivel."""
         result = ValidationResult()
         for include in project.includes:
             if include.include_type.upper() == "BIBLIOGRAPHY":
-                path = self.project_dir / include.path
-                if path.exists():
-                    content = path.read_text(encoding="utf-8")
+                resolution = resolve_include(self.project_dir, include.path)
+                if resolution.ok:
+                    path = resolution.path
+                    try:
+                        content = read_source_file(path)
+                    except (OSError, UnicodeDecodeError) as exc:
+                        result.add(UnreadableIncludedFile(
+                            location=include.location,
+                            filename=include.path,
+                            reason=str(exc),
+                        ))
+                        break
                     for entry_key, line_number in detect_malformed_entries(content):
                         result.add(MalformedBibliographyEntry(
                             location=SourceLocation(path, line_number or 1, 1),
@@ -436,30 +501,87 @@ class SynesisCompiler:
         project: ProjectNode,
         include_type: str,
         allow_glob: bool = False,
-    ) -> List[Path]:
+    ) -> tuple[List[Path], ValidationResult]:
+        """Resolve os caminhos de um tipo de INCLUDE.
+
+        Devolve apenas os caminhos legiveis; arquivos ausentes ou fora da pasta do
+        projeto viram erros de validacao (E073/E074/E075) em vez de excecao.
+        """
+        result = ValidationResult()
         paths: List[Path] = []
+        missing_cls = (
+            MissingOntologyFile if include_type == "ONTOLOGY" else MissingAnnotationsFile
+        )
+
         for include in project.includes:
             if include.include_type.upper() != include_type:
                 continue
-            raw = include.path
-            if allow_glob and self._has_glob(raw):
-                paths.extend([self.project_dir / p for p in self.project_dir.glob(raw)])
+
+            raw = normalize_include_path(include.path)
+
+            if allow_glob and has_glob(raw):
+                # Glob sem match nao e erro aqui: a ausencia de arquivos .syn ja e
+                # coberta por E061/E062 em validate_project_structure. Mas o glob
+                # segue `..`, entao filtramos os matches que escapam do projeto.
+                inside, outside = resolve_glob(self.project_dir, raw)
+                paths.extend(inside)
+                for escaped in outside:
+                    result.add(IncludePathEscapesProject(
+                        location=include.location,
+                        filename=str(escaped),
+                    ))
+                continue
+
+            resolution = resolve_include(self.project_dir, raw)
+            if resolution.ok:
+                paths.append(resolution.path)
+            elif resolution.error is IncludeError.ESCAPES_PROJECT:
+                result.add(IncludePathEscapesProject(
+                    location=include.location,
+                    filename=include.path,
+                ))
             else:
-                paths.append(self.project_dir / raw)
-        return paths
+                result.add(missing_cls(
+                    location=include.location,
+                    filename=include.path,
+                ))
 
-    def _has_glob(self, value: str) -> bool:
-        return any(ch in value for ch in ["*", "?", "["])
+        return paths, result
 
-    def _parse_nodes(self, path: Path, only_type=None) -> List:
+    def _parse_nodes(self, path: Path, only_type=None) -> tuple[List, ValidationResult]:
+        """Parseia um arquivo incluido, convertendo falhas de leitura em erros.
+
+        Erros de sintaxe e de codificacao em arquivos incluidos viram diagnosticos
+        (E076 / erro de sintaxe posicionado) em vez de derrubar a compilacao.
+        """
+        result = ValidationResult()
+
         cached = get_cached_nodes(path)
-        if cached is None:
-            tree = parse_file(path)
-            cached = SynesisTransformer(path).transform(tree)
-            put_cached_nodes(path, cached)
+        if cached is not None:
+            nodes = cached
+        else:
+            try:
+                tree = parse_file(path)
+                nodes = SynesisTransformer(path).transform(tree)
+            except SynesisSyntaxError as exc:
+                result.add(UnreadableIncludedFile(
+                    location=exc.location or SourceLocation(path, 1, 1),
+                    filename=path.name,
+                    reason=exc.message,
+                ))
+                return [], result
+            except (OSError, UnicodeDecodeError) as exc:
+                result.add(UnreadableIncludedFile(
+                    location=SourceLocation(path, 1, 1),
+                    filename=path.name,
+                    reason=str(exc),
+                ))
+                return [], result
+            put_cached_nodes(path, nodes)
+
         if only_type:
-            return [n for n in cached if isinstance(n, only_type)]
-        return cached
+            return [n for n in nodes if isinstance(n, only_type)], result
+        return nodes, result
 
     def _merge(self, base: ValidationResult, other: ValidationResult) -> None:
         base.errors.extend(other.errors)
@@ -467,13 +589,25 @@ class SynesisCompiler:
         base.info.extend(other.info)
 
 
-def _parse_single_annotation(path: Path) -> tuple[List[SourceNode], List[ItemNode]]:
-    """Parseia uma anotacao. Thread-safe: parser cacheado, transformer per-file."""
-    from synesis.parser.lexer import parse_file
+def _parse_single_annotation(
+    path: Path,
+) -> tuple[List[SourceNode], List[ItemNode], Optional[str]]:
+    """Parseia uma anotacao. Thread-safe: parser cacheado, transformer per-file.
+
+    Roda em outro processo: devolve a falha como string (o chamador a converte em
+    UnreadableIncludedFile) para nao depender de excecoes picklable.
+    """
+    from synesis.parser.lexer import SynesisSyntaxError, parse_file
     from synesis.parser.transformer import SynesisTransformer
 
-    tree = parse_file(path)
-    nodes = SynesisTransformer(path).transform(tree)
+    try:
+        tree = parse_file(path)
+        nodes = SynesisTransformer(path).transform(tree)
+    except SynesisSyntaxError as exc:
+        return [], [], exc.message
+    except (OSError, UnicodeDecodeError) as exc:
+        return [], [], str(exc)
+
     sources = [n for n in nodes if isinstance(n, SourceNode)]
     items = [n for n in nodes if isinstance(n, ItemNode)]
-    return sources, items
+    return sources, items, None

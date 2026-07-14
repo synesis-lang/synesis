@@ -1390,6 +1390,86 @@ class MissingBibliographyFile(ValidationError):
 
 
 @dataclass(frozen=True)
+class MissingAnnotationsFile(ValidationError):
+    """Arquivo .syn declarado em INCLUDE ANNOTATIONS nao encontrado. (erro 73)"""
+
+    filename: str
+    CODE: ClassVar[str] = "SYNESIS_E073"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O arquivo de anotacoes `{self.filename}` esta declarado em INCLUDE ANNOTATIONS\n"
+            f"  mas nao foi encontrado. As anotacoes que ele deveria conter nao serao\n"
+            f"  carregadas nem validadas.\n"
+            f"  Verifique se o nome esta correto e se o arquivo existe. O caminho deve ser\n"
+            f"  relativo a pasta onde esta o arquivo de projeto (`.synp`)."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"Arquivo de anotacoes `{self.filename}` declarado no projeto nao encontrado"
+
+
+@dataclass(frozen=True)
+class MissingOntologyFile(ValidationError):
+    """Arquivo .syno declarado em INCLUDE ONTOLOGY nao encontrado. (erro 74)"""
+
+    filename: str
+    CODE: ClassVar[str] = "SYNESIS_E074"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O arquivo de ontologia `{self.filename}` esta declarado em INCLUDE ONTOLOGY\n"
+            f"  mas nao foi encontrado. Sem ele, os codigos usados nas anotacoes nao podem\n"
+            f"  ser validados contra a ontologia.\n"
+            f"  Verifique se o nome esta correto e se o arquivo existe. O caminho deve ser\n"
+            f"  relativo a pasta onde esta o arquivo de projeto (`.synp`)."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"Arquivo de ontologia `{self.filename}` declarado no projeto nao encontrado"
+
+
+@dataclass(frozen=True)
+class IncludePathEscapesProject(ValidationError):
+    """Caminho declarado no .synp aponta para fora do diretorio do projeto. (erro 75)"""
+
+    filename: str
+    CODE: ClassVar[str] = "SYNESIS_E075"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O caminho `{self.filename}` declarado no projeto aponta para fora da pasta\n"
+            f"  do projeto. Por seguranca, o compilador so carrega arquivos contidos na\n"
+            f"  pasta onde esta o `.synp` (ou em suas subpastas).\n"
+            f"  Mova o arquivo para dentro da pasta do projeto e ajuste o caminho."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"Caminho `{self.filename}` aponta para fora da pasta do projeto"
+
+
+@dataclass(frozen=True)
+class UnreadableIncludedFile(ValidationError):
+    """Arquivo declarado no .synp existe mas nao pode ser lido/parseado. (erro 76)"""
+
+    filename: str
+    reason: str
+    CODE: ClassVar[str] = "SYNESIS_E076"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O arquivo `{self.filename}` foi encontrado mas nao pode ser lido pelo\n"
+            f"  compilador:\n"
+            f"    {self.reason}\n"
+            f"  Verifique se o arquivo esta salvo em codificacao UTF-8 e se nao esta\n"
+            f"  corrompido ou aberto exclusivamente por outro programa."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"Arquivo `{self.filename}` nao pode ser lido: {self.reason}"
+
+
+@dataclass(frozen=True)
 class MalformedBibliographyEntry(ValidationError):
     """Entrada em arquivo .bib nao esta em formato BibTeX valido. (erro 72)"""
 
