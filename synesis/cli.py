@@ -410,12 +410,12 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
 
         # Etapa 2: ontologia
         spinner.start("Carregando ontologia")
-        ontologies = compiler.parse_ontologies(project_node)
+        ontologies, ontology_load_result = compiler.parse_ontologies(project_node)
         spinner.done(f"{len(ontologies):,}".replace(",", ".") + " conceitos")
 
         # Etapa 3: anotacoes (etapa mais lenta — paralela)
         spinner.start("Lendo anotacoes")
-        sources, items = compiler.parse_annotations(project_node)
+        sources, items, annotations_load_result = compiler.parse_annotations(project_node)
         spinner.done(
             f"{len(sources):,}".replace(",", ".") + " sources, "
             f"{len(items):,}".replace(",", ".") + " items"
@@ -443,6 +443,8 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
         compiler._merge(validation_result, template_validation)
         compiler._merge(validation_result, bib_validation)
         compiler._merge(validation_result, bib_format_validation)
+        compiler._merge(validation_result, ontology_load_result)
+        compiler._merge(validation_result, annotations_load_result)
         n_errors = len(validation_result.errors)
         n_warnings = len(validation_result.warnings)
         if n_errors:

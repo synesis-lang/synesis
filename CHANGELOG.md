@@ -6,6 +6,69 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.7.0] - 2026-07-13
+
+### Security
+
+- **Path traversal via glob em `INCLUDE ANNOTATIONS`** (`synesis/compiler.py`, `synesis/parser/paths.py`)
+  - O guard de contenção fechava caminhos literais (`"../x.syn"` → E075), mas o ramo de glob não passava por ele: `Path.glob` segue `..`, então `INCLUDE ANNOTATIONS "../../*.syn"` lia e parseava arquivos fora da pasta do projeto, cujo conteúdo entrava no projeto compilado e podia ser exfiltrado por qualquer exportador. Como arquivos `.synp` circulam entre pesquisadores e são gerados por LLM, é leitura arbitrária de arquivos a partir de dado não-confiável.
+  - Correção: nova função `resolve_glob()` expande o padrão e filtra pelo mesmo invariante de contenção (`is_within`); matches que escapam viram E075 e não são lidos.
+- **Leitura de arquivo sem limite de tamanho (DoS de memória)** (`synesis/parser/lexer.py` e demais loaders)
+  - Os loaders liam o arquivo inteiro com `read_text()` sem checar tamanho. O LSP é processo de longa duração; um `.syn`/`.bib` de vários GB (por engano ou gerado por LLM) travava o editor. Correção: `read_source_file()` recusa arquivos acima de `MAX_SOURCE_BYTES` (32 MB) com `SourceFileTooLarge` (subclasse de `OSError`), reportado como `UnreadableIncludedFile` (E076). Ponto único de leitura para `.syn`/`.syno`/`.synp`/`.synt`/`.bib`.
+- **CSV/formula injection nos exportadores** (`synesis/exporters/csv_export.py`)
+  - Células cujo texto (não-confiável) começa com `= + - @ \t \r` eram executadas como fórmula/DDE ao abrir o CSV no Excel/LibreOffice. Correção: `_sanitize_cell()` prefixa essas células com aspa simples antes da escrita, sem alterar o valor exibido.
+- **Higiene de supply chain** (`.github/`, `.pre-commit-config.yaml`)
+  - GitHub Actions pinadas por SHA de commit (antes usavam tags móveis `@v4`/`@release/v1`, sujeitas a comprometimento upstream — o job `publish` tem `id-token: write`).
+  - `dependabot.yml` (pip + github-actions) e `SECURITY.md` (política de reporte privado, modelo de ameaça de arquivos não-confiáveis) adicionados.
+  - Novo job `security` no CI: `pip-audit` sobre as dependências de runtime declaradas (isolado dos extras `[dev]`, para ser determinístico) + Gitleaks (varredura de segredos no histórico). Gitleaks também adicionado ao `pre-commit`.
+
+### Changed
+
+- **CI honesto: removido o mascaramento do smoke test de compilação** (`.github/workflows/ci.yml`)
+  - O passo de integração usava `synesis compile ... || true` sobre uma fixture (`tests/fixtures/valid_project`) que não existe, então nunca testava nada de fato. Agora compila a fixture real `tests/fixtures/Basic/project.synp`, sem `|| true`, e verifica que o JSON foi gerado — uma regressão na compilação de ponta a ponta passa a falhar o CI visivelmente.
+
+### Added
+
+- **Módulo `synesis/parser/paths.py`** — ponto único de resolução de caminhos declarados no `.synp`
+  - `uri_to_path` / `path_to_uri`: conversão URI ↔ Path. Substitui três implementações divergentes que existiam em `lsp_adapter.py` (uma delas incorreta — ver Fixed).
+  - `resolve_include(project_dir, raw)`: resolve o literal de `TEMPLATE`/`INCLUDE` contra o diretório do projeto e devolve `IncludeResolution` (caminho canônico + motivo da falha). Nunca levanta exceção.
+  - `normalize_include_path`: canoniza `\` → `/` no literal do `.synp`, tornando portável um projeto escrito no Windows.
+  - `canonical_path`: caminho na caixa real do disco. Necessário porque `Path.resolve()` não normaliza caixa — em FS case-insensitive `NOTES.SYN` e `notes.syn` são o mesmo arquivo mas comparam como paths distintos.
+  - Novos erros pedagógicos em `synesis/ast/results.py`: `MissingAnnotationsFile` (E073), `MissingOntologyFile` (E074), `IncludePathEscapesProject` (E075), `UnreadableIncludedFile` (E076).
+  - Suíte de regressão `tests/test_include_paths.py` (22 testes). Detecta o tipo de FS em runtime e afirma o comportamento correto tanto em case-sensitive quanto case-insensitive — os defeitos de caixa e de separador passariam despercebidos se testados apenas no Windows.
+
+### Fixed
+
+- **Arquivo declarado em `INCLUDE ANNOTATIONS`/`INCLUDE ONTOLOGY` mas inexistente derrubava a compilação** (`synesis/compiler.py`)
+  - `_parse_nodes()` chamava `parse_file(path)` sem checar existência, e `_collect_include_paths()` devolvia o caminho mesmo quando o arquivo não estava no disco. O resultado era `FileNotFoundError` escapando de `SynesisCompiler.compile()`. `TEMPLATE` (`_safe_load_template`) e `INCLUDE BIBLIOGRAPHY` (`_check_bibliography_file`) já tinham a checagem defensiva; `ANNOTATIONS` e `ONTOLOGY` nunca a receberam.
+  - Correção: `_collect_include_paths()` passa a resolver via `resolve_include()` e emite E073/E074 para os arquivos ausentes, devolvendo apenas os caminhos legíveis. Um `INCLUDE` quebrado não impede mais o parsing dos demais arquivos do projeto.
+  - Efeito no LSP: o `FileNotFoundError` chegava à extensão como notificação genérica ("LSP Error", mensagem técnica sem localização). Agora chega como diagnóstico posicionado no `.synp`, sem alteração em `synesis-lsp` nem em `synesis-vscode` — o compilador voltou a ser a fonte de verdade.
+
+- **Erro de sintaxe ou encoding inválido em arquivo incluído escapava como exceção** (`synesis/compiler.py`)
+  - `SynesisSyntaxError` e `UnicodeDecodeError` levantados ao parsear um `.syn`/`.syno` incluído atravessavam `compile()` inteiro. O caso do erro de sintaxe é o mais frequente no uso real, e era o que menos informação dava ao usuário: nenhuma indicação de qual arquivo continha o problema.
+  - Correção: `_parse_nodes()` e `_parse_single_annotation()` (worker de `ProcessPoolExecutor`) capturam ambos e emitem `UnreadableIncludedFile` (E076). O worker devolve a falha como string, pois exceções não são garantidamente picklable entre processos.
+
+- **`INCLUDE` podia ler arquivos fora da pasta do projeto** (`synesis/compiler.py`, `synesis/parser/paths.py`)
+  - Caminhos como `INCLUDE ANNOTATIONS "../../etc/passwd"` eram resolvidos sem validação de contenção — o compilador lia e parseava qualquer arquivo do sistema apontado pelo `.synp`. Relevante porque arquivos `.synp`/`.syn` circulam entre pesquisadores e são gerados automaticamente pelo `synesis-coder`.
+  - Correção: `resolve_include()` recusa caminhos que escapem do diretório do projeto (E075). Subpastas (`entrevistas/e01.syn`) continuam válidas.
+
+- **Conversão URI→Path quebrada no Windows** (`synesis/lsp_adapter.py`)
+  - `_parse_with_error_handling()` usava `Path(file_uri.replace("file://", ""))`, que deixava a barra inicial antes da letra do drive (`/C:/x` → `\C:\x`, caminho inexistente) e não decodificava percent-encoding — um projeto em `Meus Documentos` ou com acentos no nome virava `meu%20projeto/anota%C3%A7%C3%B5es.syn`. O `file_path` resultante era passado ao `SynesisTransformer`, contaminando o `SourceLocation` de todos os nós daquele arquivo.
+  - A conversão correta já existia duplicada em outros dois pontos do mesmo arquivo (`discover_context` e `find_workspace_root`), inline. Correção: as três cópias foram substituídas por `uri_to_path()`.
+
+- **Divergência de caixa entre o `.synp` e o disco produzia erro falso-positivo** (`synesis/compiler.py`)
+  - `validate_project_structure()` comparava `set()` de paths via `Path.resolve()`, que não normaliza caixa. Um `.synp` com `INCLUDE ANNOTATIONS "NOTES.SYN"` para o arquivo `notes.syn` no disco: em FS case-insensitive (Windows/macOS) o arquivo abria normalmente mas gerava `MissingAnnotationsInclude` (E061) espúrio — e, com dois `INCLUDE` de caixas diferentes para o mesmo arquivo, também `DuplicateSourceBibref` (E070) espúrio, pois o arquivo era parseado duas vezes. Em FS case-sensitive (Linux) o mesmo `.synp` simplesmente crashava. O mesmo projeto se comportava de três formas distintas nos três sistemas.
+  - Correção: comparações passam a usar `canonical_path()` (caixa real do disco). `SourceLocation.file` também passa a carregar a caixa do disco em vez da escrita no `.synp` — sem isso o LSP publicava diagnósticos numa URI (`.../ANNOTATIONS.SYN`) que o editor não reconhece, e o usuário não via o squiggle.
+
+- **Separador `\` em `INCLUDE` não resolvia fora do Windows** (`synesis/compiler.py`, `synesis/parser/paths.py`)
+  - `INCLUDE ANNOTATIONS "entrevistas\e01.syn"` — natural para quem escreve o `.synp` no Windows — funcionava lá e falhava no Linux/macOS, onde `\` é caractere válido de nome de arquivo e o caminho era interpretado literalmente. Correção: `normalize_include_path()` canoniza o separador antes da resolução.
+
+### Changed
+
+- **Assinatura de `SynesisCompiler.parse_annotations()` e `parse_ontologies()`** (`synesis/compiler.py`, `synesis/cli.py`)
+  - Passam a devolver um `ValidationResult` adicional com os erros de carregamento (E073–E076), agregado em `compile()` e na CLI: `parse_ontologies()` → `(ontologies, result)`; `parse_annotations()` → `(sources, items, result)`. `_collect_include_paths()` e `_parse_nodes()` seguem o mesmo padrão. Métodos internos ao compilador; a API pública (`synesis.load()`, `CompilationResult`) não muda.
+- **`SynesisCompiler.load_bibliography()` e `load_template()`** resolvem o caminho via `resolve_include()`, ganhando normalização de separador e contenção. A distinção semântica de `load_bibliography()` (`None` = sem `INCLUDE BIBLIOGRAPHY`, `{}` = declarada mas ilegível) é preservada.
+
 ## [0.6.0] - 2026-06-22
 
 ### Added

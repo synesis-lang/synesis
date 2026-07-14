@@ -58,8 +58,9 @@ def load_bibliography(path: Path | str) -> Dict[str, BibEntry]:
     Returns:
         Dict mapeando chave normalizada (lowercase) para BibEntry
     """
-    file_path = Path(path)
-    content = file_path.read_text(encoding="utf-8")
+    from synesis.parser.lexer import read_source_file
+
+    content = read_source_file(path)
     return load_bibliography_from_string(content)
 
 

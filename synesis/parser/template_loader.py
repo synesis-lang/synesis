@@ -85,8 +85,10 @@ def load_template(path: Path | str) -> TemplateNode:
         TemplateLoadError: Se houver erro de validacao no template
         SynesisSyntaxError: Se houver erro de sintaxe no arquivo
     """
+    from synesis.parser.lexer import read_source_file
+
     file_path = Path(path)
-    content = file_path.read_text(encoding="utf-8")
+    content = read_source_file(file_path)
     return _load_template_impl(content, str(file_path))
 
 

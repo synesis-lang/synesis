@@ -41,6 +41,33 @@ from lark.indenter import Indenter
 from synesis.ast.nodes import SourceLocation
 from synesis.error_handler import create_pedagogical_error
 
+# Teto de tamanho para arquivos-fonte. O LSP e um processo de longa duracao;
+# sem limite, um .syn/.bib de varios GB (por engano ou gerado por LLM) e lido
+# inteiro na memoria e trava o editor. 32 MB cobre qualquer projeto real com
+# folga (o maior case study cabe em kilobytes).
+MAX_SOURCE_BYTES = 32 * 1024 * 1024
+
+
+class SourceFileTooLarge(OSError):
+    """Arquivo-fonte excede MAX_SOURCE_BYTES."""
+
+
+def read_source_file(path: Path | str) -> str:
+    """Le um arquivo-fonte UTF-8 recusando arquivos acima do teto de tamanho.
+
+    Ponto unico de leitura para .syn/.syno/.synp/.synt/.bib. Levanta
+    SourceFileTooLarge (subclasse de OSError) para que os chamadores ja o tratem
+    junto de FileNotFoundError/UnicodeDecodeError como UnreadableIncludedFile.
+    """
+    file_path = Path(path)
+    size = file_path.stat().st_size  # levanta FileNotFoundError se ausente
+    if size > MAX_SOURCE_BYTES:
+        raise SourceFileTooLarge(
+            f"arquivo tem {size / 1024 / 1024:.1f} MB, acima do limite de "
+            f"{MAX_SOURCE_BYTES // 1024 // 1024} MB"
+        )
+    return file_path.read_text(encoding="utf-8")
+
 
 @dataclass
 class SynesisSyntaxError(Exception):
@@ -166,5 +193,5 @@ def parse_string(content: str, filename: str) -> Tree:
 def parse_file(path: Path | str) -> Tree:
     """Parseia conteudo Synesis a partir de um arquivo."""
     file_path = Path(path)
-    content = file_path.read_text(encoding="utf-8")
+    content = read_source_file(file_path)
     return parse_string(content, str(file_path))
