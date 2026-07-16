@@ -43,6 +43,7 @@ from synesis.ast.results import (
     FormatOnNonScale,
     InvalidArityOperator,
     InvalidFormatSyntax,
+    LinkageModifierOutsideSource,
     NonIntegerArityValue,
     OrderedWithoutValues,
     OrphanFieldDefinition,
@@ -211,6 +212,14 @@ def _load_template_impl(content: str, filename: str) -> TemplateNode:
         for name in forbidden:
             forbidden_fields[scope].append(name)
 
+        # ON BIBLIOGRAPHY (Etapa 2): reconcilia origem-de-valor no FieldSpec.
+        # A clausula vive no bloco SOURCE FIELDS; o FIELD e outro bloco — aqui
+        # os dois ja estao disponiveis.
+        for name in block.get("bibliography", []):
+            spec = field_specs.get(name)
+            if spec is not None:
+                spec.value_origin = "bibliography"
+
     if header is None:
         header = {"name": "", "metadata": {}, "location": SourceLocation(file_path, 1, 1)}
 
@@ -266,8 +275,30 @@ def validate_template(template: TemplateNode) -> ValidationResult:
     _check_relations_on_non_chain(template, result)
     _check_values_whitespace(template, result)
     _check_values_duplicates(template, result)
+    _check_linkage_modifier_scope(template, result)
 
     return result
+
+
+def _check_linkage_modifier_scope(template: TemplateNode, result: ValidationResult) -> None:
+    """Erro 78: IDENTIFIES/REFERS TO fora de SCOPE SOURCE."""
+    for name, spec in template.field_specs.items():
+        if spec.scope == Scope.SOURCE:
+            continue
+        if spec.identifies:
+            result.add(LinkageModifierOutsideSource(
+                location=spec.location or template.location,
+                field_name=name,
+                modifier="IDENTIFIES",
+                scope=spec.scope.value,
+            ))
+        if spec.refers_to:
+            result.add(LinkageModifierOutsideSource(
+                location=spec.location or template.location,
+                field_name=name,
+                modifier="REFERS TO",
+                scope=spec.scope.value,
+            ))
 
 
 # ---------------------------------------------------------------------------

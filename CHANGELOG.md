@@ -6,6 +6,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.8.1] - 2026-07-15
+
+### Fixed
+
+- **`--stats`, `--xls` e `--alpaca` eram ignorados em silêncio no passo de linkagem** (`synesis/cli.py`)
+  - Reportado pelo usuário: `synesis compile p1.synp p2.synp --xls output.xls` terminava com exit 0 e nenhum arquivo `.xlsx` gerado, sem qualquer aviso. `_link_projects` recebia os três parâmetros mas nunca os usava — só `--json` e `--csv` estavam de fato implementados no link step.
+  - `--stats` agora funciona: imprime as estatísticas de cada membro (`Sources`, `Items`, `Ontologies`, `Codes`, `Chains`) e o agregado da linkagem. Reaproveita `CompilationStats`, já calculado por membro durante a compilação isolada.
+  - **Deduplicação da ontologia compartilhada no agregado:** `Sources`/`Items`/`Chains` são próprios de cada membro e agregam por soma; mas a ontologia é compartilhada (`INCLUDE SHARED ONTOLOGY`), então somar os contadores daria valor duplicado (ex.: `74 + 74 = 148` para uma única ontologia de 74 conceitos). O agregado agora deduplica pela união dos conjuntos de conceitos e rotula as linhas como `Shared ontology`/`Shared codes` quando há sobreposição entre membros. Sem sobreposição, mantém os rótulos comuns `Ontologies`/`Codes`.
+  - `--xls` e `--alpaca` continuam **sem exportador** no link step (§6 do design: `SOURCE FIELDS` diverge entre membros, não há tabela/dataset único coerente), mas agora emitem um aviso explícito em vez de falhar silenciosamente — a lacuna vira comportamento visível, não uma armadilha.
+
+### Documentation
+
+- **Help da CLI documenta a compilação multiprojeto** (`synesis/cli.py`)
+  - `synesis compile --help` (`_EPILOG_COMPILE`) ganhou exemplos do passo de linkagem (`synesis compile lattes.synp abstracts.synp`, com e sem exportação do agregado v3.1/`links.csv`, e com `--stats`) e notas explicando que o caminho de linkagem só ativa com 2+ projetos, que a compilação isolada de um projeto com `REFERS TO` emite apenas um aviso informativo (nunca erro/warning), e que `--xls`/`--alpaca` ainda não têm exportador no link step. O help geral (`synesis --help`) também passou a citar "one project (or links several)" na linha do comando `compile`.
+
+## [0.8.0] - 2026-07-15
+
+### Added
+
+- **Modificador de campo `IDENTIFIES <entidade>`** (Etapa 1 da ligação multiprojeto — `synesis/grammar/synesis.lark`, `synesis/parser/transformer.py`, `synesis/ast/nodes.py`)
+  - Novo modificador em `FIELD` que declara o campo como **chave primária** de uma entidade nomeada (ex.: `IDENTIFIES researcher`). Análogo a *candidate key* relacional: cada valor deve identificar um único SOURCE. Propriedade local do corpus — zero acoplamento a outros projetos.
+  - Token `KW_IDENTIFIES` com lookahead de fronteira (como `KW_TOPIC`) para não casar como prefixo de nome de campo maior; nova alternativa em `field_props` e regra `entity_label`. O parser standalone (`synesis/grammar/synesis_standalone.py`) foi regenerado a partir da gramática.
+  - `FieldSpec` ganha o campo `identifies: Optional[str] = None`, serializado em `to_dict()`. Aditivo: um campo sem o modificador mantém `identifies=None` e compila idêntico ao comportamento anterior.
+- **Validação de unicidade de identidade — erro `SYNESIS_E077` (`DuplicateIdentityValue`)** (`synesis/semantic/validator.py`, `synesis/ast/results.py`)
+  - Dois SOURCEs do mesmo corpus com o mesmo valor num campo `IDENTIFIES` agora produzem erro na compilação do próprio membro, antes de qualquer linkagem — um defeito de dados antes silencioso vira erro explícito. Comparação por igualdade exata pós-`trim` (sem *case-folding*, sem normalização), coerente com a regra anti-fuzzy planejada para o link step. Mensagem dual (`to_diagnostic`/`to_cli_line`) apontando entidade, valor e os dois bibrefs.
+  - Ligado nos dois orquestradores de validação (`synesis/compiler.py` e `synesis/api.py`) via `validate_identity_uniqueness(sources)`.
+- **Modificador de campo `REFERS TO <entidade>` + origem de valor `ON BIBLIOGRAPHY`** (Etapa 2a — `synesis/grammar/synesis.lark`, `synesis/parser/transformer.py`, `synesis/parser/template_loader.py`, `synesis/ast/nodes.py`)
+  - `REFERS TO` declara o campo como **chave estrangeira** para uma entidade (aponta, pode repetir, não cria nó). Tokens `KW_REFERS`/`KW_TO`/`KW_ON` com lookahead de fronteira (palavras curtas — evita casar `to_do`, `on_hold`); nova alternativa em `field_props`.
+  - `REQUIRED <campo> ON BIBLIOGRAPHY` (no `SOURCE FIELDS`) marca a **origem do valor** como a entrada `.bib` do SOURCE, não o texto do documento. Restrito a **cláusula de campo único** — `REQUIRED a, b ON BIBLIOGRAPHY` (lista) é erro de sintaxe, evitando ambiguidade de a qual campo o sufixo se aplica. `FieldSpec` ganha `refers_to` e `value_origin` (`"document"`/`"bibliography"`, default `"document"`), serializados em `to_dict()`.
+- **Validações de ligação — erros `SYNESIS_E078`, `SYNESIS_E079` e INFO `SYNESIS_I080`** (`synesis/semantic/validator.py`, `synesis/parser/template_loader.py`, `synesis/ast/results.py`)
+  - `E078` (`LinkageModifierOutsideSource`): `IDENTIFIES`/`REFERS TO` em campo que não é `SCOPE SOURCE` — a ligação opera sobre SOURCEs.
+  - `E079` (`MissingBibliographyValue`): campo `REQUIRED ... ON BIBLIOGRAPHY` cujo valor não está na entrada `.bib` do SOURCE. Resolvido via `find_bibref`; o campo `ON BIBLIOGRAPHY` é **excluído** da verificação de campo obrigatório do bloco SOURCE (`MissingRequiredField`/E020), que passaria a disparar falso-positivo já que o valor não vive no bloco.
+  - `I080` (`ExternalReferenceDeclared`, severidade **INFO**): projeto declara `REFERS TO` para uma entidade externa não resolvida isoladamente — informativo, emitido uma vez por entidade, nunca *warning* recorrente. As ligações só se materializam num link step (etapa seguinte).
+- **Passo de linkagem multiprojeto na CLI — `synesis compile p1.synp p2.synp …`** (Etapa 2b — `synesis/cli.py`, `synesis/semantic/link_step.py`)
+  - O comando `compile` passa a aceitar **N projetos** (`nargs=-1`) e despacha internamente: **1 projeto** segue o caminho legado `_compile_single` (inalterado); **≥2 projetos** dispara `_link_projects`, que compila cada membro isolado e resolve as ligações `IDENTIFIES`/`REFERS TO` entre eles — modelo do *linker* C/C++, exclusivo da CLI (o LSP nunca carrega o agregado).
+  - Resolução por **rótulo de entidade + igualdade exata de valor** (pós-`trim`, sem normalização): cada `REFERS TO` casado com o `IDENTIFIES` dono vira uma aresta (suporta n:1 e n:n — campo multi-valorado gera uma aresta por valor). Valor de campo `ON BIBLIOGRAPHY` é resolvido da entrada `.bib` do SOURCE. Bibrefs são **qualificados por alias de membro** (`abstracts:@artigo_a`) — dissolve a colisão de bibref entre corpora.
+  - Diagnósticos do link step: `SYNESIS_E081` (`DuplicateEntityOwner`, dois membros declaram `IDENTIFIES` do mesmo rótulo), `SYNESIS_E082` (`TypeMismatchInLinkage`, `TYPE` divergente entre campos da mesma entidade — erro duro), `SYNESIS_W083` (`OrphanReference`, `REFERS TO` sem `IDENTIFIES` correspondente). O órfão que **casaria só sob normalização de caixa** vira *warning* enriquecido de **quase-casamento** — o link step detecta e sugere canonizar na origem, mas **nunca funde** (evita unir entidades que a fonte considera distintas).
+  - **Pacote de saída §6:** `--json` gera o agregado **schema v3.1 aditivo** (`kind: "link"`, `entity_owners`, seção `links` com arestas resolvidas + órfãos, bibrefs qualificados); `--csv` gera `links.csv`. Consumidores v3.0 ignoram as chaves novas.
+- **CLI exibe diagnósticos INFO** (`synesis/cli.py`)
+  - `_compile_single` agora imprime a seção INFO da validação (antes computada mas nunca exibida) — em particular o `I080` de referência externa na compilação isolada, conforme §5 do design. Aditivo: apenas exibe dado já presente no resultado.
+- **`INCLUDE SHARED ONTOLOGY` — ontologia externa autorizada por declaração** (Etapa 3 — `synesis/grammar/synesis.lark`, `synesis/parser/paths.py`, `synesis/parser/transformer.py`, `synesis/ast/nodes.py`, `synesis/compiler.py`, `synesis/lsp_adapter.py`)
+  - Nova keyword `SHARED` em `INCLUDE`: `INCLUDE SHARED ONTOLOGY "../shared/vocabulario.syno"` autoriza um alvo **fora** da pasta do projeto, permitindo que vários projetos do mesmo estudo compartilhem um único vocabulário conceitual sem duplicá-lo. A autorização mora na **declaração** (keyword versionada e auditável no `.synp`), não na geometria do path — por isso aceita caminho de rede (`\\servidor\...`), outro drive (`Z:/...`) e `..`, casos que nenhuma âncora de pasta conseguiria autorizar.
+  - `resolve_include` ganha o parâmetro *keyword-only* `shared: bool = False`; quando `True`, pula a checagem de contenção `is_within`. O **default preserva o comportamento atual** em todos os call sites — só os dois de ontologia (`compiler._collect_include_paths`, `lsp_adapter._load_context_from_project`) propagam a keyword. `INCLUDE ONTOLOGY` sem `SHARED` continua produzindo `ESCAPES_PROJECT` (E075) byte-idêntico, inclusive no LSP.
+  - `IncludeNode` ganha `shared: bool = False`, serializado em `to_dict()`. `include_type` na gramática passa a aceitar `KW_SHARED?` antes de **qualquer** tipo; a restrição "só ONTOLOGY" (D13) é **semântica**, para dar mensagem pedagógica em vez de erro de sintaxe cru.
+  - `SYNESIS_E084` (`SharedOnlyForOntology`): `INCLUDE SHARED` com tipo diferente de `ONTOLOGY` (`BIBLIOGRAPHY`/`ANNOTATIONS`) — o escape autorizado não vaza para tipos que a motivação (compartilhar vocabulário) não pediu.
+
+### Documentation
+
+- Plano de design da ligação multiprojeto revisado até a **Rev. 7** (`Planning/multiproject_key_ref.md`): reenquadramento `IDENTIFIES`/`REFERS TO` como PK/FK, remoção da âncora `.synstudy` em favor de `INCLUDE SHARED ONTOLOGY`, e correções de verificação contra o código (encaixe gramatical de `ON BIBLIOGRAPHY`, wiring de `resolve_include`, baseline de testes dinâmico).
+
+
 ## [0.7.0] - 2026-07-13
 
 ### Security

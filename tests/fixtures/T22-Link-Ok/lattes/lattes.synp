@@ -1,0 +1,7 @@
+PROJECT T22_Lattes
+
+    TEMPLATE "lattes.synt"
+    INCLUDE BIBLIOGRAPHY "lattes.bib"
+    INCLUDE ANNOTATIONS "lattes.syn"
+
+END PROJECT

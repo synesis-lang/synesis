@@ -1,0 +1,18 @@
+# Caso INVÁLIDO: dois SOURCEs (bibrefs distintos) com o MESMO valor de lattes_id.
+# lattes_id é IDENTIFIES researcher — chave primária. Valor repetido = erro 77.
+
+SOURCE @silva2023
+    lattes_id: 3474555741700167
+END SOURCE
+
+ITEM @silva2023
+    citation: Trecho atribuído ao pesquisador.
+END ITEM
+
+SOURCE @souza2024
+    lattes_id: 3474555741700167
+END SOURCE
+
+ITEM @souza2024
+    citation: Trecho com o MESMO lattes_id — viola unicidade.
+END ITEM

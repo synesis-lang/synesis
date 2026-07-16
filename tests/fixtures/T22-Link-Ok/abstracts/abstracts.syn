@@ -1,0 +1,27 @@
+# lattes_id vem do .bib (ON BIBLIOGRAPHY) — nao aparece nos blocos SOURCE.
+# artigo_a e artigo_b -> researcher 3474...167 (2 arestas)
+# artigo_externo -> 9999... sem IDENTIFIES correspondente (orfao, W083)
+
+SOURCE @artigo_a
+    description: Resumo do primeiro artigo.
+END SOURCE
+
+ITEM @artigo_a
+    citation: Trecho do primeiro artigo.
+END ITEM
+
+SOURCE @artigo_b
+    description: Resumo do segundo artigo.
+END SOURCE
+
+ITEM @artigo_b
+    citation: Trecho do segundo artigo.
+END ITEM
+
+SOURCE @artigo_externo
+    description: Resumo de artigo externo.
+END SOURCE
+
+ITEM @artigo_externo
+    citation: Trecho do artigo externo.
+END ITEM

@@ -1,0 +1,26 @@
+# T21.SYNT (variante) — mesmo template; o .bib NAO tem lattes_id -> erro 79.
+
+TEMPLATE t21
+
+SOURCE FIELDS
+    REQUIRED description
+    REQUIRED lattes_id ON BIBLIOGRAPHY
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+END ITEM FIELDS
+
+FIELD description TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD lattes_id TYPE TEXT
+    SCOPE SOURCE
+    REFERS TO researcher
+    DESCRIPTION ID Lattes de proveniencia (vem do .bib)
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD

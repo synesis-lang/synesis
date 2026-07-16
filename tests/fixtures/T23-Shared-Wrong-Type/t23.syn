@@ -1,0 +1,16 @@
+# Os codes vem da ontologia COMPARTILHADA (../shared/vocabulario.syno).
+# Se o INCLUDE SHARED ONTOLOGY nao resolver, estes codes ficam indefinidos.
+
+SOURCE @silva2023
+    description: Entrevista sobre confianca em instituicoes locais.
+END SOURCE
+
+ITEM @silva2023
+    citation: A prefeitura sempre publica as contas, isso conta muito.
+    code: Confianca_Institucional
+END ITEM
+
+ITEM @silva2023
+    citation: A gente se junta com os vizinhos pra resolver.
+    code: Cooperacao
+END ITEM

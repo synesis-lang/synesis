@@ -1,0 +1,27 @@
+# abstracts.synt — corpus que REFERENCIA a entidade "researcher".
+# lattes_id e proveniencia de coleta -> vem do .bib (ON BIBLIOGRAPHY).
+
+TEMPLATE abstracts
+
+SOURCE FIELDS
+    REQUIRED description
+    REQUIRED lattes_id ON BIBLIOGRAPHY
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+END ITEM FIELDS
+
+FIELD description TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD lattes_id TYPE TEXT
+    SCOPE SOURCE
+    REFERS TO researcher
+    DESCRIPTION ID Lattes de proveniencia (de qual curriculo o artigo foi coletado)
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD

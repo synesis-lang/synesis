@@ -1559,6 +1559,251 @@ class ModifiedBeforeCreated(ValidationError):
         return f"MODIFIED `{self.modified}` e anterior a CREATED `{self.created}` no METADATA"
 
 
+@dataclass(frozen=True)
+class DuplicateIdentityValue(ValidationError):
+    """Dois SOURCEs com o mesmo valor num campo IDENTIFIES. (erro 77)
+
+    O campo IDENTIFIES declara uma chave primaria de entidade: cada valor deve
+    identificar UM unico SOURCE. Dois SOURCEs com o mesmo valor violam a unicidade.
+    """
+
+    field_name: str
+    entity: str
+    value: str
+    first_bibref: str
+    duplicate_bibref: str
+    CODE: ClassVar[str] = "SYNESIS_E077"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O campo `{self.field_name}` identifica a entidade `{self.entity}` (IDENTIFIES),\n"
+            f"  ou seja, cada valor deve corresponder a um unico SOURCE — como uma chave\n"
+            f"  primaria. Mas o valor `{self.value}` aparece em dois SOURCEs:\n"
+            f"    `{self.first_bibref}` e `{self.duplicate_bibref}`.\n"
+            f"  Se sao a mesma entidade, unifique os dois SOURCEs. Se sao entidades\n"
+            f"  distintas, corrija o valor de `{self.field_name}` em um deles."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"Valor `{self.value}` de `{self.field_name}` (IDENTIFIES {self.entity}) "
+            f"duplicado em `{self.first_bibref}` e `{self.duplicate_bibref}`"
+        )
+
+
+@dataclass(frozen=True)
+class LinkageModifierOutsideSource(ValidationError):
+    """IDENTIFIES/REFERS TO em campo que nao e SCOPE SOURCE. (erro 78)
+
+    A ligacao multiprojeto opera sobre SOURCEs (unidades de coleta). Aplicar o
+    modificador a um campo ITEM ou ONTOLOGY nao tem semantica definida.
+    """
+
+    field_name: str
+    modifier: str  # "IDENTIFIES" | "REFERS TO"
+    scope: str
+    CODE: ClassVar[str] = "SYNESIS_E078"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O campo `{self.field_name}` usa `{self.modifier}`, mas esta declarado com\n"
+            f"  `SCOPE {self.scope}`. Os modificadores de ligacao (`IDENTIFIES` / `REFERS TO`)\n"
+            f"  so fazem sentido em campos `SCOPE SOURCE` — a ligacao entre projetos\n"
+            f"  opera sobre SOURCEs (unidades de coleta), nao sobre ITEMs ou conceitos.\n"
+            f"  Mova o modificador para um campo SOURCE, ou remova-o deste campo."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"`{self.modifier}` em `{self.field_name}` (SCOPE {self.scope}) — "
+            f"so e valido em SCOPE SOURCE"
+        )
+
+
+@dataclass(frozen=True)
+class MissingBibliographyValue(ValidationError):
+    """Campo REQUIRED ... ON BIBLIOGRAPHY sem valor no .bib do SOURCE. (erro 79)"""
+
+    field_name: str
+    bibref: str
+    CODE: ClassVar[str] = "SYNESIS_E079"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O campo `{self.field_name}` foi declarado `REQUIRED ... ON BIBLIOGRAPHY`,\n"
+            f"  ou seja, seu valor deve vir da entrada `.bib` do SOURCE — nao do texto.\n"
+            f"  Mas a entrada `{self.bibref}` nao tem o campo `{self.field_name}`.\n"
+            f"  Adicione `{self.field_name} = {{...}}` a entrada `{self.bibref}` no arquivo\n"
+            f"  `.bib`, ou remova a exigencia `ON BIBLIOGRAPHY` do template."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"Campo `{self.field_name}` (ON BIBLIOGRAPHY) ausente no .bib de `{self.bibref}`"
+        )
+
+
+@dataclass(frozen=True)
+class ExternalReferenceDeclared(ValidationError):
+    """INFO: projeto declara REFERS TO — referencia externa nao resolvida isolada. (info 80)
+
+    Nao e erro nem warning: um REFERS TO so se resolve num link step (varios .synp).
+    Isolado, a referencia externa e esperada — o INFO documenta que ha ligacoes a
+    materializar, sem poluir o painel com warning recorrente.
+    """
+
+    entity: str
+    field_name: str
+    CODE: ClassVar[str] = "SYNESIS_I080"
+    DEFAULT_SEVERITY: ClassVar[ErrorSeverity] = ErrorSeverity.INFO
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"Este projeto referencia a entidade externa `{self.entity}` "
+            f"(`REFERS TO` em `{self.field_name}`).\n"
+            f"  As ligacoes nao estao materializadas neste artefato. Para resolve-las,\n"
+            f"  compile este projeto junto com o projeto que declara `IDENTIFIES {self.entity}`."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"Referencia externa `{self.entity}` (REFERS TO em {self.field_name}) "
+            f"— nao materializada isoladamente"
+        )
+
+
+@dataclass(frozen=True)
+class DuplicateEntityOwner(ValidationError):
+    """Dois membros declaram IDENTIFIES do mesmo rotulo no link step. (erro 81)
+
+    Um rotulo de entidade tem um corpus proprietario. Identidade entre esquemas
+    de ID distintos (Lattes vs ORCID) resolve-se com o hub referenciando a
+    periferia (REFERS TO), nunca com dois IDENTIFIES do mesmo rotulo.
+    """
+
+    entity: str
+    first_member: str
+    duplicate_member: str
+    CODE: ClassVar[str] = "SYNESIS_E081"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"A entidade `{self.entity}` e declarada com `IDENTIFIES` por dois projetos:\n"
+            f"  `{self.first_member}` e `{self.duplicate_member}`.\n"
+            f"  Um rotulo de entidade tem um unico corpus proprietario (a chave primaria).\n"
+            f"  Se sao esquemas de ID distintos da mesma pessoa (Lattes vs ORCID), o hub\n"
+            f"  deve `REFERS TO` a periferia — nao declarar dois `IDENTIFIES` do mesmo rotulo."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"Entidade `{self.entity}` com dono duplicado: "
+            f"`{self.first_member}` e `{self.duplicate_member}`"
+        )
+
+
+@dataclass(frozen=True)
+class TypeMismatchInLinkage(ValidationError):
+    """TYPE divergente entre campos da mesma entidade no link step. (erro 82)
+
+    Todos os campos que participam da mesma entidade (o IDENTIFIES e todos os
+    REFERS TO) devem ter TYPE identico. Divergencia e sintoma de erro de
+    modelagem: os dois lados nao modelam a mesma entidade.
+    """
+
+    entity: str
+    member_a: str
+    type_a: str
+    member_b: str
+    type_b: str
+    CODE: ClassVar[str] = "SYNESIS_E082"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"Os campos que participam da entidade `{self.entity}` tem `TYPE` divergente:\n"
+            f"  `{self.member_a}` declara `TYPE {self.type_a}`; "
+            f"`{self.member_b}` declara `TYPE {self.type_b}`.\n"
+            f"  Campos da mesma entidade (o `IDENTIFIES` e todos os `REFERS TO`) devem ter\n"
+            f"  o mesmo `TYPE` — a divergencia indica que os dois lados nao modelam a\n"
+            f"  mesma coisa. Alinhe os tipos no template."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"Tipos divergentes na entidade `{self.entity}`: "
+            f"`{self.member_a}` TYPE {self.type_a} vs `{self.member_b}` TYPE {self.type_b}"
+        )
+
+
+@dataclass(frozen=True)
+class OrphanReference(ValidationError):
+    """REFERS TO cujo valor nao casa com nenhum IDENTIFIES no link step. (warning 83)
+
+    Nao e erro: um autor externo sem curriculo no corpus e um orfao legitimo.
+    Se `near_match` estiver preenchido, o valor casaria sob normalizacao de caixa
+    (quase-casamento) — o link step detecta e sugere, mas NUNCA funde.
+    """
+
+    entity: str
+    value: str
+    member: str
+    near_match: Optional[str] = None
+    DEFAULT_SEVERITY: ClassVar[ErrorSeverity] = ErrorSeverity.WARNING
+    CODE: ClassVar[str] = "SYNESIS_W083"
+
+    def to_diagnostic(self) -> str:
+        base = (
+            f"O valor `{self.value}` (`REFERS TO {self.entity}` em `{self.member}`) nao tem\n"
+            f"  `IDENTIFIES {self.entity}` correspondente — e uma referencia orfa."
+        )
+        if self.near_match is not None:
+            return (
+                f"{base}\n"
+                f"  Casamento proximo: `{self.near_match}` difere apenas em caixa/invisiveis.\n"
+                f"  Se sao a mesma entidade, canonize o valor na origem (.bib/SOURCE) — o\n"
+                f"  compilador nao normaliza automaticamente (evita fundir entidades distintas)."
+            )
+        return (
+            f"{base}\n"
+            f"  Pode ser esperado (ex. autor externo sem curriculo no corpus). Nenhum no e criado."
+        )
+
+    def to_cli_line(self) -> str:
+        if self.near_match is not None:
+            return (
+                f"REFERS TO orfao `{self.value}` ({self.entity}) — "
+                f"quase-casa com `{self.near_match}` (difere so em caixa)"
+            )
+        return f"REFERS TO orfao `{self.value}` ({self.entity}) em {self.member}"
+
+
+@dataclass(frozen=True)
+class SharedOnlyForOntology(ValidationError):
+    """INCLUDE SHARED usado com tipo diferente de ONTOLOGY. (erro 84)
+
+    O escape de path autorizado existe para compartilhar VOCABULARIO CONCEITUAL
+    entre projetos (a ontologia). Deixa-lo vazar para TEMPLATE/BIBLIOGRAPHY/
+    ANNOTATIONS abriria a contencao para tipos que a motivacao nao pediu.
+    """
+
+    include_type: str
+    path: str
+    CODE: ClassVar[str] = "SYNESIS_E084"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"`INCLUDE SHARED` so e valido para `ONTOLOGY`, mas foi usado com\n"
+            f"  `{self.include_type}` (`{self.path}`).\n"
+            f"  A palavra `SHARED` autoriza um alvo FORA da pasta do projeto — existe\n"
+            f"  para compartilhar o vocabulario conceitual (a ontologia) entre projetos\n"
+            f"  do mesmo estudo. Os demais includes devem permanecer contidos no projeto.\n"
+            f"  Remova o `SHARED`, ou mova o arquivo para dentro da pasta do projeto."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"`INCLUDE SHARED` invalido para {self.include_type} — so ONTOLOGY aceita SHARED"
+
+
 @dataclass
 class ValidationResult:
     """Resultado agregado de validacao com diagnosticos estruturados."""

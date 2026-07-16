@@ -42,6 +42,7 @@ KW_TEMPLATE.5: /template/i
 KW_FIELD.5: /field/i
 KW_END.5: /end/i
 KW_INCLUDE.5: /include/i
+KW_SHARED.5: /shared(?![\p{L}\p{N}_-])/i
 KW_BIBLIOGRAPHY.5: /bibliography/i
 KW_ANNOTATIONS.5: /annotations/i
 KW_FIELDS.5: /fields/i
@@ -73,6 +74,15 @@ KW_ENUMERATED.5: /enumerated(?![\p{L}\p{N}_-])/i
 KW_ORDERED.5: /ordered(?![\p{L}\p{N}_-])/i
 KW_TOPIC.5: /topic(?![\p{L}\p{N}_-])/i
 KW_GUIDELINES.5: /guidelines/i
+// IDENTIFIES: modificador de FIELD (Etapa 1 — ligação multiprojeto).
+// Lookahead de fronteira como KW_TOPIC: nao casar como prefixo de um nome maior.
+KW_IDENTIFIES.5: /identifies(?![\p{L}\p{N}_-])/i
+// REFERS TO / ON BIBLIOGRAPHY: Etapa 2 — chave estrangeira e origem de valor.
+// KW_TO e KW_ON levam lookahead de fronteira (palavras curtas, alto risco de
+// casar como prefixo de nome de campo — ex. "to_do", "on_hold").
+KW_REFERS.5: /refers(?![\p{L}\p{N}_-])/i
+KW_TO.5: /to(?![\p{L}\p{N}_-])/i
+KW_ON.5: /on(?![\p{L}\p{N}_-])/i
 
 // ============================================
 // BLOCO PROJECT
@@ -87,7 +97,7 @@ project_items: (include_stmt | metadata | description | NEWLINE)+
 
 include_stmt: KW_TEMPLATE STRING NEWLINE
             | KW_INCLUDE include_type STRING NEWLINE
-include_type: KW_BIBLIOGRAPHY | KW_ANNOTATIONS | KW_ONTOLOGY
+include_type: KW_SHARED? (KW_BIBLIOGRAPHY | KW_ANNOTATIONS | KW_ONTOLOGY)
 
 metadata: KW_METADATA NEWLINE _INDENT (metadata_line | NEWLINE)+ _DEDENT KW_END KW_METADATA NEWLINE
 metadata_line: TEXT_LINE NEWLINE
@@ -129,9 +139,14 @@ field_spec_block: scope_type KW_FIELDS NEWLINE _INDENT field_list _DEDENT KW_END
 scope_type: KW_SOURCE | KW_ITEM | KW_ONTOLOGY
 
 field_list: (requirement_clause | NEWLINE)*
+// ON BIBLIOGRAPHY (Etapa 2): sufixo de origem-de-valor SO em clausula de campo
+// unico — anexa-lo a uma lista (REQUIRED a, b) seria ambiguo (qual campo?).
+// Alternativa propria, distinta da que aceita field_names (lista).
 requirement_clause: KW_REQUIRED bundle_modifier? field_names
                   | KW_OPTIONAL bundle_modifier? field_names
                   | KW_FORBIDDEN field_names
+                  | KW_REQUIRED field_key KW_ON KW_BIBLIOGRAPHY
+                  | KW_OPTIONAL field_key KW_ON KW_BIBLIOGRAPHY
 
 bundle_modifier: KW_BUNDLE
 field_key: FIELD_NAME
@@ -164,7 +179,11 @@ field_props: KW_SCOPE scope_type
            | KW_ARITY COMPARATOR NUMBER
            | KW_VALUES value_list KW_END KW_VALUES
            | KW_RELATIONS relation_list KW_END KW_RELATIONS
+           | KW_IDENTIFIES entity_label
+           | KW_REFERS KW_TO entity_label
            | guidelines_block
+
+entity_label: FIELD_NAME
 
 format_spec: IDENTIFIER | scale_format
 scale_format: "[" NUMBER ".." NUMBER "]"

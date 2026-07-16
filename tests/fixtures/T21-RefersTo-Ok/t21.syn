@@ -1,0 +1,9 @@
+# lattes_id NAO aparece aqui — seu valor vem do .bib (ON BIBLIOGRAPHY).
+
+SOURCE @artigo2024
+    description: Resumo do artigo coletado do curriculo do pesquisador.
+END SOURCE
+
+ITEM @artigo2024
+    citation: Trecho analisado do artigo.
+END ITEM

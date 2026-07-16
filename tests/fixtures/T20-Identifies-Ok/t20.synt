@@ -1,0 +1,24 @@
+# =============================================================================
+# T20.SYNT — Template para IDENTIFIES (Etapa 1: unicidade de identidade)
+# lattes_id identifica a entidade "researcher" — chave primária: valor único.
+# =============================================================================
+
+TEMPLATE t20
+
+SOURCE FIELDS
+    REQUIRED lattes_id
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+END ITEM FIELDS
+
+FIELD lattes_id TYPE TEXT
+    SCOPE SOURCE
+    IDENTIFIES researcher
+    DESCRIPTION ID Lattes (chave primária do pesquisador)
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD

@@ -1,0 +1,7 @@
+PROJECT T22_Abstracts
+
+    TEMPLATE "abstracts.synt"
+    INCLUDE BIBLIOGRAPHY "abstracts.bib"
+    INCLUDE ANNOTATIONS "abstracts.syn"
+
+END PROJECT

@@ -1,0 +1,26 @@
+# lattes.synt — corpus DONO da entidade "researcher" (IDENTIFIES).
+# lattes_id e extraido do documento (curriculo) -> campo SOURCE normal.
+
+TEMPLATE lattes
+
+SOURCE FIELDS
+    REQUIRED lattes_id, nome
+END SOURCE FIELDS
+
+ITEM FIELDS
+    REQUIRED citation
+END ITEM FIELDS
+
+FIELD lattes_id TYPE TEXT
+    SCOPE SOURCE
+    IDENTIFIES researcher
+    DESCRIPTION ID Lattes (chave primaria da entidade researcher)
+END FIELD
+
+FIELD nome TYPE TEXT
+    SCOPE SOURCE
+END FIELD
+
+FIELD citation TYPE QUOTATION
+    SCOPE ITEM
+END FIELD

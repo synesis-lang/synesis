@@ -1,0 +1,9 @@
+# lattes_id ausente no .bib e no SOURCE -> REQUIRED ON BIBLIOGRAPHY nao satisfeito.
+
+SOURCE @artigo2024
+    description: Resumo do artigo sem proveniencia Lattes registrada.
+END SOURCE
+
+ITEM @artigo2024
+    citation: Trecho analisado do artigo.
+END ITEM

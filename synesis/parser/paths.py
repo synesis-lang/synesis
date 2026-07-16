@@ -123,12 +123,17 @@ def has_glob(value: str) -> bool:
     return any(ch in value for ch in ("*", "?", "["))
 
 
-def resolve_include(project_dir: Path, raw: str) -> IncludeResolution:
+def resolve_include(project_dir: Path, raw: str, *, shared: bool = False) -> IncludeResolution:
     """Resolve um literal de INCLUDE/TEMPLATE contra o diretorio do projeto.
 
     Args:
         project_dir: Diretorio que contem o arquivo .synp.
         raw: Literal exatamente como escrito no .synp.
+        shared: Quando True (`INCLUDE SHARED ONTOLOGY`), o autor autorizou
+            explicitamente um alvo externo — a checagem de contencao e pulada,
+            aceitando rede (`\\\\servidor\\...`), outro drive e `..`. Default
+            False mantem `ESCAPES_PROJECT` byte-identico para todo o resto
+            (esta funcao serve tambem ao LSP).
 
     Returns:
         IncludeResolution com o caminho canonico (caixa real do disco) e, em
@@ -138,7 +143,7 @@ def resolve_include(project_dir: Path, raw: str) -> IncludeResolution:
     base = project_dir.resolve()
     candidate = (base / normalized).resolve()
 
-    if not is_within(candidate, base):
+    if not shared and not is_within(candidate, base):
         return IncludeResolution(path=candidate, error=IncludeError.ESCAPES_PROJECT)
 
     if not candidate.exists():

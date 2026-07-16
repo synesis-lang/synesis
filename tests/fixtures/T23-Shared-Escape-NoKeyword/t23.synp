@@ -1,0 +1,12 @@
+# SEM a keyword SHARED: o mesmo path externo deve continuar recusado (E075).
+# Este e o invariante de nao-regressao da Etapa 3 — INCLUDE ONTOLOGY comum
+# mantem ESCAPES_PROJECT byte-identico.
+
+PROJECT T23_Escape_No_Keyword
+
+    TEMPLATE "t23.synt"
+    INCLUDE BIBLIOGRAPHY "t23.bib"
+    INCLUDE ANNOTATIONS "t23.syn"
+    INCLUDE ONTOLOGY "../T23-Shared-Ontology/shared/vocabulario.syno"
+
+END PROJECT

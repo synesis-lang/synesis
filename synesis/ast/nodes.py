@@ -97,6 +97,9 @@ class FieldSpec:
     relations: Optional[Dict[str, str]] = None
     arity: Optional[str] = None
     guidelines: Optional[str] = None
+    identifies: Optional[str] = None
+    refers_to: Optional[str] = None
+    value_origin: str = "document"
     location: Optional[SourceLocation] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -110,6 +113,9 @@ class FieldSpec:
             "relations": self.relations,
             "arity": self.arity,
             "guidelines": self.guidelines,
+            "identifies": self.identifies,
+            "refers_to": self.refers_to,
+            "value_origin": self.value_origin,
             "location": self.location.to_dict() if self.location else None,
         }
 
@@ -163,11 +169,13 @@ class IncludeNode:
     include_type: str
     path: str
     location: SourceLocation
+    shared: bool = False  # INCLUDE SHARED ONTOLOGY: autoriza path externo (rede/drive/..)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "include_type": self.include_type,
             "path": self.path,
+            "shared": self.shared,
             "location": self.location.to_dict(),
         }
 

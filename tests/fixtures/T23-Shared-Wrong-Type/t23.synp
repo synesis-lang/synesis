@@ -1,0 +1,11 @@
+# SHARED com tipo != ONTOLOGY -> erro E084 (SharedOnlyForOntology).
+# O arquivo existe e esta dentro do projeto; o erro e sobre a keyword, nao o path.
+
+PROJECT T23_Shared_Wrong_Type
+
+    TEMPLATE "t23.synt"
+    INCLUDE SHARED BIBLIOGRAPHY "t23.bib"
+    INCLUDE ANNOTATIONS "t23.syn"
+    INCLUDE ONTOLOGY "vocabulario.syno"
+
+END PROJECT

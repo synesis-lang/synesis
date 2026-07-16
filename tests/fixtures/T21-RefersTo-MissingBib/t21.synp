@@ -1,0 +1,7 @@
+PROJECT T21_RefersTo_MissingBib
+
+    TEMPLATE "t21.synt"
+    INCLUDE BIBLIOGRAPHY "t21.bib"
+    INCLUDE ANNOTATIONS "t21.syn"
+
+END PROJECT

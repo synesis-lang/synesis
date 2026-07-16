@@ -54,6 +54,7 @@ from synesis.ast.results import (
     MissingTemplateDeclaration,
     MissingTemplateFile,
     ModifiedBeforeCreated,
+    SharedOnlyForOntology,
     UnreadableIncludedFile,
     ValidationResult,
 )
@@ -326,6 +327,9 @@ class SynesisCompiler:
         result = ValidationResult()
 
         self._merge(result, validator.validate_project(project))
+        self._merge(result, validator.validate_identity_uniqueness(sources))
+        self._merge(result, validator.validate_bibliography_values(sources))
+        self._merge(result, validator.validate_external_references())
         for source in sources:
             self._merge(result, validator.validate_source(source))
         for item in items:
@@ -384,6 +388,15 @@ class SynesisCompiler:
         for include in project.includes:
             inc_type = include.include_type.upper()
             raw = normalize_include_path(include.path)
+
+            # Erro 84: SHARED so autoriza escape para ONTOLOGY (D13)
+            if include.shared and inc_type != "ONTOLOGY":
+                result.add(SharedOnlyForOntology(
+                    location=include.location,
+                    include_type=inc_type,
+                    path=include.path,
+                ))
+
             if inc_type == "ANNOTATIONS":
                 if has_glob(raw):
                     inside, _outside = resolve_glob(self.project_dir, raw)
@@ -532,7 +545,12 @@ class SynesisCompiler:
                     ))
                 continue
 
-            resolution = resolve_include(self.project_dir, raw)
+            # SHARED so autoriza escape para ONTOLOGY (D13); o uso indevido em
+            # outros tipos e reportado como SharedOnlyForOntology na validacao
+            # estrutural — aqui o escape simplesmente nao se aplica.
+            shared = include.shared and include_type == "ONTOLOGY"
+
+            resolution = resolve_include(self.project_dir, raw, shared=shared)
             if resolution.ok:
                 paths.append(resolution.path)
             elif resolution.error is IncludeError.ESCAPES_PROJECT:

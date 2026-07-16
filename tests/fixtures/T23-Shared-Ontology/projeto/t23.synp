@@ -1,0 +1,8 @@
+PROJECT T23_Shared_Ontology
+
+    TEMPLATE "t23.synt"
+    INCLUDE BIBLIOGRAPHY "t23.bib"
+    INCLUDE ANNOTATIONS "t23.syn"
+    INCLUDE SHARED ONTOLOGY "../shared/vocabulario.syno"
+
+END PROJECT

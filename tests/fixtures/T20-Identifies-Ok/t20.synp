@@ -1,0 +1,7 @@
+PROJECT T20_Identifies_Ok
+
+    TEMPLATE "t20.synt"
+    INCLUDE BIBLIOGRAPHY "t20.bib"
+    INCLUDE ANNOTATIONS "t20.syn"
+
+END PROJECT

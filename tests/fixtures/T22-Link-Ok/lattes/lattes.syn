@@ -1,0 +1,10 @@
+# lattes_id extraido do documento (curriculo) — dono da identidade researcher.
+
+SOURCE @curriculo_pesq1
+    lattes_id: 3474555741700167
+    nome: Thiago Nogueira
+END SOURCE
+
+ITEM @curriculo_pesq1
+    citation: Trecho do curriculo analisado.
+END ITEM

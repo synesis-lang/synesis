@@ -670,7 +670,9 @@ def _load_context_from_project(
 
     for include in project.includes:
         if include.include_type.upper() == "ONTOLOGY":
-            ont_resolution = resolve_include(project_dir, include.path)
+            # INCLUDE SHARED ONTOLOGY autoriza alvo externo (D13); os demais
+            # includes mantem a contencao byte-identica.
+            ont_resolution = resolve_include(project_dir, include.path, shared=include.shared)
             ont_path = ont_resolution.path
             if ont_resolution.ok:
                 try:

@@ -1,0 +1,18 @@
+# Caso VÁLIDO: dois SOURCEs com valores DISTINTOS de lattes_id.
+# Nenhum erro de unicidade — cada valor identifica um único pesquisador.
+
+SOURCE @silva2023
+    lattes_id: 1111111111111111
+END SOURCE
+
+ITEM @silva2023
+    citation: Trecho do primeiro currículo.
+END ITEM
+
+SOURCE @souza2024
+    lattes_id: 2222222222222222
+END SOURCE
+
+ITEM @souza2024
+    citation: Trecho do segundo currículo.
+END ITEM

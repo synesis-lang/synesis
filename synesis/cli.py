@@ -41,7 +41,7 @@ except ImportError:
     )
 
 from synesis import __version__ as VERSION
-from synesis.compiler import SynesisCompiler
+from synesis.compiler import CompilationStats, SynesisCompiler
 from synesis.exporters.alpaca_export import export_alpaca
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
@@ -132,7 +132,7 @@ def _build_main_help() -> str:
             ("init",              "Creates the minimal structure for a new project"),
         ]),
         ("Compilation & Export", [
-            ("compile",           "Compiles the project and generates artifacts (JSON, CSV, XLS, Alpaca)"),
+            ("compile",           "Compiles one project (or links several) and generates artifacts (JSON, CSV, XLS, Alpaca)"),
         ]),
         ("Validation & Debugging", [
             ("check",             "Validates the syntax and integrity of a single file"),
@@ -240,6 +240,27 @@ _EPILOG_COMPILE = _ex(
     "",
     "  # Show compilation statistics",
     "  synesis compile project.synp --stats",
+    "",
+    "  # Link two or more projects: fields declared with IDENTIFIES/REFERS TO",
+    "  # in the templates are resolved into edges across the aggregate.",
+    "  synesis compile lattes.synp abstracts.synp",
+    "",
+    "  # Link N projects and export the aggregate (JSON v3.1 + links.csv)",
+    "  synesis compile lattes.synp abstracts.synp --json export.json --csv out_csv/",
+    "",
+    "  # Show per-member and aggregate statistics (sources, items, edges, orphans)",
+    "  synesis compile lattes.synp abstracts.synp --stats",
+    "",
+    "  # A single project always compiles isolated — the linking path only",
+    "  # activates when 2+ .synp files are given. Isolated compilation of a",
+    "  # project that declares REFERS TO emits an informational note (never a",
+    "  # warning); compile it together with the project that owns IDENTIFIES",
+    "  # for that entity to resolve the edges.",
+    "",
+    "  # --xls and --alpaca have no per-member exporter yet in the linking path:",
+    "  # SOURCE FIELDS differ across members, so there is no single coherent",
+    "  # table/dataset. The CLI warns instead of silently skipping the export —",
+    "  # run those exports per project instead.",
 )
 
 _EPILOG_CHECK = _ex(
@@ -365,7 +386,7 @@ def main(ctx: click.Context, verbose: int, quiet: int) -> None:
 
 
 @main.command(cls=_SynesisCommand, epilog=_EPILOG_COMPILE)
-@click.argument("project", type=click.Path(exists=True))
+@click.argument("projects", type=click.Path(exists=True), nargs=-1, required=True)
 @click.option("--json", "json_path", type=click.Path(), help="Export canonical JSON v3.0")
 @click.option("--csv", "csv_dir", type=click.Path(), help="Export CSV tables to directory")
 @click.option("--xls", "xls_path", type=click.Path(), help="Export Excel workbook (.xlsx)")
@@ -373,8 +394,16 @@ def main(ctx: click.Context, verbose: int, quiet: int) -> None:
 @click.option("--strict", is_flag=True, help="Treat warnings as errors")
 @click.option("--stats", is_flag=True, help="Show compilation statistics")
 @click.option("--force", is_flag=True, help="Generate artifacts even with errors")
-def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
-    """Compile a Synesis project."""
+def compile(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
+    """Compile one Synesis project, or link several (compile p1 p2 ...)."""
+    if len(projects) == 1:
+        _compile_single(projects[0], json_path, csv_dir, xls_path, alpaca_path, strict, stats, force)
+    else:
+        _link_projects(projects, json_path, csv_dir, xls_path, alpaca_path, strict, stats, force)
+
+
+def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
+    """Compile a single Synesis project (unchanged legacy path)."""
     click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + "  Compile seu pensamento.")
 
     spinner = _Spinner()
@@ -472,6 +501,7 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
         click.echo("")
         _print_diagnostics(validation_result.errors, "ERROR", project_dir)
         _print_diagnostics(validation_result.warnings, "WARNING", project_dir)
+        _print_diagnostics(validation_result.info, "INFO", project_dir)
 
         if stats:
             click.echo("")
@@ -505,6 +535,138 @@ def compile(project: str, json_path: str | None, csv_dir: str | None, xls_path: 
         if click.get_current_context().obj and click.get_current_context().obj.get("debug"):
             raise
         raise SystemExit(1)
+
+
+def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
+    """Link step: compila N projetos isolados e resolve IDENTIFIES/REFERS TO entre eles.
+
+    Modelo do linker C/C++ (D2): a agregacao e modo de CLI, nunca de LSP. Cada
+    membro compila isolado; este passo resolve os simbolos entre unidades.
+    """
+    import csv as _csv
+    import json as _json
+
+    from synesis.semantic.link_step import Member, link_members
+
+    click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + "  Linkando projetos.")
+
+    members: list[Member] = []
+    member_stats: list[tuple[str, CompilationStats, set]] = []
+    member_errors = False
+    for proj in projects:
+        proj_path = Path(proj)
+        alias = proj_path.stem
+        click.echo(f"  compilando {click.style(alias, bold=True)} …")
+        result = SynesisCompiler(proj_path).compile()
+        if result.has_errors():
+            member_errors = True
+            _print_diagnostics(result.validation_result.errors, "ERROR", proj_path.parent)
+            continue
+        if result.linked_project is None or result.template is None:
+            member_errors = True
+            click.echo(click.style(f"erro: `{alias}` nao produziu artefato linkavel.", fg="red"), err=True)
+            continue
+        members.append(Member(
+            alias=alias,
+            template=result.template,
+            sources=result.linked_project.sources,
+            path=proj_path,
+            bibliography=result.bibliography or {},
+        ))
+        # Conjunto de conceitos/codigos deste membro — chave para deduplicar
+        # a ontologia compartilhada no agregado (INCLUDE SHARED ONTOLOGY faz
+        # membros distintos carregarem os mesmos conceitos).
+        concept_keys = set(result.linked_project.ontology_index.keys())
+        member_stats.append((alias, result.stats, concept_keys))
+
+    if member_errors:
+        click.echo(click.style("erro: ao menos um membro falhou na compilacao — link abortado.", fg="red"), err=True)
+        raise SystemExit(1)
+
+    # --xls/--alpaca ainda nao tem exportador por membro no link step (§6 do
+    # design: SOURCE FIELDS de membros distintos sao incompativeis, entao nao
+    # ha planilha/dataset unico coerente). Avisar em vez de ignorar em
+    # silencio — o usuario pedir --xls e nao ver arquivo nenhum e pior que
+    # um erro claro.
+    if xls_path:
+        click.echo(click.style(
+            "aviso: --xls ainda nao e suportado no passo de linkagem (multiplos projetos) "
+            "— nenhum arquivo .xlsx foi gerado. Exporte cada projeto separadamente.",
+            fg="yellow",
+        ), err=True)
+    if alpaca_path:
+        click.echo(click.style(
+            "aviso: --alpaca ainda nao e suportado no passo de linkagem (multiplos projetos) "
+            "— nenhum dataset foi gerado. Exporte cada projeto separadamente.",
+            fg="yellow",
+        ), err=True)
+
+    link_result = link_members(members)
+    vr = link_result.validation
+
+    click.echo("")
+    _print_diagnostics(vr.errors, "ERROR")
+    _print_diagnostics(vr.warnings, "WARNING")
+
+    n_edges = len(link_result.edges)
+    n_orphans = len(link_result.orphans)
+    if not vr.has_errors():
+        entities = sorted({e.entity for e in link_result.edges})
+        ent_part = ", ".join(f"'{e}'" for e in entities) if entities else "nenhuma"
+        click.echo("")
+        click.echo(click.style(f"✓ {len(members)} projetos linkados.", fg="green") +
+                   f" {n_edges} aresta(s) resolvida(s) [{ent_part}].")
+        if n_orphans:
+            click.echo(click.style(f"⚠ {n_orphans} REFERS TO orfao(s) (valor sem IDENTIFIES correspondente).", fg="yellow"))
+
+        if stats:
+            click.echo("")
+            _print_link_stats(member_stats, n_edges, n_orphans)
+
+    has_errors = vr.has_errors()
+    has_warnings = vr.has_warnings()
+    exit_code = 1 if has_errors or (strict and has_warnings) else 0
+
+    if (force or exit_code == 0) and not has_errors:
+        if json_path:
+            payload = {
+                "schema_version": "3.1",
+                "kind": "link",
+                "members": [m.alias for m in members],
+                "entity_owners": link_result.entity_owners,
+                "links": {
+                    "edges": [
+                        {
+                            "entity": e.entity,
+                            "value": e.value,
+                            "from": {"member": e.from_member, "bibref": e.from_bibref},
+                            "to": {"member": e.to_member, "bibref": e.to_bibref},
+                        }
+                        for e in link_result.edges
+                    ],
+                    "orphans": [
+                        {"entity": ent, "value": val, "member": mem}
+                        for ent, val, mem in link_result.orphans
+                    ],
+                },
+            }
+            Path(json_path).write_text(_json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            click.echo(f"  JSON v3.1 agregado -> {json_path}")
+
+        if csv_dir:
+            out_dir = Path(csv_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            links_csv = out_dir / "links.csv"
+            with links_csv.open("w", encoding="utf-8", newline="") as fh:
+                w = _csv.writer(fh)
+                w.writerow(["entity", "value", "from_member", "from_bibref", "to_member", "to_bibref"])
+                for e in link_result.edges:
+                    w.writerow([e.entity, e.value, e.from_member, e.from_bibref, e.to_member, e.to_bibref])
+                for ent, val, mem in link_result.orphans:
+                    w.writerow([ent, val, mem, "", "(orphan)", ""])
+            click.echo(f"  links.csv -> {links_csv}")
+
+    raise SystemExit(exit_code)
 
 
 @main.command(cls=_SynesisCommand, epilog=_EPILOG_CHECK)
@@ -700,7 +862,7 @@ def init() -> None:
 
 
 def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | None = None) -> None:
-    label_color = "red" if severity_label == "ERROR" else "yellow"
+    label_color = {"ERROR": "red", "WARNING": "yellow", "INFO": "cyan"}.get(severity_label, "yellow")
 
     def _fmt_location(loc) -> str:
         try:
@@ -736,6 +898,63 @@ def _print_stats(stats) -> None:
     num_width   = max(len(f"{n:,}".replace(",", ".")) for _, n in rows)
 
     click.echo(click.style("Estatisticas da Compilacao:", bold=True))
+    for label, n in rows:
+        formatted_n = f"{n:,}".replace(",", ".")
+        click.echo(f"  {label:<{label_width}}  {formatted_n:>{num_width}}")
+
+
+def _print_link_stats(
+    member_stats: list[tuple[str, CompilationStats, set]], n_edges: int, n_orphans: int
+) -> None:
+    """Estatisticas do passo de linkagem: por membro + agregado.
+
+    Sources/Items/Chains sao PROPRIOS de cada membro -> soma simples. Ja a
+    ontologia e compartilhada (INCLUDE SHARED ONTOLOGY): somar os contadores
+    daria valor duplicado (74 + 74 = 148 para uma unica ontologia de 74
+    conceitos). Por isso ontologia/codigos sao DEDUPLICADOS pela uniao dos
+    conjuntos de conceitos, e rotulados como "Shared ..." quando ha sobreposicao.
+    """
+    # Campos proprios de cada membro (agregam por soma).
+    own_fields = [
+        ("Sources", "source_count"),
+        ("Items",   "item_count"),
+        ("Chains",  "chain_count"),
+    ]
+    # Por-membro tambem exibimos ontologia/codigos (o valor local de cada um).
+    per_member_fields = own_fields + [("Ontologies", "ontology_count"), ("Codes", "code_count")]
+
+    alias_width = max(len(alias) for alias, _s, _k in member_stats)
+
+    click.echo(click.style("Estatisticas por membro:", bold=True))
+    for alias, s, _keys in member_stats:
+        click.echo(f"  {click.style(alias.ljust(alias_width), fg='cyan')}  " + ", ".join(
+            f"{label}={getattr(s, attr):,}".replace(",", ".") for label, attr in per_member_fields
+        ))
+
+    # Uniao deduplicada dos conceitos/codigos da ontologia compartilhada.
+    all_concepts: set = set()
+    for _alias, _s, keys in member_stats:
+        all_concepts |= keys
+    unique_ontology = len(all_concepts)
+    summed_ontology = sum(s.ontology_count for _a, s, _k in member_stats)
+    shared = summed_ontology > unique_ontology  # ha sobreposicao entre membros
+
+    rows: list[tuple[str, int]] = [
+        (label, sum(getattr(s, attr) for _a, s, _k in member_stats))
+        for label, attr in own_fields
+    ]
+    onto_label = "Shared ontology" if shared else "Ontologies"
+    code_label = "Shared codes" if shared else "Codes"
+    rows.append((onto_label, unique_ontology))
+    rows.append((code_label, unique_ontology))
+    rows.append(("Edges", n_edges))
+    rows.append(("Orphans", n_orphans))
+
+    label_width = max(len(label) for label, _ in rows)
+    num_width = max(len(f"{n:,}".replace(",", ".")) for _, n in rows)
+
+    click.echo("")
+    click.echo(click.style("Estatisticas agregadas (link step):", bold=True))
     for label, n in rows:
         formatted_n = f"{n:,}".replace(",", ".")
         click.echo(f"  {label:<{label_width}}  {formatted_n:>{num_width}}")

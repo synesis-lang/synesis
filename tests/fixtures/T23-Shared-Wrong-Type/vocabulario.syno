@@ -1,0 +1,14 @@
+# Ontologia COMPARTILHADA — vive fora da pasta do projeto, referenciada por
+# varios projetos do mesmo estudo via INCLUDE SHARED ONTOLOGY.
+
+ONTOLOGY Confianca_Institucional
+    definition: Grau de credibilidade atribuido a instituicoes formais pelos
+        participantes. Aplica-se quando o relato avalia transparencia,
+        previsibilidade ou reputacao de uma organizacao.
+    group: Vocabulario_Comum
+END ONTOLOGY
+
+ONTOLOGY Cooperacao
+    definition: Acao coordenada entre atores em prol de um objetivo compartilhado.
+    group: Vocabulario_Comum
+END ONTOLOGY

@@ -346,6 +346,9 @@ def load(
     validator = SemanticValidator(template, bibliography, ontology_index, malformed_bib_keys=malformed_keys)
 
     _merge_validation(validation_result, validator.validate_project(project))
+    _merge_validation(validation_result, validator.validate_identity_uniqueness(sources))
+    _merge_validation(validation_result, validator.validate_bibliography_values(sources))
+    _merge_validation(validation_result, validator.validate_external_references())
     for source in sources:
         _merge_validation(validation_result, validator.validate_source(source))
     for item in items:

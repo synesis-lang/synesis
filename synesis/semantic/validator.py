@@ -54,7 +54,9 @@ from synesis.ast.results import (
     ConceptWithSpaces,
     DecimalInIntegerScale,
     DuplicateCodeInField,
+    DuplicateIdentityValue,
     EmptyItemBlock,
+    ExternalReferenceDeclared,
     ForbiddenFieldPresent,
     InvalidChainRelation,
     InvalidEnumeratedValue,
@@ -62,6 +64,7 @@ from synesis.ast.results import (
     InvalidIdentifierCharacter,
     InvalidOrderedValue,
     MalformedQualifiedChain,
+    MissingBibliographyValue,
     MissingBundleField,
     MissingRequiredField,
     OntologyWithoutTemplateFields,
@@ -75,7 +78,7 @@ from synesis.ast.results import (
     ValidationError,
     ValidationResult,
 )
-from synesis.parser.bib_loader import suggest_bibref
+from synesis.parser.bib_loader import find_bibref, suggest_bibref
 
 
 @dataclass
@@ -151,6 +154,108 @@ class SemanticValidator:
         result.errors.extend(opt_bundle_result.errors)
         result.warnings.extend(opt_bundle_result.warnings)
         result.info.extend(opt_bundle_result.info)
+        return result
+
+    def validate_identity_uniqueness(self, sources: List[SourceNode]) -> ValidationResult:
+        """Erro 77: unicidade dos campos IDENTIFIES (chave primaria de entidade).
+
+        Cross-source: cada valor de um campo `IDENTIFIES` deve identificar um unico
+        SOURCE. Roda uma vez sobre todos os SOURCEs do membro, antes de qualquer
+        linkagem. Comparacao por igualdade exata pos-trim (sem case-folding, sem
+        normalizacao) — coerente com a regra anti-fuzzy do link step.
+        """
+        result = ValidationResult()
+        if not self.template:
+            return result
+
+        identity_fields = [
+            (name, spec)
+            for name, spec in self.template.field_specs.items()
+            if spec.identifies and spec.scope == Scope.SOURCE
+        ]
+        if not identity_fields:
+            return result
+
+        for field_name, spec in identity_fields:
+            seen: Dict[str, str] = {}  # valor -> bibref do primeiro SOURCE que o usou
+            for source in sources:
+                raw = source.fields.get(field_name)
+                if not self._has_value(raw):
+                    continue
+                value = str(raw).strip()
+                if value in seen:
+                    result.add(DuplicateIdentityValue(
+                        location=source.location or SourceLocation(
+                            file=Path("<unknown>"), line=1, column=1
+                        ),
+                        field_name=field_name,
+                        entity=spec.identifies,
+                        value=value,
+                        first_bibref=seen[value],
+                        duplicate_bibref=source.bibref,
+                    ))
+                else:
+                    seen[value] = source.bibref
+        return result
+
+    def validate_external_references(self) -> ValidationResult:
+        """INFO 80: projeto declara REFERS TO — referencia externa nao resolvida.
+
+        Emitido uma vez por entidade distinta referenciada. Severidade INFO (nao
+        warning): a referencia externa e esperada na compilacao isolada; so se
+        resolve num link step. Nunca polui o painel com warning recorrente.
+        """
+        result = ValidationResult()
+        if not self.template:
+            return result
+        seen_entities: set = set()
+        for name, spec in self.template.field_specs.items():
+            if spec.refers_to and spec.refers_to not in seen_entities:
+                seen_entities.add(spec.refers_to)
+                result.add(ExternalReferenceDeclared(
+                    location=spec.location or SourceLocation(
+                        file=Path("<template>"), line=1, column=1
+                    ),
+                    entity=spec.refers_to,
+                    field_name=name,
+                ))
+        return result
+
+    def validate_bibliography_values(self, sources: List[SourceNode]) -> ValidationResult:
+        """Erro 79: campo REQUIRED ... ON BIBLIOGRAPHY sem valor no .bib do SOURCE.
+
+        O valor de um campo `ON BIBLIOGRAPHY` vem da entrada `.bib` do proprio
+        SOURCE (via bibref), nao do texto. Se a entrada nao tem o campo, o
+        REQUIRED nao pode ser satisfeito.
+        """
+        result = ValidationResult()
+        if not self.template:
+            return result
+
+        bib_fields = [
+            name
+            for name, spec in self.template.field_specs.items()
+            if spec.value_origin == "bibliography" and spec.scope == Scope.SOURCE
+        ]
+        if not bib_fields:
+            return result
+
+        for source in sources:
+            key = source.bibref.lstrip("@")
+            entry = find_bibref(self.bibliography, key) if self.bibliography else None
+            for field_name in bib_fields:
+                # valor pode vir do .bib OU ja estar no proprio SOURCE
+                if self._has_value(source.fields.get(field_name)):
+                    continue
+                bib_val = entry.get(field_name) if entry else None
+                if not self._has_value(bib_val):
+                    result.add(MissingBibliographyValue(
+                        location=source.location or SourceLocation(
+                            file=Path("<unknown>"), line=1, column=1
+                        ),
+                        field_name=field_name,
+                        bibref=source.bibref,
+                    ))
         return result
 
     def validate_item(self, node: ItemNode) -> ValidationResult:
@@ -542,6 +647,12 @@ class SemanticValidator:
         location = node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
 
         for field_name in required:
+            # Campos ON BIBLIOGRAPHY tem valor no .bib, nao no bloco SOURCE —
+            # sua obrigatoriedade e verificada por validate_bibliography_values
+            # (erro 79). Aqui os pulamos para nao emitir E020 espurio.
+            spec = self.template.field_specs.get(field_name)
+            if spec is not None and spec.value_origin == "bibliography":
+                continue
             if not self._has_value(field_values.get(field_name)):
                 result.add(
                     MissingRequiredField(

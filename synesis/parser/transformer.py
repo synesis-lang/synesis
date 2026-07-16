@@ -313,6 +313,9 @@ class SynesisTransformer(Transformer):
     def KW_INCLUDE(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
 
+    def KW_SHARED(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
     def KW_BIBLIOGRAPHY(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
 
@@ -338,6 +341,18 @@ class SynesisTransformer(Transformer):
         return token.value.upper()
 
     def KW_SCOPE(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
+    def KW_IDENTIFIES(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
+    def KW_REFERS(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
+    def KW_TO(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
+    def KW_ON(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
 
     def KW_FORMAT(self, token: Token) -> str:  # noqa: N802
@@ -485,16 +500,25 @@ class SynesisTransformer(Transformer):
         if items[0] == "TEMPLATE":
             return ("TEMPLATE", _strip_quotes(items[1]), _source_location(self.file_path, meta))
         # items = ["INCLUDE", include_type_result, STRING]
-        include_type = items[1]  # Result from include_type rule
+        include_type, shared = items[1]  # Result from include_type rule
         path = _strip_quotes(items[2])  # STRING token
         return IncludeNode(
             include_type=include_type,
             path=path,
             location=_source_location(self.file_path, meta),
+            shared=shared,
         )
 
-    def include_type(self, items: List[Any]) -> str:
-        return items[0]
+    def include_type(self, items: List[Any]) -> Tuple[str, bool]:
+        """Grammar: include_type: KW_SHARED? (KW_BIBLIOGRAPHY | KW_ANNOTATIONS | KW_ONTOLOGY)
+
+        Retorna (tipo, shared). O SHARED e aceito antes de qualquer tipo na
+        gramatica; a restricao "so ONTOLOGY" e semantica (SharedOnlyForOntology),
+        para dar mensagem pedagogica em vez de erro de sintaxe cru.
+        """
+        if items[0] == "SHARED":
+            return (items[1], True)
+        return (items[0], False)
 
     def metadata(self, items: List[Any]) -> Dict[str, str]:
         metadata: Dict[str, str] = {}
@@ -763,17 +787,23 @@ class SynesisTransformer(Transformer):
         forbidden: List[str] = []
         bundles: List[Tuple[str, ...]] = []
         optional_bundles: List[Tuple[str, ...]] = []
+        bibliography: List[str] = []  # campos com ON BIBLIOGRAPHY (origem-de-valor)
         for clause in clauses:
+            on_bib = len(clause) > 3 and clause[3]
             if clause[0] == "required":
                 if clause[1]:
                     bundles.append(tuple(clause[2]))
                 else:
                     required.extend(clause[2])
+                    if on_bib:
+                        bibliography.extend(clause[2])
             elif clause[0] == "optional":
                 if clause[1]:
                     optional_bundles.append(tuple(clause[2]))
                 else:
                     optional.extend(clause[2])
+                    if on_bib:
+                        bibliography.extend(clause[2])
             elif clause[0] == "forbidden":
                 forbidden.extend(clause[1])
         return {
@@ -783,6 +813,7 @@ class SynesisTransformer(Transformer):
             "forbidden": forbidden,
             "bundles": bundles,
             "optional_bundles": optional_bundles,
+            "bibliography": bibliography,
         }
 
     def field_list(self, items: List[Any]) -> List[Any]:
@@ -792,16 +823,24 @@ class SynesisTransformer(Transformer):
             if not (isinstance(item, Token) and item.type == "NEWLINE")
         ]
 
-    def requirement_clause(self, items: List[Any]) -> Tuple[str, Any, Any]:
+    def requirement_clause(self, items: List[Any]) -> Tuple[str, Any, Any, bool]:
+        # Forma ON BIBLIOGRAPHY (campo unico): ["REQUIRED"|"OPTIONAL", field_key, "ON", "BIBLIOGRAPHY"]
+        # O 4o elemento (on_bibliography) marca a origem-de-valor; o campo entra
+        # normalmente em required/optional. value_origin e reconciliado no
+        # template_loader (o FIELD e outro bloco).
+        if "ON" in items and "BIBLIOGRAPHY" in items:
+            kind = "required" if items[0] == "REQUIRED" else "optional"
+            field = _normalize_field_name(items[1])
+            return (kind, False, [field], True)
         if items[0] == "REQUIRED":
             has_bundle = "BUNDLE" in items
             names = items[-1]
-            return ("required", has_bundle, names)
+            return ("required", has_bundle, names, False)
         if items[0] == "OPTIONAL":
             has_bundle = "BUNDLE" in items
             names = items[-1]
-            return ("optional", has_bundle, names)
-        return ("forbidden", items[1])
+            return ("optional", has_bundle, names, False)
+        return ("forbidden", items[1], None, False)
 
     def bundle_modifier(self, items: List[Any]) -> str:
         return items[0]
@@ -826,6 +865,8 @@ class SynesisTransformer(Transformer):
         relations = None
         arity = None
         guidelines = None
+        identifies = None
+        refers_to = None
         for prop in props:
             key, value = prop
             if key == "scope":
@@ -842,6 +883,10 @@ class SynesisTransformer(Transformer):
                 arity = value
             elif key == "guidelines":
                 guidelines = value
+            elif key == "identifies":
+                identifies = value
+            elif key == "refers_to":
+                refers_to = value
         if scope is None:
             scope = Scope.ITEM
         return FieldSpec(
@@ -854,6 +899,8 @@ class SynesisTransformer(Transformer):
             relations=relations,
             arity=arity,
             guidelines=guidelines,
+            identifies=identifies,
+            refers_to=refers_to,
             location=_source_location(self.file_path, meta),
         )
 
@@ -872,6 +919,11 @@ class SynesisTransformer(Transformer):
             return ("description", items[1])
         if items[0] == "ARITY":
             return ("arity", f"{items[1]} {items[2]}")
+        if items[0] == "IDENTIFIES":
+            return ("identifies", items[1])
+        if items[0] == "REFERS":
+            # items = ["REFERS", "TO", <entity_label>]
+            return ("refers_to", items[2])
         if items[0] == "VALUES":
             return ("values", items[1])
         if isinstance(items[0], tuple) and items[0][0] == "guidelines":
@@ -880,6 +932,9 @@ class SynesisTransformer(Transformer):
 
     def scope_type(self, items: List[Any]) -> str:
         return items[0]
+
+    def entity_label(self, items: List[Any]) -> str:
+        return str(items[0]).strip()
 
     def format_spec(self, items: List[Any]) -> str:
         return items[0]
