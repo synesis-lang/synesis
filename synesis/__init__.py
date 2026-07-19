@@ -76,6 +76,9 @@ from synesis.compiler import (
     SynesisCompiler,
 )
 
+# Tokenizacao posicional (colorizacao semantica, navegacao)
+from synesis.parser.lex_tokens import LexToken, lex_tokens
+
 # Semantic
 from synesis.semantic.linker import LinkedProject
 
@@ -89,6 +92,9 @@ __all__ = [
     "compile_string",
     "MemoryCompilationResult",
     "CompilationStats",
+    # Tokenizacao posicional
+    "lex_tokens",
+    "LexToken",
     # Compilador
     "SynesisCompiler",
     "CompilationResult",

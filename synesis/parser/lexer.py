@@ -36,7 +36,7 @@ from typing import Optional
 
 from lark import Lark, Tree
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken
-from lark.indenter import Indenter
+from lark.indenter import DedentError, Indenter
 
 from synesis.ast.nodes import SourceLocation
 from synesis.error_handler import create_pedagogical_error
@@ -188,6 +188,58 @@ def parse_string(content: str, filename: str) -> Tree:
             message=pedagogical_msg,
             location=location,
         ) from exc
+    except DedentError as exc:
+        # Indentacao inconsistente (fechar um bloco numa coluna que nao alinha
+        # com nenhum nivel aberto). E erro comum de usuario, mas o DedentError
+        # do Lark nao carrega linha/coluna nem passa pelo error_handler: sem
+        # este except, vazava cru pela API publica.
+        line, column = _locate_dedent_failure(content)
+        raise SynesisSyntaxError(
+            message=_dedent_error_message(exc, content, line),
+            location=SourceLocation(file=Path(filename), line=line, column=column),
+        ) from exc
+
+
+def _locate_dedent_failure(content: str) -> tuple[int, int]:
+    """
+    Descobre onde a indentacao quebrou.
+
+    O DedentError do Lark nao carrega posicao. Re-tokenizar com lex_tokens()
+    (que trunca no ponto da falha em vez de levantar) revela ate onde o lexer
+    chegou; a linha seguinte e a que nao alinha.
+    """
+    try:
+        from synesis.parser.lex_tokens import lex_tokens
+
+        tokens = lex_tokens(content)
+        if tokens:
+            ultimo = tokens[-1]
+            return ultimo.end_line, max(1, ultimo.end_column)
+    except Exception:  # noqa: BLE001 - localizacao e best-effort
+        pass
+    return 1, 1
+
+
+def _dedent_error_message(exc: Exception, content: str, line: int) -> str:
+    """Mensagem pedagogica para indentacao inconsistente."""
+    linhas = content.splitlines()
+    trecho = linhas[line - 1] if 0 < line <= len(linhas) else ""
+    coluna_atual = len(trecho) - len(trecho.lstrip()) + 1 if trecho.strip() else 1
+
+    return (
+        f"Indentacao inconsistente na linha {line}.\n"
+        f"\n"
+        f"  {line} | {trecho}\n"
+        f"\n"
+        f"Esta linha esta indentada na coluna {coluna_atual}, que nao alinha com\n"
+        f"nenhum bloco aberto. Cada nivel deve fechar na mesma coluna em que abriu.\n"
+        f"\n"
+        f"Verifique se:\n"
+        f"  - a linha nao mistura TABs e espacos com outras do mesmo bloco;\n"
+        f"  - o recuo corresponde a um nivel realmente aberto acima.\n"
+        f"\n"
+        f"(detalhe do parser: {exc})"
+    )
 
 
 def parse_file(path: Path | str) -> Tree:

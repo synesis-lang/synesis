@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.0] - 2026-07-18
+
+### Fixed
+
+- **`DedentError` do Lark vazava cru pela API publica** (`synesis/parser/lexer.py`)
+  - `parse_string()` capturava `UnexpectedToken` e `UnexpectedCharacters`, mas
+    nao `DedentError`. Indentacao inconsistente — fechar um bloco numa coluna
+    que nao alinha com nenhum nivel aberto — e erro comum de usuario e escapava
+    sem passar pelo `error_handler` pedagogico: a CLI mostrava traceback de
+    biblioteca e nenhum consumidor do ecossistema tratava o tipo.
+  - Agora vira `SynesisSyntaxError` com mensagem explicativa e localizacao. O
+    `DedentError` nao carrega linha/coluna, entao a posicao e recuperada
+    re-tokenizando com `lex_tokens()` (que trunca no ponto da falha).
+  - Encontrado por fuzzing de mutacao, nao por revisao — ver
+    `tests/test_fuzz_robustness.py`.
+
+### Added
+
+- `synesis.lex_tokens(source)` — tokenizacao posicional tolerante a erro, com
+  `LexToken` (type, value, line, column, end_line, end_column). Expoe o fluxo de
+  tokens da gramatica para consumidores que precisam saber ONDE cada construto
+  aparece: colorizacao semantica (LSP), navegacao, ferramentas de analise.
+
+  Diferencas em relacao a `parse_string()`:
+  - Nunca levanta excecao; retorna tokens parciais ate o ponto de falha e
+    registra o truncamento em nivel `debug`.
+  - Nao normaliza TABs (normalizar deslocaria as colunas: o editor conta um
+    TAB como 1 caractere).
+
+  Motivacao: substituir listas de keywords em regex reimplementadas nos
+  consumidores, que divergiam da gramatica a cada construto novo. Ver
+  `Planning/syntax_semantic_highlight.md`.
+
+- **Ampliacao do protocolo de testes** — tres tecnicas complementares as
+  fixtures curadas, que testam o que ninguem pensou em testar:
+
+  - `tests/test_fuzz_robustness.py` (11 testes) — fuzzing de mutacao sobre
+    fixtures reais, com seeds fixas. Trava o contrato: para qualquer entrada,
+    `compile_string()` compila ou levanta `SynesisSyntaxError`, nunca excecao de
+    biblioteca. Achou o vazamento de `DedentError` acima.
+  - `tests/test_grammar_differential.py` (78 testes) — differential testing
+    entre `synesis.lark` (fonte) e `synesis_standalone.py` (gerado). Previne o
+    modo de falha de editar a gramatica sem regenerar o standalone, em que a
+    suite fica verde e a mudanca simplesmente nao tem efeito. Compara assinatura
+    de terminais (nome **e** padrao), conjunto de regras e tokenizacao de todas
+    as fixtures.
+  - `tests/test_error_coverage.py` (7 testes) — inventario do catalogo de
+    erros. Uma auditoria encontrou 22 dos 69 codigos sem nenhum teste; quatro
+    foram cobertos e o restante ficou travado por um teste-catraca que falha se
+    a divida crescer. Documenta tambem o compartilhamento de `SYNESIS_E064` por
+    tres classes distintas (ambiguidade de diagnostico conhecida).
+
 ## [0.8.1] - 2026-07-15
 
 ### Fixed
