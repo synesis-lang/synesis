@@ -128,6 +128,56 @@ def _build_bibliography_section(
     return result
 
 
+def _build_dataset_section(
+    dataset_index: Optional[Dict[str, Any]],
+    linked: LinkedProject,
+    template: Optional[TemplateNode],
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Constroi a secao `dataset` do JSON — SEPARADA de `bibliography` (§6/§12).
+
+    Resolve, por SOURCE, os campos SCOPE SOURCE com value_origin == "dataset",
+    lendo do registro TOML via resolve_path(spec.dataset_path). Mantida separada
+    da bibliografia para consumidores (graph/Neo4j) distinguirem a origem; o
+    sync Neo4j faz a uniao das duas na fronteira do payload (§12.2).
+
+    Retorna {} quando nao ha campos ON DATASET ou nao ha dataset carregado —
+    aditivo e no-op para projetos sem dataset.
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    if not template or not dataset_index:
+        return result
+
+    from synesis.parser.dataset_loader import find_record, resolve_path
+
+    ds_specs = [
+        (name, spec)
+        for name, spec in template.field_specs.items()
+        if getattr(spec, "value_origin", "document") == "dataset"
+        and spec.scope == Scope.SOURCE
+    ]
+    if not ds_specs:
+        return result
+
+    for bibref, source in linked.sources.items():
+        record = find_record(dataset_index, bibref.lstrip("@"))
+        if record is None:
+            continue
+        entry: Dict[str, Any] = {}
+        for name, spec in ds_specs:
+            # valor ja no SOURCE prevalece (tolerancia igual ao bibliography)
+            raw = source.fields.get(name)
+            if raw is None and spec.dataset_path:
+                raw = resolve_path(record, spec.dataset_path)
+            val = _clean_value(raw)
+            if val is not None:
+                entry[name] = val
+        if entry:
+            result[_normalize_bibref(bibref)] = entry
+
+    return result
+
+
 def _build_chain_usage(
     linked: LinkedProject,
     template: Optional[TemplateNode],
@@ -232,6 +282,7 @@ def build_json_payload(
     linked: LinkedProject,
     template: Optional[TemplateNode] = None,
     bibliography: Optional[Dict[str, BibEntry]] = None,
+    dataset_index: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Constroi payload JSON v3.0 em memoria (sem I/O).
@@ -268,6 +319,7 @@ def build_json_payload(
         "project": _build_project_section(linked),
         "template": _build_template_section(template),
         "bibliography": _build_bibliography_section(bibliography, linked, template),
+        "dataset": _build_dataset_section(dataset_index, linked, template),
         "indices": _build_indices_section(linked, template, chain_usage),
         "ontology": _build_ontology_schema(linked, template, chain_usage),
         "corpus": _build_corpus(linked, template),
@@ -279,6 +331,7 @@ def export_json(
     path: Path,
     template: Optional[TemplateNode] = None,
     bibliography: Optional[Dict[str, BibEntry]] = None,
+    dataset_index: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Exporta o projeto Synesis em JSON analitico v3.0.
@@ -290,12 +343,13 @@ def export_json(
         path: Caminho do arquivo JSON de saida
         template: Template opcional (None = modo legado)
         bibliography: Entradas BibTeX opcionais
+        dataset_index: Registros TOML (ON DATASET) para a secao `dataset`
     """
     if not isinstance(path, Path):
         path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    data = build_json_payload(linked, template, bibliography)
+    data = build_json_payload(linked, template, bibliography, dataset_index)
     payload = json.dumps(data, indent=2, ensure_ascii=False)
     path.write_text(payload, encoding="utf-8")
 

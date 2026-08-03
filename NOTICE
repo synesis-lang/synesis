@@ -1,0 +1,75 @@
+SYNESIS
+Copyright (c) 2011-2026 Christian Maciel de Britto
+https://orcid.org/0000-0003-1431-3924
+
+This product includes software and conceptual architecture developed by
+Christian Maciel de Britto.
+
+The Synesis compiler is the formal culmination of a research and development
+trajectory spanning more than a decade. The predecessor works listed below
+contributed the architecture, domain vocabulary, and methodological
+requirements that Synesis formalizes. All of them are authored solely by
+Christian Maciel de Britto, who retains full copyright in each.
+
+This file records the formal copyright notices for those predecessor works.
+It is informational: the license terms applicable to the Synesis software as
+distributed are those stated in the LICENSE file.
+
+
+PREDECESSOR WORKS
+=================
+
+BDM - Banco de Dados Multimodal (2011-2013)
+  Copyright (c) 2011-2013 Christian Maciel de Britto
+  Master's dissertation, Universidade Federal do Parana (UFPR).
+  DOI: 10.13140/RG.2.2.10686.10563
+  Contribution: first definition of sources, items, factors, relations,
+  ontology, and knowledge graph as an integrated structure.
+
+SocioAtlas (2016-2018)
+  Copyright (c) 2016-2018 Christian Maciel de Britto
+  Doctoral thesis, Universidade Federal do Parana (UFPR).
+  DOI: 10.13140/RG.2.2.26449.17760
+  Contribution: CAQDAS ecosystem integrating annotations, audit trails,
+  Zotero, georeferenced data, and knowledge graph visualization.
+
+DSAP annotation pipeline (2019-2020)
+  Copyright (c) 2019-2020 Christian Maciel de Britto
+  Professional consultancy, environmental sector.
+  Contribution: first professional validation of the audit trail
+  corpus -> item -> summary -> theme -> score.
+
+SocioAtlas para Google Sheets (2022)
+  Copyright (c) 2022 Christian Maciel de Britto
+  Independent development, Google Workspace Marketplace.
+  Contribution: collaborative access and portability; first attempt at
+  systematic theological annotation within the same framework.
+
+DGT.7 pipeline (2024)
+  Copyright (c) 2024 Christian Maciel de Britto
+  Independent development.
+  Contribution: text-file knowledge representation; exposed the need for
+  a formal, readable, validatable syntax.
+
+
+THIRD-PARTY DEPENDENCIES
+========================
+
+Synesis depends on third-party packages that are not covered by the
+copyright notices above. Each is distributed under its own license by its
+respective copyright holders:
+
+  lark            MIT
+  bibtexparser    LGPLv3 OR BSD
+  regex           Apache-2.0
+  click           BSD-3-Clause
+  openpyxl        MIT
+  tomli           MIT        (installed only on Python < 3.11)
+
+These dependencies are not redistributed as part of this source
+repository; they are resolved at installation time.
+
+
+Full history:
+  https://synesis-lang.github.io/synesis-docs/en/explanation/about.html
+  https://synesis-lang.github.io/synesis-docs/pt/explanation/sobre.html

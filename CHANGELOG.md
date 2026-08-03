@@ -6,6 +6,123 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.10.0] - 2026-07-24
+
+### Licença — MIT → AGPL-3.0-only + Synesis Data-Output Exception
+
+- **Mudança de licença**, decidida e aplicada em 2026-08-02. Estudo completo:
+  `synesis-planning/synesis/new_licence_policy.md`.
+  - `LICENSE` substituído pelo texto integral da AGPL-3.0 (Free Software
+    Foundation); novo `LICENSE.exception` v1.0 concede a **Synesis
+    Data-Output Exception** — a saída gerada pelo compilador (JSON, CSV,
+    Excel, REFI-QDA, DOCX, Alpaca JSONL, exports de grafo) **não** é obra
+    derivada e não herda a AGPL, incl. o *Synesis Runtime Material* (JS/CSS
+    embutido no HTML de grafo).
+  - `pyproject.toml`: `license = "AGPL-3.0-only AND LicenseRef-Synesis-data-output-exception"`
+    (identificador PEP 639 — a forma `WITH LicenseRef-` é inválida) +
+    `license-files = ["LICENSE", "LICENSE.exception", "NOTICE"]`; piso de
+    `setuptools` elevado para `>=77` (requisito da expressão SPDX).
+  - Novo `NOTICE`: registra as 5 obras predecessoras do compilador (BDM,
+    SocioAtlas, DSAP, SocioAtlas/Sheets, DGT.7) com DOIs e a faixa de
+    copyright 2011–2026.
+  - `CITATION.cff`: `license: AGPL-3.0-only` (o schema 1.2.0 rejeita
+    `LicenseRef-`; a exceção é referenciada em prosa no `abstract`), versão
+    e `date-released` sincronizadas.
+  - `README.md` e `CONTRIBUTING.md` atualizados; badge de licença trocado.
+  - Releases publicados antes desta mudança (≤ 0.9.0) permanecem sob MIT.
+  - Escopo: `synesis-lsp`, `synesis-graph` e `synesis-coder` migram junto
+    (linkagem Python no mesmo processo aciona o copyleft da AGPL);
+    `synesis-vscode` permanece MIT (consome o ecossistema só via processo
+    externo — LSP por JSON-RPC, coder por CLI).
+
+### Added
+
+- **`INCLUDE DATASET` / `ON DATASET` / `CONTEXT ... FROM DATASET`** — leitura de
+  datasets TOML estruturados como origem-de-valor de campo, espelhando o
+  mecanismo já existente de `INCLUDE BIBLIOGRAPHY` / `ON BIBLIOGRAPHY`.
+  - `synesis/parser/dataset_loader.py` (novo): loader **agnóstico de domínio**
+    (não presume schema de currículo Lattes nem qualquer outro) — `load_dataset`
+    (glob → dict indexado por chave configurável), `resolve_path` (navegação
+    JSON-Pointer-com-ponto + pré-filtro determinístico `[campo=valor]`),
+    `find_record`, `suggest_record`, `detect_malformed`. Dependência nova:
+    `tomli >= 2.0 ; python_version < '3.11'` (stdlib `tomllib` só a partir de
+    3.11; o piso do pacote é 3.10).
+  - Gramática (`synesis.lark`): `KW_DATASET`/`KW_CONTEXT`/`KW_FROM`;
+    `include_type` aceita `DATASET`; `requirement_clause` ganha as formas
+    `REQUIRED/OPTIONAL <campo> ON DATASET "<caminho>"`; `field_props` ganha
+    `CONTEXT FROM DATASET "<seção>"[, ...]`. O caminho e o pré-filtro
+    vivem dentro da STRING — sem colisão com `scale_format`/`index_prefix`.
+    `synesis_standalone.py` regenerado (lark 1.3.1).
+  - **Ancoragem das duas cláusulas (decidida durante a implementação):**
+    `ON DATASET` é *origem-de-valor* → cláusula do bloco `SOURCE/ITEM FIELDS`,
+    espelhando `ON BIBLIOGRAPHY`. `CONTEXT FROM DATASET` é *insumo de
+    processamento* → **propriedade do bloco `FIELD`**, irmã de `GUIDELINES`
+    (que é o texto que interpreta esse insumo), sem `field_key` redundante.
+    A Fase 0 havia ratificado a cláusula de `CONTEXT` no bloco de FIELDS; o
+    uso real no `lattes.synt` mostrou que a ancoragem estava errada (as
+    GUIDELINES passaram a precisar de "ver SOURCE FIELDS acima" para
+    compensar a distância) e a decisão foi revertida antes do commit — ver
+    `Planning/dataset_phase0_spec.md` (D1 revisado). Posição no bloco é livre;
+    o uso canônico é logo antes de `GUIDELINES`.
+  - `FieldSpec` ganha `dataset_path` e `context_from_dataset`; `value_origin`
+    aceita `"dataset"` (terceiro valor, ao lado de `"document"`/`"bibliography"`).
+  - `synesis.load()` ganha o parâmetro `dataset_index` (registros pré-carregados,
+    mantendo a função livre de I/O — espelha `bibliography_content`).
+  - `json_export`: nova seção `dataset` no payload v3.0, **separada** de
+    `bibliography` (evita ambiguidade semântica para consumidores de grafo) —
+    `_build_bibliography_section` permanece intacta.
+  - `_resolve_field_values` (link_step): terceiro ramo para `value_origin ==
+    "dataset"`, habilitando `IDENTIFIES`/`REFERS TO` sobre campos de dataset em
+    linkagem multiprojeto sem mudança adicional no linker.
+
+### Fixed
+
+- **`MissingRequiredField` (E020) espúrio para campo `ON DATASET`** — o
+  validador não conhecia a origem `"dataset"` e cobrava o campo como se devesse
+  vir do bloco SOURCE. Corrigido em paralelo ao tratamento já existente de
+  `ON BIBLIOGRAPHY`.
+- **`MissingDatasetValue`/`MissingBibliographyValue` (E085/E079) disparavam para
+  campos OPTIONAL** — `validate_dataset_values` e `validate_bibliography_values`
+  sinalizavam qualquer campo de origem externa ausente, mesmo quando o campo é
+  `OPTIONAL` (um valor ausente é legítimo nesse caso). Bug latente existia
+  também no caminho `ON BIBLIOGRAPHY`, não só no novo `ON DATASET`. Agora os
+  dois só disparam para campos `REQUIRED`. Encontrado pela codificação real de
+  piloto (não por teste automatizado) — o E085 espúrio empurrava o registro ao
+  loop de correção do `synesis-coder`, que chegava a alucinar o campo removido.
+- Novo erro `MissingDatasetValue` (`SYNESIS_E085`) em `ast/results.py`, no
+  padrão de `MissingBibliographyValue` (E079).
+
+### Changed
+
+- **`CONTEXT FROM DATASET` movida do bloco `SOURCE/ITEM FIELDS` para o bloco
+  `FIELD`** (correção pré-commit da própria 0.10.0, sem incremento de versão).
+  Forma nova: `CONTEXT FROM DATASET "s1"[, "s2"...]` como `field_props`, sem
+  nomear o campo (o alvo é o bloco). **Sem compatibilidade retroativa** — a
+  forma antiga (`CONTEXT <campo> FROM DATASET` dentro do bloco de FIELDS) agora
+  é erro de sintaxe. Único consumidor existente (`lattes.synt` do case-study
+  Quinto Andar) migrado. Impacto a jusante nulo: todos os consumidores leem
+  `spec.context_from_dataset` (atributo do `FieldSpec`), não a estrutura do
+  bloco — `dataset_mode`, `json_export`, `link_step`, `validator` e
+  `synesis-graph` seguem sem alteração.
+  - `requirement_clause` volta de 6-tupla a 5-tupla (`context_sections` sai).
+  - `template_loader` deixa de reconciliar `context_from_dataset` — o
+    `field_def_block` já o preenche direto.
+
+### Testing
+
+- Codificação real de 3 currículos TOML do corpus Quinto Andar via
+  `synesis-coder dataset` (backend Anthropic, claude-sonnet-5): 3/3 `.syn`
+  gerados corretamente, sem campo `ON DATASET` materializado, sem erro de
+  validação.
+- Suíte: 452 testes (incl. `test_dataset_loader.py`, `test_dataset_syntax.py`,
+  `test_dataset_resolution.py`). Dois testes novos travam a ancoragem:
+  `CONTEXT` conviver com `GUIDELINES` no mesmo `FIELD`, e a forma antiga no
+  bloco de FIELDS ser rejeitada.
+- Contexto serializado do `lattes.synt` verificado byte-a-byte idêntico ao de
+  antes da migração (105176 / 71343 / 175203 chars nos 3 currículos).
+
+---
+
 ## [0.9.0] - 2026-07-18
 
 ### Fixed

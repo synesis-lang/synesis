@@ -223,24 +223,116 @@ def test_cli_link_without_stats_flag_omits_stats_block():
     assert "Estatisticas" not in result.output
 
 
-def test_cli_link_xls_warns_instead_of_silently_ignoring(tmp_path):
-    """--xls no link step: sem exportador ainda, mas NUNCA em silencio."""
+def _invoke_link_xls(target):
     from click.testing import CliRunner
 
     from synesis.cli import main
 
-    out_xls = tmp_path / "out.xlsx"
     runner = CliRunner()
-    result = runner.invoke(main, [
+    return runner.invoke(main, [
         "compile",
         str(FIXTURES / "T22-Link-Ok" / "lattes" / "lattes.synp"),
         str(FIXTURES / "T22-Link-Ok" / "abstracts" / "abstracts.synp"),
-        "--xls", str(out_xls),
+        "--xls", str(target),
     ])
+
+
+def _assert_links_sheet(ws):
+    headers = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    # Rotulo legivel de cada lado: sem ele a tabela e so chave estrangeira.
+    assert "from_label" in headers
+    assert "to_label" in headers
+    assert ws.max_row > 1, "nenhuma aresta escrita"
+
+
+def test_cli_link_xls_dir_exports_per_member_package(tmp_path):
+    """--xls SEM extensao no link step: pacote com um .xlsx por membro (§6)."""
+    from openpyxl import load_workbook
+
+    out_dir = tmp_path / "pacote"
+    result = _invoke_link_xls(out_dir)
     assert result.exit_code == 0, result.output
-    assert "aviso" in result.output.lower()
-    assert "--xls" in result.output
-    assert not out_xls.exists()
+
+    assert out_dir.is_dir()
+    for alias in ("lattes", "abstracts"):
+        assert (out_dir / alias / f"{alias}.xlsx").exists(), f"{alias} nao exportado"
+
+    links_xlsx = out_dir / "links.xlsx"
+    assert links_xlsx.exists()
+    _assert_links_sheet(load_workbook(links_xlsx)["links"])
+
+
+def test_cli_link_xls_file_exports_unified_workbook(tmp_path):
+    """--xls COM extensao .xlsx: arquivo unico, abas prefixadas por membro.
+
+    Cada membro mantem seu esquema numa aba propria — o que se unifica e o
+    arquivo, nunca as colunas (SOURCE FIELDS sao incompativeis entre membros).
+    """
+    from openpyxl import load_workbook
+
+    out_xls = tmp_path / "unificado.xlsx"
+    result = _invoke_link_xls(out_xls)
+    assert result.exit_code == 0, result.output
+
+    assert out_xls.is_file()
+    assert not (tmp_path / "unificado").exists(), "nao deve criar diretorio"
+
+    wb = load_workbook(out_xls)
+    # Abas prefixadas por alias, sem colisao entre membros.
+    assert "lattes_sources" in wb.sheetnames
+    assert "abstracts_sources" in wb.sheetnames
+    assert "links" in wb.sheetnames
+    # Limite duro do Excel: nome de aba > 31 chars invalida o arquivo inteiro.
+    assert all(len(n) <= 31 for n in wb.sheetnames)
+
+    _assert_links_sheet(wb["links"])
+
+
+def test_collapse_identical_sheets_moves_shared_to_the_end():
+    """Abas fundidas vao para o fim, depois das abas de todos os membros.
+
+    Elas valem para todos, entao nao devem ficar no meio das abas do primeiro
+    membro — a posicao sugeriria que sao dele. `links` e criada depois pela
+    chamadora, ficando por ultimo.
+    """
+    from openpyxl import Workbook
+
+    from synesis.cli import _collapse_identical_sheets
+
+    wb = Workbook()
+    wb.remove(wb["Sheet"])
+    # Ordem de escrita real: bloco de cada membro, na ordem dos argumentos.
+    for alias in ("lattes", "abstracts"):
+        wb.create_sheet(f"{alias}_sources").append(["bibref", alias])
+        wb.create_sheet(f"{alias}_ontologies").append(["concept", "shared"])
+        wb.create_sheet(f"{alias}_chains").append(["from", "to", alias])
+
+    collapsed = _collapse_identical_sheets(wb, ["lattes", "abstracts"], ("ontologies",))
+
+    assert collapsed == ["ontologies"]
+    # `chains` difere entre membros (coluna com o alias): nao funde.
+    assert "lattes_chains" in wb.sheetnames
+    assert "abstracts_chains" in wb.sheetnames
+    # A fundida e a ultima — `links` entra depois dela.
+    assert wb.sheetnames[-1] == "ontologies", wb.sheetnames
+
+
+def test_cli_link_xls_keeps_per_member_ontology_without_shared_include(tmp_path):
+    """Sem INCLUDE SHARED ONTOLOGY, as abas de ontologia NAO sao fundidas.
+
+    A fusao exige a declaracao explicita do autor — nao basta o conteudo
+    coincidir, senao uma coincidencia viraria contrato silencioso. As fixtures
+    T22 nao declaram SHARED, entao cada membro mantem sua propria aba.
+    """
+    from openpyxl import load_workbook
+
+    out_xls = tmp_path / "sem_shared.xlsx"
+    result = _invoke_link_xls(out_xls)
+    assert result.exit_code == 0, result.output
+
+    wb = load_workbook(out_xls)
+    assert "ontologies" not in wb.sheetnames, "fundiu sem SHARED ONTOLOGY declarado"
+    assert "abas compartilhadas" not in result.output
 
 
 def test_cli_link_alpaca_warns_instead_of_silently_ignoring(tmp_path):

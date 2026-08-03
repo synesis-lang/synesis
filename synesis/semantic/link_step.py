@@ -3,7 +3,7 @@
 Modelo do linker C/C++: cada projeto compila isolado e expoe seus simbolos
 externos (REFERS TO) e publicos (IDENTIFIES). Este passo resolve os simbolos
 entre unidades e produz o agregado. Disparado SO na CLI com N>1 projetos —
-nunca no LSP (D2 do design; ver Planning/multiproject_key_ref.md).
+nunca no LSP (D2 do design; ver synesis-planning/synesis/multiproject_key_ref.md).
 
 Regras (nao reabrir sem motivo novo — §12.1):
   - IDENTIFIES = chave primaria: valor unico, corpus dono unico (E081).
@@ -44,9 +44,19 @@ def _trim(value: Any) -> str:
 
 
 def _values_of(raw: Any) -> List[str]:
-    """Um campo pode ser multi-valorado (lista) — cada valor gera uma aresta (§3)."""
+    """Um campo pode ser multi-valorado (lista) — cada valor gera uma aresta (§3).
+
+    `None` e ausencia, nunca um valor: sem o descarte explicito, `str(None)`
+    viraria a string `'None'` — nao-vazia e portanto indistinguivel de um dado
+    real. Como chave, isso e o pior caso possivel: nao gera orfao (casa consigo
+    mesma no pk_index) e agrupa registros nao relacionados sob uma
+    chave-fantasma. Defesa necessaria mesmo com o dataset propagado, porque um
+    `dataset_path` pode nao resolver num registro especifico.
+    """
     if isinstance(raw, (list, tuple)):
-        return [_trim(v) for v in raw if _trim(v)]
+        return [_trim(v) for v in raw if v is not None and _trim(v)]
+    if raw is None:
+        return []
     trimmed = _trim(raw)
     return [trimmed] if trimmed else []
 
@@ -60,13 +70,15 @@ class Member:
     sources: Dict[str, Any]  # bibref -> SourceNode
     path: Path
     bibliography: Dict[str, Any] = field(default_factory=dict)  # bibref normalizado -> BibEntry
+    dataset: Dict[str, Any] = field(default_factory=dict)  # chave normalizada -> registro TOML
 
 
 def _resolve_field_values(member: "Member", bibref: str, field_name: str) -> List[str]:
-    """Valores de um campo num SOURCE, respeitando a origem (documento ou .bib).
+    """Valores de um campo num SOURCE, respeitando a origem (documento, .bib ou dataset).
 
-    ON BIBLIOGRAPHY (value_origin == "bibliography"): o valor vive no .bib, nao
-    no bloco SOURCE — resolvido via find_bibref. Caso contrario, vem de
+    ON BIBLIOGRAPHY (value_origin == "bibliography"): valor no .bib, via find_bibref.
+    ON DATASET (value_origin == "dataset"): valor no registro TOML, via
+    resolve_path(registro, spec.dataset_path). Caso contrario, vem de
     source.fields (extraido do documento).
     """
     spec = member.template.field_specs.get(field_name)
@@ -77,6 +89,15 @@ def _resolve_field_values(member: "Member", bibref: str, field_name: str) -> Lis
         raw = entry.get(field_name) if entry else None
         if raw is None and source is not None:
             # tolera valor tambem presente no SOURCE (compilacao ja checou conflito)
+            raw = source.fields.get(field_name)
+        return _values_of(raw)
+    if origin == "dataset":
+        from synesis.parser.dataset_loader import find_record, resolve_path
+
+        record = find_record(member.dataset, bibref.lstrip("@")) if member.dataset else None
+        path = getattr(spec, "dataset_path", None)
+        raw = resolve_path(record, path) if record is not None and path else None
+        if raw is None and source is not None:
             raw = source.fields.get(field_name)
         return _values_of(raw)
     if source is None:

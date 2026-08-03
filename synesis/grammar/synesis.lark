@@ -83,6 +83,11 @@ KW_IDENTIFIES.5: /identifies(?![\p{L}\p{N}_-])/i
 KW_REFERS.5: /refers(?![\p{L}\p{N}_-])/i
 KW_TO.5: /to(?![\p{L}\p{N}_-])/i
 KW_ON.5: /on(?![\p{L}\p{N}_-])/i
+// ON DATASET / CONTEXT FROM DATASET: leitura de datasets TOML estruturados.
+// KW_FROM leva lookahead de fronteira (palavra curta, risco de casar prefixo).
+KW_DATASET.5: /dataset(?![\p{L}\p{N}_-])/i
+KW_CONTEXT.5: /context(?![\p{L}\p{N}_-])/i
+KW_FROM.5: /from(?![\p{L}\p{N}_-])/i
 
 // ============================================
 // BLOCO PROJECT
@@ -97,7 +102,7 @@ project_items: (include_stmt | metadata | description | NEWLINE)+
 
 include_stmt: KW_TEMPLATE STRING NEWLINE
             | KW_INCLUDE include_type STRING NEWLINE
-include_type: KW_SHARED? (KW_BIBLIOGRAPHY | KW_ANNOTATIONS | KW_ONTOLOGY)
+include_type: KW_SHARED? (KW_BIBLIOGRAPHY | KW_ANNOTATIONS | KW_ONTOLOGY | KW_DATASET)
 
 metadata: KW_METADATA NEWLINE _INDENT (metadata_line | NEWLINE)+ _DEDENT KW_END KW_METADATA NEWLINE
 metadata_line: TEXT_LINE NEWLINE
@@ -147,6 +152,12 @@ requirement_clause: KW_REQUIRED bundle_modifier? field_names
                   | KW_FORBIDDEN field_names
                   | KW_REQUIRED field_key KW_ON KW_BIBLIOGRAPHY
                   | KW_OPTIONAL field_key KW_ON KW_BIBLIOGRAPHY
+                  | KW_REQUIRED field_key KW_ON KW_DATASET STRING
+                  | KW_OPTIONAL field_key KW_ON KW_DATASET STRING
+// CONTEXT ... FROM DATASET vive em field_props (bloco FIELD), nao aqui: e
+// insumo de processamento do campo (irmao de GUIDELINES), nao requisito de
+// presenca nem origem-de-valor. Ver field_props.
+dataset_paths: STRING ("," STRING)*
 
 bundle_modifier: KW_BUNDLE
 field_key: FIELD_NAME
@@ -181,6 +192,11 @@ field_props: KW_SCOPE scope_type
            | KW_RELATIONS relation_list KW_END KW_RELATIONS
            | KW_IDENTIFIES entity_label
            | KW_REFERS KW_TO entity_label
+           // CONTEXT FROM DATASET: secoes TOML injetadas como contexto de
+           // geracao deste campo. Propriedade do FIELD (nao do bloco FIELDS)
+           // porque descreve como o campo e processado, junto de GUIDELINES —
+           // o campo-alvo e o proprio bloco, sem field_key redundante.
+           | KW_CONTEXT KW_FROM KW_DATASET dataset_paths
            | guidelines_block
 
 entity_label: FIELD_NAME

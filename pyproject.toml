@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "synesis"
-version = "0.9.0"
+version = "0.10.0"
 description = "The confluence of information into intelligence - A DSL compiler that transforms qualitative research annotations into canonical knowledge structures"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "AGPL-3.0-only AND LicenseRef-Synesis-data-output-exception"
+license-files = ["LICENSE", "LICENSE.exception", "NOTICE"]
 authors = [
     {name = "De Britto, Christian Maciel", email = "chriseana@gmail.com"}
 ]
@@ -46,6 +47,9 @@ dependencies = [
     "regex >= 2023.0.0",
     "click >= 8.0",
     "openpyxl >= 3.0",
+    # tomllib e stdlib em >=3.11; no piso 3.10 (testado no CI) tomli e obrigatorio
+    # para o dataset_loader (ON DATASET). Marcador de ambiente instala so onde falta.
+    "tomli >= 2.0 ; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

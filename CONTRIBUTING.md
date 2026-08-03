@@ -331,9 +331,50 @@ Documentation improvements are highly valued:
 - Use [Issues](https://github.com/synesis-lang/synesis/issues) for bugs and features
 - Check [Documentation](https://synesis-lang.github.io/synesis-docs) first
 
-## License
+## License and Contributor Agreement
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Synesis is distributed under the **AGPL-3.0-only license with the Synesis
+Data-Output Exception** (see [LICENSE](LICENSE) and
+[LICENSE.exception](LICENSE.exception)).
+
+Contributions are accepted under that same license.
+
+**For almost everyone, this is the whole story:** before your first pull
+request is merged, a bot will comment with a link to the **Individual
+Contributor License Agreement (ICLA)**. You click to confirm, and you are done
+— roughly thirty seconds, once, ever. Nothing to print, scan, or email.
+
+The ICLA lets the maintainer license your contribution under other terms,
+including a commercial edition. You keep full ownership of your contribution:
+it grants a license, not an assignment, and you remain free to use your own
+work however you wish.
+
+### Contributing as part of your job
+
+If you are contributing on behalf of an employer — including work done on
+company time or equipment — your employer may own the copyright, in which case
+your personal ICLA alone cannot grant the rights. A **Corporate CLA (CCLA)**,
+accepted by someone authorized to act for the company, covers that.
+
+This is a **one-time step per company, not per person or per pull request**.
+Once a company is on file, every current and future contributor from that
+company is cleared automatically, with no further paperwork for anyone.
+
+If your company is already on file, you will not notice any of this. If it is
+not, open an issue titled `CCLA: <company name>` and we will send you the
+document. We aim to turn these around within a few business days — if it is
+holding up a pull request, say so in the issue and we will prioritize it.
+
+Not sure whether this applies to you? Open the pull request anyway and ask. It
+is a common question and never a problem.
+
+> **Current status:** the CLA automation is still being set up, so external
+> pull requests are not being merged yet. Please do open issues and pull
+> requests in the meantime — they will be reviewed, and merged as soon as the
+> automation is live. The delay is deliberate: accepting even one contribution
+> without a CLA on record would permanently compromise the project's ability
+> to offer a commercially licensed edition, and that cannot be fixed later
+> without tracking down every past contributor.
 
 ---
 

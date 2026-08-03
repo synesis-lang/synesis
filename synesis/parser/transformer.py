@@ -322,6 +322,15 @@ class SynesisTransformer(Transformer):
     def KW_ANNOTATIONS(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
 
+    def KW_DATASET(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
+    def KW_CONTEXT(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
+    def KW_FROM(self, token: Token) -> str:  # noqa: N802
+        return token.value.upper()
+
     def KW_FIELDS(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
 
@@ -788,22 +797,29 @@ class SynesisTransformer(Transformer):
         bundles: List[Tuple[str, ...]] = []
         optional_bundles: List[Tuple[str, ...]] = []
         bibliography: List[str] = []  # campos com ON BIBLIOGRAPHY (origem-de-valor)
+        dataset_paths: Dict[str, str] = {}  # campo -> caminho ON DATASET
         for clause in clauses:
-            on_bib = len(clause) > 3 and clause[3]
+            # clause: (kind, bundle, names, origin, dataset_path)
+            origin = clause[3] if len(clause) > 3 else ""
+            ds_path = clause[4] if len(clause) > 4 else None
             if clause[0] == "required":
                 if clause[1]:
                     bundles.append(tuple(clause[2]))
                 else:
                     required.extend(clause[2])
-                    if on_bib:
+                    if origin == "bibliography":
                         bibliography.extend(clause[2])
+                    elif origin == "dataset":
+                        dataset_paths[clause[2][0]] = ds_path
             elif clause[0] == "optional":
                 if clause[1]:
                     optional_bundles.append(tuple(clause[2]))
                 else:
                     optional.extend(clause[2])
-                    if on_bib:
+                    if origin == "bibliography":
                         bibliography.extend(clause[2])
+                    elif origin == "dataset":
+                        dataset_paths[clause[2][0]] = ds_path
             elif clause[0] == "forbidden":
                 forbidden.extend(clause[1])
         return {
@@ -814,6 +830,7 @@ class SynesisTransformer(Transformer):
             "bundles": bundles,
             "optional_bundles": optional_bundles,
             "bibliography": bibliography,
+            "dataset_paths": dataset_paths,
         }
 
     def field_list(self, items: List[Any]) -> List[Any]:
@@ -823,24 +840,38 @@ class SynesisTransformer(Transformer):
             if not (isinstance(item, Token) and item.type == "NEWLINE")
         ]
 
-    def requirement_clause(self, items: List[Any]) -> Tuple[str, Any, Any, bool]:
-        # Forma ON BIBLIOGRAPHY (campo unico): ["REQUIRED"|"OPTIONAL", field_key, "ON", "BIBLIOGRAPHY"]
-        # O 4o elemento (on_bibliography) marca a origem-de-valor; o campo entra
-        # normalmente em required/optional. value_origin e reconciliado no
-        # template_loader (o FIELD e outro bloco).
+    def requirement_clause(
+        self, items: List[Any]
+    ) -> Tuple[str, Any, Any, str, Optional[str]]:
+        # Tupla: (kind, bundle, names, origin, dataset_path).
+        # `origin` in {"", "bibliography", "dataset"} — marca origem-de-valor
+        # externa ao bloco (reconciliada em value_origin pelo template_loader).
+        # dataset_path so preenchido na forma ON DATASET.
+        #
+        # Forma ON BIBLIOGRAPHY (campo unico): [_, field_key, "ON", "BIBLIOGRAPHY"]
         if "ON" in items and "BIBLIOGRAPHY" in items:
             kind = "required" if items[0] == "REQUIRED" else "optional"
             field = _normalize_field_name(items[1])
-            return (kind, False, [field], True)
+            return (kind, False, [field], "bibliography", None)
+        # Forma ON DATASET "caminho": [_, field_key, "ON", "DATASET", STRING]
+        if "ON" in items and "DATASET" in items:
+            kind = "required" if items[0] == "REQUIRED" else "optional"
+            field = _normalize_field_name(items[1])
+            path = _strip_quotes(items[-1])
+            return (kind, False, [field], "dataset", path)
         if items[0] == "REQUIRED":
             has_bundle = "BUNDLE" in items
             names = items[-1]
-            return ("required", has_bundle, names, False)
+            return ("required", has_bundle, names, "", None)
         if items[0] == "OPTIONAL":
             has_bundle = "BUNDLE" in items
             names = items[-1]
-            return ("optional", has_bundle, names, False)
-        return ("forbidden", items[1], None, False)
+            return ("optional", has_bundle, names, "", None)
+        return ("forbidden", items[1], None, "", None)
+
+    def dataset_paths(self, items: List[Any]) -> List[str]:
+        """Grammar: dataset_paths: STRING ("," STRING)* — lista de secoes TOML."""
+        return [_strip_quotes(tok) for tok in items]
 
     def bundle_modifier(self, items: List[Any]) -> str:
         return items[0]
@@ -867,6 +898,7 @@ class SynesisTransformer(Transformer):
         guidelines = None
         identifies = None
         refers_to = None
+        context_from_dataset = None
         for prop in props:
             key, value = prop
             if key == "scope":
@@ -887,6 +919,8 @@ class SynesisTransformer(Transformer):
                 identifies = value
             elif key == "refers_to":
                 refers_to = value
+            elif key == "context_from_dataset":
+                context_from_dataset = value
         if scope is None:
             scope = Scope.ITEM
         return FieldSpec(
@@ -901,6 +935,7 @@ class SynesisTransformer(Transformer):
             guidelines=guidelines,
             identifies=identifies,
             refers_to=refers_to,
+            context_from_dataset=context_from_dataset,
             location=_source_location(self.file_path, meta),
         )
 
@@ -924,6 +959,11 @@ class SynesisTransformer(Transformer):
         if items[0] == "REFERS":
             # items = ["REFERS", "TO", <entity_label>]
             return ("refers_to", items[2])
+        if items[0] == "CONTEXT":
+            # items = ["CONTEXT", "FROM", "DATASET", [secoes]] — o campo-alvo e
+            # o proprio bloco FIELD, sem field_key redundante.
+            sections = items[-1] if isinstance(items[-1], list) else [_strip_quotes(items[-1])]
+            return ("context_from_dataset", sections)
         if items[0] == "VALUES":
             return ("values", items[1])
         if isinstance(items[0], tuple) and items[0][0] == "guidelines":

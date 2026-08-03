@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from synesis.ast.nodes import (
+    ChainNode,
     FieldType,
     ItemNode,
     Scope,
@@ -39,10 +40,12 @@ from synesis.ast.nodes import (
     TemplateNode,
 )
 from synesis.exporters._helpers import (
+    _chain_to_text,
     _get_field_names_for_scope,
     _get_field_names_for_scope_and_types,
     _get_item_field_value,
     _get_ontology_field_value,
+    _get_source_field_value,
 )
 from synesis.semantic.linker import LinkedProject
 
@@ -71,6 +74,8 @@ def _sanitize_row(row: Dict[str, Any]) -> Dict[str, Any]:
 def build_csv_tables(
     linked: LinkedProject,
     template: Optional[TemplateNode],
+    bibliography: Optional[Dict[str, Any]] = None,
+    dataset: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, CsvTable]:
     """
     Constroi tabelas CSV em memoria (sem I/O).
@@ -100,9 +105,9 @@ def build_csv_tables(
 
     # Sources
     if template and _has_fields_for_scope(template, Scope.SOURCE):
-        tables["sources"] = _build_sources_table(linked, template)
+        tables["sources"] = _build_sources_table(linked, template, bibliography, dataset)
     elif not template:
-        tables["sources"] = _build_sources_table(linked, None)
+        tables["sources"] = _build_sources_table(linked, None, bibliography, dataset)
 
     # Items
     if template and _has_fields_for_scope(template, Scope.ITEM):
@@ -128,7 +133,13 @@ def build_csv_tables(
     return tables
 
 
-def export_csv(linked: LinkedProject, template: Optional[TemplateNode], output_dir: Path) -> None:
+def export_csv(
+    linked: LinkedProject,
+    template: Optional[TemplateNode],
+    output_dir: Path,
+    bibliography: Optional[Dict[str, Any]] = None,
+    dataset: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Exporta tabelas CSV do projeto Synesis baseado no template.
 
@@ -139,7 +150,7 @@ def export_csv(linked: LinkedProject, template: Optional[TemplateNode], output_d
         output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    tables = build_csv_tables(linked, template)
+    tables = build_csv_tables(linked, template, bibliography, dataset)
 
     for table_name, (headers, rows) in tables.items():
         if rows:
@@ -212,7 +223,12 @@ def _expand_item_rows(
     return rows
 
 
-def _build_sources_table(linked: LinkedProject, template: Optional[TemplateNode]) -> CsvTable:
+def _build_sources_table(
+    linked: LinkedProject,
+    template: Optional[TemplateNode],
+    bibliography: Optional[Dict[str, Any]] = None,
+    dataset: Optional[Dict[str, Any]] = None,
+) -> CsvTable:
     """Constroi tabela de sources em memoria."""
     sources = list(linked.sources.values())
     if not sources:
@@ -239,7 +255,9 @@ def _build_sources_table(linked: LinkedProject, template: Optional[TemplateNode]
             "source_column": location.column if location else "",
         }
         for name in field_names:
-            row[name] = _stringify_value(source.fields.get(name, ""))
+            row[name] = _stringify_value(
+                _get_source_field_value(source, name, template, bibliography, dataset)
+            )
         rows.append(row)
 
     return (headers, rows)
@@ -494,11 +512,24 @@ def _collect_source_fields(sources: List[SourceNode]) -> List[str]:
 
 
 def _stringify_value(value) -> str:
-    """Converte valor para string CSV."""
+    """Converte valor para string CSV.
+
+    `None` e ausencia, tambem dentro de listas: sem o descarte, um item nulo
+    viraria a string "None" no meio do join — indistinguivel de um dado real.
+    ChainNode ganha forma legivel ("a -> REL -> b"); sem isso a celula
+    receberia o repr() do dataclass (nodes, locations, WindowsPath).
+    """
     if isinstance(value, list):
-        return ";".join(str(v) for v in value)
+        return ";".join(_scalar_to_text(v) for v in value if v is not None)
     if value is None:
         return ""
+    return _scalar_to_text(value)
+
+
+def _scalar_to_text(value) -> str:
+    """Texto de um valor escalar de celula, tratando nos da AST."""
+    if isinstance(value, ChainNode):
+        return _chain_to_text(value)
     return str(value)
 
 

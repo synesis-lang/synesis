@@ -65,6 +65,7 @@ from synesis.ast.results import (
     InvalidOrderedValue,
     MalformedQualifiedChain,
     MissingBibliographyValue,
+    MissingDatasetValue,
     MissingBundleField,
     MissingRequiredField,
     OntologyWithoutTemplateFields,
@@ -88,6 +89,7 @@ class SemanticValidator:
     ontology_index: Dict[str, Any]
     norm_cache: dict | None = None
     malformed_bib_keys: set = field(default_factory=set)
+    dataset: Dict[str, Any] = field(default_factory=dict)  # registros TOML (ON DATASET)
 
     def __post_init__(self) -> None:
         self.ontology_index = {normalize_code(key, self.norm_cache): value for key, value in self.ontology_index.items()}
@@ -232,10 +234,15 @@ class SemanticValidator:
         if not self.template:
             return result
 
+        # Só campos REQUIRED disparam E079: um campo OPTIONAL ON BIBLIOGRAPHY
+        # ausente do .bib é legítimo (nem toda entrada preenche todo campo).
+        required_source = set(self.template.required_fields.get(Scope.SOURCE, []))
         bib_fields = [
             name
             for name, spec in self.template.field_specs.items()
-            if spec.value_origin == "bibliography" and spec.scope == Scope.SOURCE
+            if spec.value_origin == "bibliography"
+            and spec.scope == Scope.SOURCE
+            and name in required_source
         ]
         if not bib_fields:
             return result
@@ -255,6 +262,55 @@ class SemanticValidator:
                         ),
                         field_name=field_name,
                         bibref=source.bibref,
+                    ))
+        return result
+
+    def validate_dataset_values(self, sources: List[SourceNode]) -> ValidationResult:
+        """Erro 85: campo REQUIRED ... ON DATASET sem valor no registro TOML.
+
+        Espelha validate_bibliography_values, mas a fonte e o dataset TOML: o
+        valor vem de resolve_path(registro, spec.dataset_path). Tolera valor ja
+        presente no bloco SOURCE (compilacao ja checou conflito).
+        """
+        from synesis.parser.dataset_loader import find_record, resolve_path
+
+        result = ValidationResult()
+        if not self.template:
+            return result
+
+        # Só campos REQUIRED disparam E085: um campo OPTIONAL ON DATASET sem
+        # valor no TOML é legítimo (nem todo registro preenche todo campo).
+        required_source = set(self.template.required_fields.get(Scope.SOURCE, []))
+        ds_fields = [
+            (name, spec)
+            for name, spec in self.template.field_specs.items()
+            if spec.value_origin == "dataset"
+            and spec.scope == Scope.SOURCE
+            and name in required_source
+        ]
+        if not ds_fields:
+            return result
+
+        for source in sources:
+            key = source.bibref.lstrip("@")
+            record = find_record(self.dataset, key) if self.dataset else None
+            for field_name, spec in ds_fields:
+                # valor pode vir do dataset OU ja estar no proprio SOURCE
+                if self._has_value(source.fields.get(field_name)):
+                    continue
+                ds_val = (
+                    resolve_path(record, spec.dataset_path)
+                    if record is not None and spec.dataset_path
+                    else None
+                )
+                if not self._has_value(ds_val):
+                    result.add(MissingDatasetValue(
+                        location=source.location or SourceLocation(
+                            file=Path("<unknown>"), line=1, column=1
+                        ),
+                        field_name=field_name,
+                        bibref=source.bibref,
+                        dataset_path=spec.dataset_path or "",
                     ))
         return result
 
@@ -647,11 +703,13 @@ class SemanticValidator:
         location = node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
 
         for field_name in required:
-            # Campos ON BIBLIOGRAPHY tem valor no .bib, nao no bloco SOURCE —
-            # sua obrigatoriedade e verificada por validate_bibliography_values
-            # (erro 79). Aqui os pulamos para nao emitir E020 espurio.
+            # Campos ON BIBLIOGRAPHY/ON DATASET tem valor na fonte externa (.bib
+            # ou registro TOML), nao no bloco SOURCE — sua obrigatoriedade e
+            # verificada por validate_bibliography_values (E079) e
+            # validate_dataset_values (E085). Aqui os pulamos para nao emitir
+            # E020 espurio.
             spec = self.template.field_specs.get(field_name)
-            if spec is not None and spec.value_origin == "bibliography":
+            if spec is not None and spec.value_origin in ("bibliography", "dataset"):
                 continue
             if not self._has_value(field_values.get(field_name)):
                 result.add(

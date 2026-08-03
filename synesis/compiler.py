@@ -32,12 +32,13 @@ from __future__ import annotations
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from synesis.ast.nodes import (
     ItemNode,
     OntologyNode,
     ProjectNode,
+    Scope,
     SourceLocation,
     SourceNode,
     TemplateNode,
@@ -63,6 +64,7 @@ from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
 from synesis.parser.bib_loader import BibEntry, detect_malformed_entries, load_bibliography
+from synesis.parser.dataset_loader import DatasetError, load_dataset
 from synesis.parser.lexer import SynesisSyntaxError, parse_file, read_source_file
 from synesis.parser.parse_cache import get_cached_nodes, put_cached_nodes
 from synesis.parser.paths import (
@@ -97,6 +99,12 @@ class CompilationResult:
     stats: CompilationStats
     template: Optional[TemplateNode] = None
     bibliography: Optional[Dict[str, BibEntry]] = None
+    # Registros TOML de INCLUDE DATASET, indexados pela chave do template.
+    # Espelha `bibliography` e usa o mesmo contrato de tres estados:
+    #   None = projeto nao declara INCLUDE DATASET (ou chave indescobrivel);
+    #   {}   = declarado mas nao carregou (o erro ja esta no validation_result);
+    #   dict = carregado.
+    dataset: Optional[Dict[str, Any]] = None
 
     def has_errors(self) -> bool:
         return self.validation_result.has_errors()
@@ -110,17 +118,17 @@ class CompilationResult:
     def to_json(self, path: Path) -> None:
         if self.has_errors() or not self.linked_project:
             return
-        export_json(self.linked_project, path, self.template, self.bibliography)
+        export_json(self.linked_project, path, self.template, self.bibliography, self.dataset)
 
     def to_csv(self, output_dir: Path) -> None:
         if self.has_errors() or not self.linked_project:
             return
-        export_csv(self.linked_project, self.template, output_dir)
+        export_csv(self.linked_project, self.template, output_dir, self.bibliography, self.dataset)
 
     def to_xls(self, path: Path) -> None:
         if self.has_errors() or not self.linked_project:
             return
-        export_xls(self.linked_project, self.template, path)
+        export_xls(self.linked_project, self.template, path, self.bibliography, self.dataset)
 
     def to_alpaca(self, path: Path) -> None:
         if self.has_errors() or not self.linked_project:
@@ -165,6 +173,7 @@ class SynesisCompiler:
         template_validation = validate_template(template)
 
         bibliography = self.load_bibliography(project)
+        dataset, dataset_load_result = self.load_dataset_index(project, template)
 
         ontologies, ontology_load_result = self.parse_ontologies(project)
         sources, items, annotations_load_result = self.parse_annotations(project)
@@ -184,6 +193,7 @@ class SynesisCompiler:
             ontologies=ontologies,
             norm_cache=norm_cache,
             malformed_bib_keys=malformed_keys,
+            dataset=dataset,
         )
 
         self._merge(validation_result, project_validation)
@@ -191,6 +201,7 @@ class SynesisCompiler:
         self._merge(validation_result, template_validation)
         self._merge(validation_result, bib_validation)
         self._merge(validation_result, bib_format_validation)
+        self._merge(validation_result, dataset_load_result)
         self._merge(validation_result, ontology_load_result)
         self._merge(validation_result, annotations_load_result)
 
@@ -213,6 +224,7 @@ class SynesisCompiler:
             stats=stats,
             template=template,
             bibliography=bibliography,
+            dataset=dataset,
         )
 
     def parse_project(self) -> tuple[ProjectNode, ValidationResult]:
@@ -252,6 +264,101 @@ class SynesisCompiler:
                 except (OSError, UnicodeDecodeError):
                     return {}
         return None
+
+    @staticmethod
+    def _dataset_key_path(template: Optional[TemplateNode]) -> Optional[str]:
+        """Caminho da chave de indexacao do dataset, derivado do template.
+
+        A chave e o `dataset_path` do campo SCOPE SOURCE que tambem e
+        `IDENTIFIES` (D3/D8): e a identidade do registro. Sem campo IDENTIFIES
+        ON DATASET, cai no primeiro campo SOURCE com ON DATASET. O loader e
+        agnostico de dominio — quem sabe a chave e o template.
+        """
+        if template is None:
+            return None
+        fallback: Optional[str] = None
+        for spec in template.field_specs.values():
+            if getattr(spec, "value_origin", "document") != "dataset":
+                continue
+            if spec.scope != Scope.SOURCE:
+                continue
+            path = getattr(spec, "dataset_path", None)
+            if path is None:
+                continue
+            if getattr(spec, "identifies", None):
+                return path
+            if fallback is None:
+                fallback = path
+        return fallback
+
+    def load_dataset_index(
+        self, project: ProjectNode, template: Optional[TemplateNode]
+    ) -> tuple[Optional[Dict[str, Any]], ValidationResult]:
+        """Carrega os registros TOML de INCLUDE DATASET (origem-de-valor ON DATASET).
+
+        Espelha load_bibliography e usa o mesmo contrato de tres estados:
+          None = projeto nao declara INCLUDE DATASET, ou o template nao tem
+                 campo ON DATASET (chave indescobrivel) — no-op;
+          {}   = declarado mas o caminho nao resolve / o TOML falha ao carregar
+                 (o erro correspondente vai no ValidationResult);
+          dict = carregado e indexado pela chave do template.
+        """
+        result = ValidationResult()
+        for include in project.includes:
+            if include.include_type.upper() != "DATASET":
+                continue
+
+            key_path = self._dataset_key_path(template)
+            if key_path is None:
+                # Sem campo ON DATASET no template nao ha como indexar os
+                # registros. Nao e erro: o INCLUDE fica inerte, como um .bib
+                # declarado num projeto que nao usa bibref.
+                return None, result
+
+            raw = normalize_include_path(include.path)
+            if has_glob(raw):
+                inside, outside = resolve_glob(self.project_dir, raw)
+                for escaped in outside:
+                    result.add(IncludePathEscapesProject(
+                        location=include.location,
+                        filename=str(escaped),
+                    ))
+                if not inside:
+                    # Glob declarado sem nenhum match: o dataset foi pedido e
+                    # nao existe. Distingue-se de "projeto sem dataset" ({} vs
+                    # None) para que E085 continue exigindo os campos REQUIRED.
+                    return {}, result
+                paths: List[Path] = inside
+            else:
+                resolution = resolve_include(self.project_dir, raw)
+                if resolution.error is IncludeError.ESCAPES_PROJECT:
+                    result.add(IncludePathEscapesProject(
+                        location=include.location,
+                        filename=include.path,
+                    ))
+                    return {}, result
+                if not resolution.ok:
+                    result.add(UnreadableIncludedFile(
+                        location=include.location,
+                        filename=include.path,
+                        reason="arquivo de dataset declarado nao encontrado",
+                    ))
+                    return {}, result
+                paths = [resolution.path]
+
+            index: Dict[str, Any] = {}
+            for path in paths:
+                try:
+                    index.update(load_dataset(path, key_path=key_path, base_dir=self.project_dir))
+                except DatasetError as exc:
+                    result.add(UnreadableIncludedFile(
+                        location=include.location,
+                        filename=include.path,
+                        reason=str(exc),
+                    ))
+                    return {}, result
+            return index, result
+        return None, result
 
     def parse_ontologies(
         self, project: ProjectNode
@@ -317,18 +424,21 @@ class SynesisCompiler:
         ontologies: List[OntologyNode],
         norm_cache: dict | None = None,
         malformed_bib_keys: set | None = None,
+        dataset: Optional[Dict[str, Any]] = None,
     ) -> ValidationResult:
         ontology_index = {o.concept: o for o in ontologies}
         validator = SemanticValidator(
             template, bibliography, ontology_index,
             norm_cache=norm_cache,
             malformed_bib_keys=malformed_bib_keys or set(),
+            dataset=dataset or {},
         )
         result = ValidationResult()
 
         self._merge(result, validator.validate_project(project))
         self._merge(result, validator.validate_identity_uniqueness(sources))
         self._merge(result, validator.validate_bibliography_values(sources))
+        self._merge(result, validator.validate_dataset_values(sources))
         self._merge(result, validator.validate_external_references())
         for source in sources:
             self._merge(result, validator.validate_source(source))

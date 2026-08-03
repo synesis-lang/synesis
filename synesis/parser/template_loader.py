@@ -220,6 +220,16 @@ def _load_template_impl(content: str, filename: str) -> TemplateNode:
             if spec is not None:
                 spec.value_origin = "bibliography"
 
+        # ON DATASET: origem-de-valor em dataset TOML + caminho JSON-Pointer.
+        for name, path in block.get("dataset_paths", {}).items():
+            spec = field_specs.get(name)
+            if spec is not None:
+                spec.value_origin = "dataset"
+                spec.dataset_path = path
+
+        # CONTEXT ... FROM DATASET NAO e reconciliado aqui: e propriedade do
+        # bloco FIELD (field_props), ja preenchida em field_def_block.
+
     if header is None:
         header = {"name": "", "metadata": {}, "location": SourceLocation(file_path, 1, 1)}
 

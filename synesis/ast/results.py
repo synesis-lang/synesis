@@ -1644,6 +1644,32 @@ class MissingBibliographyValue(ValidationError):
 
 
 @dataclass(frozen=True)
+class MissingDatasetValue(ValidationError):
+    """Campo REQUIRED ... ON DATASET sem valor no registro do dataset TOML. (erro 85)"""
+
+    field_name: str
+    bibref: str
+    dataset_path: str
+    CODE: ClassVar[str] = "SYNESIS_E085"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O campo `{self.field_name}` foi declarado `REQUIRED ... ON DATASET`,\n"
+            f"  ou seja, seu valor deve vir do registro TOML do SOURCE — nao do texto.\n"
+            f"  Mas o registro `{self.bibref}` nao tem valor no caminho\n"
+            f"  `{self.dataset_path}`.\n"
+            f"  Verifique a secao/campo TOML, ou remova a exigencia `ON DATASET`\n"
+            f"  do template."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"Campo `{self.field_name}` (ON DATASET \"{self.dataset_path}\") "
+            f"ausente no registro `{self.bibref}`"
+        )
+
+
+@dataclass(frozen=True)
 class ExternalReferenceDeclared(ValidationError):
     """INFO: projeto declara REFERS TO — referencia externa nao resolvida isolada. (info 80)
 

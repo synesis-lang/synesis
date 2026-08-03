@@ -81,6 +81,7 @@ class MemoryCompilationResult:
         validation_result: Erros, warnings e info
         template: Template carregado
         bibliography: Bibliografia carregada
+        dataset: Registros TOML (ON DATASET) usados na compilacao
         stats: Estatisticas de compilacao
 
     Example:
@@ -95,6 +96,7 @@ class MemoryCompilationResult:
     validation_result: ValidationResult
     template: Optional[TemplateNode] = None
     bibliography: Optional[Dict[str, BibEntry]] = None
+    dataset: Optional[Dict[str, Any]] = None
     stats: CompilationStats = field(default_factory=CompilationStats)
 
     def has_errors(self) -> bool:
@@ -131,7 +133,9 @@ class MemoryCompilationResult:
             return {}
         from synesis.exporters.json_export import build_json_payload
 
-        return build_json_payload(self.linked_project, self.template, self.bibliography)
+        return build_json_payload(
+            self.linked_project, self.template, self.bibliography, self.dataset
+        )
 
     def to_csv_tables(self) -> Dict[str, tuple]:
         """
@@ -152,7 +156,9 @@ class MemoryCompilationResult:
             return {}
         from synesis.exporters.csv_export import build_csv_tables
 
-        return build_csv_tables(self.linked_project, self.template)
+        return build_csv_tables(
+            self.linked_project, self.template, self.bibliography, self.dataset
+        )
 
     def to_dataframe(self, table_name: str) -> Any:
         """
@@ -235,6 +241,7 @@ def load(
     annotation_contents: Optional[Dict[str, str]] = None,
     ontology_contents: Optional[Dict[str, str]] = None,
     bibliography_content: Optional[str] = None,
+    dataset_index: Optional[Dict[str, Any]] = None,
     project_filename: str = "<project>",
     template_filename: str = "<template>",
 ) -> MemoryCompilationResult:
@@ -251,6 +258,9 @@ def load(
         annotation_contents: Dict[filename, content] para arquivos .syn
         ontology_contents: Dict[filename, content] para arquivos .syno
         bibliography_content: Conteudo do arquivo .bib (opcional)
+        dataset_index: Registros TOML ja carregados/indexados por chave
+            (ON DATASET). Pre-carregado pelo chamador (dataset_loader) para
+            manter load() sem I/O de disco, espelhando bibliography_content.
         project_filename: Nome virtual para mensagens de erro
         template_filename: Nome virtual para mensagens de erro
 
@@ -343,11 +353,16 @@ def load(
         e.entry_key.lower() for e in validation_result.errors
         if isinstance(e, MalformedBibliographyEntry)
     }
-    validator = SemanticValidator(template, bibliography, ontology_index, malformed_bib_keys=malformed_keys)
+    validator = SemanticValidator(
+        template, bibliography, ontology_index,
+        malformed_bib_keys=malformed_keys,
+        dataset=dataset_index or {},
+    )
 
     _merge_validation(validation_result, validator.validate_project(project))
     _merge_validation(validation_result, validator.validate_identity_uniqueness(sources))
     _merge_validation(validation_result, validator.validate_bibliography_values(sources))
+    _merge_validation(validation_result, validator.validate_dataset_values(sources))
     _merge_validation(validation_result, validator.validate_external_references())
     for source in sources:
         _merge_validation(validation_result, validator.validate_source(source))
@@ -371,6 +386,7 @@ def load(
         validation_result=validation_result,
         template=template,
         bibliography=bibliography,
+        dataset=dataset_index,
         stats=stats,
     )
 

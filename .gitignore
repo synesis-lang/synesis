@@ -174,3 +174,7 @@ synesis-error-implementation.md
 synesis-error-inventory.md
 synesis-performance-plan.md
 AGENTS.md
+# Caches de ferramentas
+.ruff_cache/
+
+/e085

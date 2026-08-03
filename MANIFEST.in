@@ -1,5 +1,7 @@
 # Include license and documentation
 include LICENSE
+include LICENSE.exception
+include NOTICE
 include README.md
 include CHANGELOG.md
 include CONTRIBUTING.md

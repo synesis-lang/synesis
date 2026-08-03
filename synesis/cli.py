@@ -257,10 +257,14 @@ _EPILOG_COMPILE = _ex(
     "  # warning); compile it together with the project that owns IDENTIFIES",
     "  # for that entity to resolve the edges.",
     "",
-    "  # --xls and --alpaca have no per-member exporter yet in the linking path:",
-    "  # SOURCE FIELDS differ across members, so there is no single coherent",
-    "  # table/dataset. The CLI warns instead of silently skipping the export —",
-    "  # run those exports per project instead.",
+    "  # Export the linked package as spreadsheets: --xls names a DIRECTORY here,",
+    "  # with one .xlsx per member plus links.xlsx (resolved edges, with a readable",
+    "  # label from each side). SOURCE FIELDS differ across members, so there is no",
+    "  # single coherent table — the package is tabular per member.",
+    "  synesis compile lattes.synp abstracts.synp --xls quinto_andar/",
+    "",
+    "  # --alpaca still has no per-member exporter in the linking path: the CLI",
+    "  # warns instead of silently skipping it — run that export per project.",
 )
 
 _EPILOG_CHECK = _ex(
@@ -435,6 +439,7 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
             raise SystemExit(1)
         template_validation = validate_template(template)
         bibliography = compiler.load_bibliography(project_node)
+        dataset, dataset_load_result = compiler.load_dataset_index(project_node, template)
         spinner.done()
 
         # Etapa 2: ontologia
@@ -466,12 +471,14 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
             ontologies=ontologies,
             norm_cache=norm_cache,
             malformed_bib_keys=malformed_keys,
+            dataset=dataset,
         )
         compiler._merge(validation_result, project_validation)
         compiler._merge(validation_result, project_validation_structure)
         compiler._merge(validation_result, template_validation)
         compiler._merge(validation_result, bib_validation)
         compiler._merge(validation_result, bib_format_validation)
+        compiler._merge(validation_result, dataset_load_result)
         compiler._merge(validation_result, ontology_load_result)
         compiler._merge(validation_result, annotations_load_result)
         n_errors = len(validation_result.errors)
@@ -513,11 +520,11 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
 
         if (force or exit_code == 0) and linked_project:
             if json_path:
-                export_json(linked_project, Path(json_path), template, bibliography)
+                export_json(linked_project, Path(json_path), template, bibliography, dataset)
             if csv_dir:
-                export_csv(linked_project, template, Path(csv_dir))
+                export_csv(linked_project, template, Path(csv_dir), bibliography, dataset)
             if xls_path:
-                export_xls(linked_project, template, Path(xls_path))
+                export_xls(linked_project, template, Path(xls_path), bibliography, dataset)
             if alpaca_path:
                 export_alpaca(linked_project, Path(alpaca_path), template, bibliography)
 
@@ -537,6 +544,209 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
         raise SystemExit(1)
 
 
+def _member_label_field(template) -> str | None:
+    """Campo SCOPE SOURCE que serve de rotulo humano do membro no links.xlsx.
+
+    Uma tabela de arestas so com bibrefs e chaves estrangeiras exige abrir os
+    outros arquivos para ser lida. Escolhe-se o primeiro campo TEXT de SCOPE
+    SOURCE que NAO seja a propria chave do link (IDENTIFIES/REFERS TO) — em
+    lattes.synt isso da `nome`; em abstracts.synt, `description`. Heuristica
+    deliberadamente simples: quando erra, degrada para coluna vazia, nunca
+    para dado errado.
+    """
+    from synesis.ast.nodes import FieldType, Scope
+
+    if template is None:
+        return None
+    for name, spec in template.field_specs.items():
+        if spec.scope != Scope.SOURCE:
+            continue
+        if getattr(spec, "identifies", None) or getattr(spec, "refers_to", None):
+            continue
+        if spec.type == FieldType.TEXT:
+            return name
+    return None
+
+
+def _sheet_rows(ws) -> list[tuple]:
+    """Conteudo de uma worksheet como lista de tuplas (cabecalho incluido)."""
+    return [tuple(row) for row in ws.iter_rows(values_only=True)]
+
+
+def _shares_ontology(project_path: Path) -> bool:
+    """True se o .synp declara INCLUDE SHARED ONTOLOGY.
+
+    O `shared` do IncludeNode e a declaracao explicita do autor de que aquela
+    ontologia e comum a varios projetos (D13 autoriza o escape de pasta so
+    nesse caso). E o sinal correto para fundir as abas de ontologia no
+    workbook unificado — sem ele, duas ontologias iguais por coincidencia
+    seriam fundidas e a coincidencia viraria contrato silencioso.
+    """
+    try:
+        node, _ = SynesisCompiler(project_path).parse_project()
+    except Exception:  # noqa: BLE001 - projeto ja compilou antes; aqui e best-effort
+        return False
+    return any(
+        inc.include_type.upper() == "ONTOLOGY" and getattr(inc, "shared", False)
+        for inc in node.includes
+    )
+
+
+def _collapse_identical_sheets(wb, aliases: list[str], bases: tuple[str, ...]) -> list[str]:
+    """Funde abas identicas entre TODOS os membros que compartilham ontologia.
+
+    `INCLUDE SHARED ONTOLOGY` faz os membros carregarem o mesmo `.syno`, entao
+    `ontologies`/`topics` saem repetidas uma vez por membro — no corpus real
+    isso e metade das celulas do arquivo. Fundidas, viram uma aba sem prefixo
+    (`ontologies`) valida para todos.
+
+    Duas condicoes, ambas necessarias:
+      1. todos os membros declaram INCLUDE SHARED ONTOLOGY — a intencao do
+         autor de que a ontologia seja comum;
+      2. o conteudo exportado coincide de fato.
+    A (1) sozinha nao basta porque a ontologia pode ter sido editada entre
+    compilacoes; a (2) sozinha fundiria por coincidencia dois projetos que
+    apenas por acaso tem a mesma ontologia. Divergindo, as abas por membro
+    permanecem — redundancia visivel e melhor que fusao que esconde diferenca.
+    """
+    collapsed: list[str] = []
+    if len(aliases) < 2:
+        return collapsed
+
+    for base in bases:
+        names = [f"{alias}_{base}" for alias in aliases]
+        if not all(n in wb.sheetnames for n in names):
+            continue
+
+        reference = _sheet_rows(wb[names[0]])
+        if not all(_sheet_rows(wb[n]) == reference for n in names[1:]):
+            continue  # divergem: mantem uma aba por membro
+
+        # Renomeia a primeira para o nome sem prefixo e descarta as demais.
+        wb[names[0]].title = base
+        for n in names[1:]:
+            wb.remove(wb[n])
+        collapsed.append(base)
+
+    # As abas fundidas valem para todos os membros, entao nao pertencem ao
+    # bloco de nenhum deles: vao para o fim, logo antes de `links` (que a
+    # chamadora cria depois). Sem isto ficariam no meio das abas do primeiro
+    # membro, sugerindo que sao dele.
+    for base in collapsed:
+        wb.move_sheet(base, offset=len(wb.sheetnames) - wb.sheetnames.index(base) - 1)
+
+    return collapsed
+
+
+def _export_unified_workbook(link_result, members, member_results, path: Path) -> list[str]:
+    """Um unico .xlsx com as abas de todos os membros, prefixadas por alias.
+
+    Cada membro mantem seu proprio esquema numa aba propria
+    (`lattes_sources`, `abstracts_sources`, ...) — nao se tenta fundir colunas
+    incompativeis (§6). O que a unificacao resolve e a circulacao (um anexo em
+    vez de N) e a ligacao: dentro de um workbook, referencias entre abas sao
+    estaveis, ao contrario de vinculos externos entre arquivos, que dependem
+    de caminho absoluto e quebram ao mover o arquivo.
+
+    Abas identicas entre todos os membros (tipicamente as da ontologia
+    compartilhada) sao fundidas numa so — ver _collapse_identical_sheets.
+
+    A aba `links` fecha o circuito: alem dos bibrefs qualificados, traz o
+    rotulo legivel de cada lado como VALOR (nao formula) — legivel por humano e
+    por pandas/openpyxl, que nao calculam formulas.
+
+    Returns:
+        Nomes das abas fundidas (vazio quando nenhuma coincidiu).
+    """
+    from synesis.exporters.xls_export import build_xls_workbook
+
+    wb = None
+    for m in members:
+        res = member_results[m.alias]
+        wb = build_xls_workbook(
+            res.linked_project, res.template,
+            res.bibliography, res.dataset,
+            workbook=wb, prefix=m.alias,
+        )
+
+    # Candidatas a fusao: abas cujo conteudo deriva da ontologia, nao das
+    # anotacoes do membro. `chains`/`code_frequency`/`items`/`sources` sao
+    # dados proprios de cada membro e nunca coincidem — nem se tenta.
+    # So quando TODOS os membros declaram INCLUDE SHARED ONTOLOGY.
+    collapsed: list[str] = []
+    if all(_shares_ontology(m.path) for m in members):
+        collapsed = _collapse_identical_sheets(
+            wb, [m.alias for m in members], ("ontologies", "topics")
+        )
+
+    _fill_links_sheet(link_result, members, member_results, wb.create_sheet("links"))
+    wb.save(path)
+    return collapsed
+
+
+def _links_rows(link_result, members, member_results):
+    """Linhas da tabela de arestas: cabecalho + arestas resolvidas + orfaos."""
+    from synesis.exporters._helpers import _get_source_field_value
+
+    label_field = {m.alias: _member_label_field(m.template) for m in members}
+
+    def _label(alias: str, qualified_bibref: str) -> str:
+        field = label_field.get(alias)
+        res = member_results.get(alias)
+        if not field or res is None or res.linked_project is None:
+            return ""
+        bibref = qualified_bibref.split(":@", 1)[-1]
+        source = res.linked_project.sources.get(bibref.lower())
+        if source is None:
+            source = res.linked_project.sources.get(bibref)
+        if source is None:
+            return ""
+        value = _get_source_field_value(
+            source, field, res.template, res.bibliography, res.dataset
+        )
+        text = "" if value is None else str(value)
+        return text[:200]
+
+    yield [
+        "entity", "value",
+        "from_member", "from_bibref", "from_label",
+        "to_member", "to_bibref", "to_label",
+    ]
+    for e in link_result.edges:
+        yield [
+            e.entity, e.value,
+            e.from_member, e.from_bibref, _label(e.from_member, e.from_bibref),
+            e.to_member, e.to_bibref, _label(e.to_member, e.to_bibref),
+        ]
+    for ent, val, mem in link_result.orphans:
+        yield [ent, val, mem, "", "", "(orphan)", "", ""]
+
+
+def _fill_links_sheet(link_result, members, member_results, ws) -> None:
+    """Preenche uma worksheet `links` e ajusta a largura das colunas."""
+    for row in _links_rows(link_result, members, member_results):
+        ws.append(row)
+    for column in ws.columns:
+        width = max((len(str(c.value)) for c in column if c.value), default=0)
+        ws.column_dimensions[column[0].column_letter].width = min(width + 2, 50)
+
+
+def _write_links_xlsx(link_result, members, member_results, path: Path) -> None:
+    """Escreve links.xlsx: arestas resolvidas + orfaos, com rotulo de cada lado.
+
+    Espelha o links.csv, mas acrescenta as colunas `from_label`/`to_label` —
+    sem elas a tabela e uma lista de chaves estrangeiras, ilegivel sem abrir os
+    .xlsx dos membros.
+    """
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "links"
+    _fill_links_sheet(link_result, members, member_results, ws)
+    wb.save(path)
+
+
 def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
     """Link step: compila N projetos isolados e resolve IDENTIFIES/REFERS TO entre eles.
 
@@ -552,6 +762,7 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
 
     members: list[Member] = []
     member_stats: list[tuple[str, CompilationStats, set]] = []
+    member_results: dict[str, object] = {}  # alias -> CompilationResult (para export por membro)
     member_errors = False
     for proj in projects:
         proj_path = Path(proj)
@@ -572,28 +783,22 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
             sources=result.linked_project.sources,
             path=proj_path,
             bibliography=result.bibliography or {},
+            dataset=result.dataset or {},
         ))
         # Conjunto de conceitos/codigos deste membro — chave para deduplicar
         # a ontologia compartilhada no agregado (INCLUDE SHARED ONTOLOGY faz
         # membros distintos carregarem os mesmos conceitos).
         concept_keys = set(result.linked_project.ontology_index.keys())
         member_stats.append((alias, result.stats, concept_keys))
+        member_results[alias] = result
 
     if member_errors:
         click.echo(click.style("erro: ao menos um membro falhou na compilacao — link abortado.", fg="red"), err=True)
         raise SystemExit(1)
 
-    # --xls/--alpaca ainda nao tem exportador por membro no link step (§6 do
-    # design: SOURCE FIELDS de membros distintos sao incompativeis, entao nao
-    # ha planilha/dataset unico coerente). Avisar em vez de ignorar em
-    # silencio — o usuario pedir --xls e nao ver arquivo nenhum e pior que
-    # um erro claro.
-    if xls_path:
-        click.echo(click.style(
-            "aviso: --xls ainda nao e suportado no passo de linkagem (multiplos projetos) "
-            "— nenhum arquivo .xlsx foi gerado. Exporte cada projeto separadamente.",
-            fg="yellow",
-        ), err=True)
+    # --alpaca ainda nao tem exportador por membro no link step. Avisar em vez
+    # de ignorar em silencio — o usuario pedir e nao ver arquivo nenhum e pior
+    # que um erro claro. (--xls e exportado por membro mais abaixo, §6.)
     if alpaca_path:
         click.echo(click.style(
             "aviso: --alpaca ainda nao e suportado no passo de linkagem (multiplos projetos) "
@@ -665,6 +870,45 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
                 for ent, val, mem in link_result.orphans:
                     w.writerow([ent, val, mem, "", "(orphan)", ""])
             click.echo(f"  links.csv -> {links_csv}")
+
+        if xls_path:
+            # §6: tabular POR MEMBRO — os SOURCE FIELDS de membros distintos sao
+            # incompativeis, entao nao ha TABELA unica coerente. Dois formatos,
+            # escolhidos pela extensao do argumento:
+            #   --xls saida.xlsx  -> ARQUIVO unico, abas prefixadas por membro
+            #                        (lattes_sources, abstracts_sources, ...)
+            #                        + aba links. Um anexo so; permite PROCV
+            #                        entre abas sem vinculo externo quebradico.
+            #   --xls saida/      -> DIRETORIO: um .xlsx por membro + links.xlsx.
+            # Em ambos cada membro mantem seu proprio esquema — o que se unifica
+            # e o arquivo, nunca as colunas.
+            target = Path(xls_path)
+            if target.suffix.lower() in (".xlsx", ".xls"):
+                collapsed = _export_unified_workbook(
+                    link_result, members, member_results, target
+                )
+                click.echo(f"  workbook unificado -> {target}")
+                if collapsed:
+                    click.echo(
+                        "    abas compartilhadas (identicas em todos os membros): "
+                        + ", ".join(collapsed)
+                    )
+            else:
+                target.mkdir(parents=True, exist_ok=True)
+                for m in members:
+                    res = member_results[m.alias]
+                    member_dir = target / m.alias
+                    member_dir.mkdir(parents=True, exist_ok=True)
+                    member_xlsx = member_dir / f"{m.alias}.xlsx"
+                    export_xls(
+                        res.linked_project, res.template, member_xlsx,
+                        res.bibliography, res.dataset,
+                    )
+                    click.echo(f"  {m.alias}.xlsx -> {member_xlsx}")
+
+                links_xlsx = target / "links.xlsx"
+                _write_links_xlsx(link_result, members, member_results, links_xlsx)
+                click.echo(f"  links.xlsx -> {links_xlsx}")
 
     raise SystemExit(exit_code)
 

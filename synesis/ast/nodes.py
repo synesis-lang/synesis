@@ -99,7 +99,12 @@ class FieldSpec:
     guidelines: Optional[str] = None
     identifies: Optional[str] = None
     refers_to: Optional[str] = None
-    value_origin: str = "document"
+    value_origin: str = "document"  # "document" | "bibliography" | "dataset"
+    # ON DATASET "<caminho>": caminho JSON-Pointer-com-ponto no registro TOML.
+    dataset_path: Optional[str] = None
+    # CONTEXT ... FROM DATASET "<seção>"[, ...]: seções TOML injetadas como
+    # contexto de geração deste campo (não são origem-de-valor).
+    context_from_dataset: Optional[List[str]] = None
     location: Optional[SourceLocation] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -116,6 +121,8 @@ class FieldSpec:
             "identifies": self.identifies,
             "refers_to": self.refers_to,
             "value_origin": self.value_origin,
+            "dataset_path": self.dataset_path,
+            "context_from_dataset": self.context_from_dataset,
             "location": self.location.to_dict() if self.location else None,
         }
 
