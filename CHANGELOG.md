@@ -6,6 +6,280 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.11.0] - 2026-08-04
+
+### Added — Ligação entre projetos visível na saída do link step
+
+- **Duas seções novas na saída de `synesis compile <p1> <p2> ...`**, exibidas
+  por padrão (não atrás de `--stats`). Estudo: `synesis-planning/synesis/`
+  `mockup_template_inspector/ESTUDO_LINK_STEP_GRAFO.md` e
+  `PROPOSTA_SAIDA_TOPOLOGIA.md`.
+
+  **Seção 1 — `Ligacao entre projetos:`** (estrutura): tabela de todos os pares
+  `IDENTIFIES`/`REFERS TO` declarados nos templates dos membros.
+
+  ```
+                ──────IDENTIFIES──────  ──────────REFERS TO──────────
+    ENTITY      PROJETO   CAMPO         PROJETO    CAMPO
+    company     empresas  empresa_slug  linkedin   empresa_atual_slug
+    profile     linkedin  slug          github     linkedin_slug
+                linkedin  slug          posts      slug
+    researcher  lattes    lattes_id     abstracts  lattes_id
+                lattes    lattes_id     linkedin   lattes_id
+  ```
+
+  As keywords são **cabeçalho de grupo** sobre o par `(PROJETO, CAMPO)`, não
+  nomes de coluna: `IDENTIFIES`/`REFERS TO` são propriedades de um `FIELD` e o
+  que vem depois delas é o rótulo da entidade — nunca um projeto. Nomear uma
+  coluna `IDENTIFIES` com um projeto embaixo inverteria a relação que o
+  template expressa.
+
+  Derivada dos **templates**, não do `LinkResult`: uma referência declarada
+  aparece mesmo que o projeto de origem ainda não tenha dados. Entidade sem
+  `IDENTIFIES` correspondente aparece com as colunas de origem em vermelho
+  (`(nenhum)`), tornando visível a falha estrutural que hoje só emerge como
+  warning solto.
+
+  **Seção 2 — `Resolucao das ligacoes:`** (estado): quanto cada referência
+  resolveu, decomposto por projeto e campo de origem.
+
+  ```
+    linkedin (empresa_atual_slug)  ->  company        0 resolvidas
+    github (linkedin_slug)         ->  profile      aguardando coleta
+    posts (slug)                   ->  profile      aguardando coleta
+    abstracts (lattes_id)          ->  researcher     7 resolvidas
+    linkedin (lattes_id)           ->  researcher    36 resolvidas    9 orfaos  (80%)
+
+    Projetos sem SOURCEs: posts, github, empresas  (nenhuma aresta pode resolver)
+  ```
+
+  Distingue **`aguardando coleta`** (projeto de origem sem SOURCEs — nenhuma
+  aresta *pode* resolver) de **`0 resolvidas`** (tem dados e nada casou): um
+  zero cru trataria as duas como falha. O campo de origem entre parênteses não
+  é decorativo — um mesmo projeto pode referenciar entidades distintas
+  (`linkedin` aparece duas vezes acima) e sem ele as linhas seriam
+  indistinguíveis.
+
+  Separadas porque respondem perguntas diferentes e mudam por motivos
+  diferentes: a estrutura muda quando alguém edita um `.synt`; a resolução
+  muda a cada coleta.
+
+- **Novo aviso no sumário do link step**: `⚠ N de M rotulos sem nenhuma
+  aresta: ...`. Sem ele, o `✓ N projetos linkados` lia como sucesso pleno
+  mesmo quando a maior parte da ligação projetada não existia — no corpus
+  Quinto Andar, 2 de 3 rótulos (`profile`, `company`) não resolvem nenhuma
+  aresta porque os projetos de origem ainda estão em coleta.
+
+### Added — `synesis export-snippets`: snippets de editor derivados
+
+- **Novo comando `synesis export-snippets`**, que gera snippets de bloco
+  `FIELD` (um por tipo, formato VS Code) a partir das regras da linguagem.
+  Escreve em stdout ou em arquivo com `-o`.
+
+  ```
+  $ synesis export-snippets -o snippets/synesis.code-snippets
+  10 snippets escritos em snippets\synesis.code-snippets
+  ```
+
+- **O corpo é derivado; só a ergonomia é curada.** Quais propriedades entram em
+  cada snippet vem de `get_field_type_info()` — portanto do validador. O que é
+  escrito à mão são prefixo (`field-chain`), posição dos tab-stops e nomes de
+  exemplo. É a mesma divisão adotada por rust-analyzer, TypeScript e Roslyn:
+  texto curado, aplicabilidade derivada.
+
+  Efeito prático já observado: o erro `E086` (acima) removeu `VALUES` do
+  snippet de `CHAIN` **automaticamente**, sem edição manual.
+
+- Arquivo gerado leva cabeçalho `GERADO — NAO EDITAR A MAO`, com a versão do
+  compilador que o produziu.
+
+- Verificado por teste permanente: **os 10 snippets, expandidos como o editor
+  faria, compilam sem erro nem warning**; os tab-stops são sequenciais e não se
+  repetem; nenhum snippet contém propriedade proibida para o seu tipo.
+
+### Added — `SYNESIS_E086`: `VALUES` fora de ORDERED/ENUMERATED
+
+- **Novo erro `ValuesOnNonEnumerable` (E086)**, simétrico a `FormatOnNonScale`
+  (E054), `ArityOnNonChain` (E055) e `RelationsOnNonChain` (E056).
+
+  Fecha uma lacuna real: um bloco `VALUES` era aceito em **qualquer** tipo de
+  campo, populado em `spec.values` e depois **silenciosamente ignorado**. Um
+  pesquisador podia escrever uma lista de opções em `TYPE CHAIN` ou `TYPE TEXT`
+  achando que restringia o vocabulário — e ela não tinha efeito nenhum, sem
+  erro nem warning.
+
+  ```
+  O campo 'nota' define um bloco `VALUES`, mas seu tipo e
+    `TEXT`. Blocos `VALUES` enumeram as opcoes validas de um
+    vocabulario fechado — eles so tem efeito em campos `ORDERED` (opcoes com
+    ordem, ex.: Baixo, Medio, Alto) ou `ENUMERATED` (opcoes sem ordem).
+    Em `TEXT` a lista seria ignorada na validacao.
+    Remova o bloco `VALUES` ou altere o tipo para `ORDERED`/`ENUMERATED`.
+  ```
+
+- **Como a lacuna foi encontrada:** pela sondagem de `language_info` (ver
+  abaixo). Ao derivar a matriz tipo×propriedade do próprio compilador, `VALUES`
+  apareceu como permitido nos 10 tipos, enquanto os três irmãos tinham guarda —
+  assimetria que nenhuma leitura de código havia revelado. A descrição
+  executável da linguagem funciona também como **auditoria** dela.
+
+- **Impacto medido antes de aplicar:** os 38 templates do corpus
+  `case-studies/` foram verificados — 34 via compilador, 4 por inspeção textual
+  (não parseiam por erros pré-existentes de indentação/sintaxe). **Zero casos**
+  de `VALUES` fora de ORDERED/ENUMERATED. Os 51 usos legítimos se dividem em 41
+  `ENUMERATED` e 10 `ORDERED`. Nenhum template real passa a falhar.
+
+- `synesis help-field` reflete a regra nova **automaticamente**: `VALUES` migrou
+  de "PROPRIEDADES OPCIONAIS" para "NÃO SE APLICAM A ESTE TIPO" nos oito tipos
+  afetados, sem qualquer alteração no módulo — a matriz é derivada, não copiada.
+
+### Added — `synesis help-field`: descrição executável da linguagem
+
+- **Novo módulo `synesis/language_info.py`** e comando `synesis help-field
+  <TIPO>`, que responde *"o que posso escrever num campo deste tipo?"*. Estudo:
+  `synesis-planning/synesis/estudo_help_e_snippets.md`.
+
+  Cobre uma lacuna estrutural: todo o tooling existente (autocomplete, hover,
+  `validate-template`) opera sobre um template que **já existe**; nada ajudava
+  quem está **escrevendo** um. Um pesquisador não tinha como descobrir que
+  `CHAIN` exige `ARITY` e aceita `RELATIONS` senão lendo template alheio ou
+  errando.
+
+  ```
+  📦 CAMPO TYPE CHAIN
+
+    📌 PROPRIEDADES OBRIGATORIAS
+      * ARITY   (erro E047 se ausente)
+
+    ✨ PROPRIEDADES OPCIONAIS
+      + RELATIONS
+      + VALUES
+      + DESCRIPTION
+      + GUIDELINES
+      + CONTEXT FROM DATASET
+
+    🚫 NAO SE APLICAM A ESTE TIPO
+      - FORMAT   (erro E054 se declarada)
+
+    💡 POR QUE ARITY E NECESSARIA?
+      O campo 'nome_do_campo' e do tipo CHAIN, mas nao declara `ARITY`.
+      [...]
+
+    🔗 LIGACAO ENTRE PROJETOS
+      IDENTIFIES / REFERS TO: apenas em SCOPE SOURCE
+  ```
+
+  Sem argumento, lista os tipos disponíveis.
+
+  Apresentação orientada ao **pesquisador qualitativo**, não ao programador: o
+  código de erro sai contextualizado (`erro E047 se ausente`) em vez de solto
+  numa coluna, e ícones marcam a hierarquia das seções — com degradação
+  automática para terminal sem suporte a Unicode, via `_safe_glyph()`.
+
+- **A matriz é derivada do compilador por sondagem, nunca escrita à mão.** Para
+  cada par (tipo, propriedade), o módulo monta um template mínimo em memória,
+  compila e lê o código de erro: erro na ausência ⇒ obrigatória; erro na
+  presença ⇒ proibida; sem erro ⇒ permitida. A classificação é **consequência
+  observada do validador** — se uma regra mudar em `template_loader.py`, a
+  resposta muda junto, sem segunda verdade a manter sincronizada.
+
+  Fronteira registrada no módulo: o *andaime* dos templates de sondagem é fixo
+  (é o mínimo sintático que o compilador aceita); a lista de tipos (enum
+  `FieldType`), a lista de escopos (enum `Scope`), a classificação e o texto
+  didático são derivados. Um tipo novo no enum passa a ser descrito sem tocar
+  no módulo.
+
+- **O texto explicativo reaproveita `to_diagnostic()`** — a mesma prosa que o
+  pesquisador vê ao errar. Ajuda e diagnóstico não podem divergir porque têm
+  uma fonte só.
+
+- Custo: ~36 ms para um tipo, ~57 ms para a matriz completa. Roda sob demanda,
+  em memória — sem cache, sem arquivo gerado, sem I/O.
+
+### Changed — Estatísticas do link step reestruturadas
+
+- **`Estatisticas por membro:` virou tabela com colunas alinhadas e linha de
+  TOTAL**, no lugar de `k=v` concatenado por linha. Números de projetos
+  diferentes passam a ser comparáveis verticalmente:
+
+  ```
+    PROJETO    SOURCES  ITEMS  CHAINS
+    posts            0      0       0
+    linkedin        72    721       0
+    lattes          46    403      35
+    ─────────  ───────  ─────  ──────
+    TOTAL          125  1.156      81
+  ```
+
+  Projeto ainda sem SOURCEs sai em cinza: os zeros são ausência de coleta, não
+  resultado de compilação.
+
+- **Ontologia saiu da tabela por membro e virou bloco próprio.** Com
+  `INCLUDE SHARED ONTOLOGY` a contagem é idêntica em todos os membros, então
+  repeti-la em cada linha imprimia o mesmo número N vezes sem informação nova
+  (no corpus Quinto Andar: `Ontologies=144, Codes=144` seis vezes):
+
+  ```
+  Ontologia compartilhada:
+
+    144 conceitos, identica nos 6 projetos  (INCLUDE SHARED ONTOLOGY)
+  ```
+
+  Rótulo cai para `Ontologia:` quando não há sobreposição entre membros; o
+  bloco é omitido por completo quando não há conceito nenhum.
+
+- **Coluna `Codes` removida** da saída. Ela repetia `Ontologies`: `code_count`
+  conta as chaves de `ontology_index`, construído a partir da mesma lista de
+  blocos ONTOLOGY. As duas só divergiriam se dois blocos colapsassem na mesma
+  chave normalizada — o que é erro duro (E068, conceito duplicado, detectado
+  inclusive entre arquivos) e aborta a compilação antes da exibição. O
+  agregado mantém uma única linha `Shared ontology`/`Ontology`.
+  `CompilationStats.code_count` permanece na API — só deixou de ser impresso.
+
+### Notas
+
+- Mudança estritamente de **apresentação**: nenhuma alteração em gramática,
+  AST, linker ou semântica; sem efeito em exit code. Todos os dados exibidos
+  já eram calculados — `LinkResult.entity_owners` e `ResolvedEdge.from_member`
+  só eram consumidos no payload `--json`, nunca na saída de terminal.
+- Régua do cabeçalho de grupo degrada para ASCII (`-`) em terminal que não
+  aceite box-drawing, via novo helper `_safe_glyph()`.
+
+### Fixed — CI verde com zero testes executados
+
+- **O passo de testes tolerava exit code 5 do pytest** (`no tests collected`),
+  tratando-o como sucesso:
+
+  ```
+  python -c "... sys.exit(0 if code == 5 else code)"   # antes
+  pytest --cov=synesis --cov-report=xml --cov-report=term   # agora
+  ```
+
+  Não era hipotético: no `synesis-lsp` o mesmo padrão mascarou uma quebra real
+  — com `jsonschema` desatualizado, `tests/test_contract.py` falhava no import,
+  abortava a coleta inteira, e o CI reportava **verde com zero testes
+  executados**. Corrigido também em `synesis-lsp`, `synesis-graph` e
+  `synesis-coder`.
+
+- **`ruff check synesis/` falhava** por imports fora de ordem em
+  `semantic/validator.py` (`MissingBundleField` depois de
+  `MissingDatasetValue`). Como o ruff é bloqueante, era causa direta de falha
+  de CI. Pré-existente, não relacionado às features desta versão.
+
+- **21 erros de lint em `tests/`** corrigidos (imports não usados e fora de
+  ordem, incluindo `import pytest` sem nenhuma chamada em dois arquivos).
+
+- **Baseline de mypy do workflow atualizado**: declarava 229 erros "as of
+  2026-07-13", a contagem real era 257. Um baseline defasado deixa de servir
+  como referência de dívida. Permanece não-bloqueante.
+
+### Changed — Dependência de desenvolvimento
+
+- `jsonschema` exige efetivamente `>=4.18` (já declarado). Ambientes com a
+  série 3.x quebram a coleta de testes do `synesis-lsp`; a migração de
+  `RefResolver` (deprecado em 4.18) para `referencing` foi feita lá.
+
+
 ## [0.10.0] - 2026-07-24
 
 ### Licença — MIT → AGPL-3.0-only + Synesis Data-Output Exception

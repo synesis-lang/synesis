@@ -8,23 +8,22 @@ Gerado conforme: Especificacao Synesis v3.0
 """
 
 import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 import synesis
 from synesis.exporters.alpaca_export import (
+    _format_citation,
+    _is_sentinel_value,
     build_alpaca_pairs,
     export_alpaca,
-    _format_citation,
-    _format_authors,
-    _is_sentinel_value,
 )
 from tests.conftest import (
-    PROJECT_CONTENT,
-    TEMPLATE_BASIC,
     BIBLIOGRAPHY_BASIC,
     ONTOLOGY_VALID,
-    ANNOTATIONS_VALID,
+    PROJECT_CONTENT,
+    TEMPLATE_BASIC,
     TEMPLATE_WITH_CHAIN,
 )
 

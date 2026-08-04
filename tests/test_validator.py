@@ -7,7 +7,6 @@ Cobre: campos REQUIRED/OPTIONAL/FORBIDDEN, tipos, BUNDLE, CHAIN, ORDERED,
 Gerado conforme: Especificacao Synesis v1.1
 """
 
-import pytest
 from pathlib import Path
 
 from synesis.ast.nodes import (
@@ -16,11 +15,11 @@ from synesis.ast.nodes import (
     FieldType,
     ItemNode,
     OntologyNode,
+    OrderedValue,
     Scope,
     SourceLocation,
     SourceNode,
     TemplateNode,
-    OrderedValue,
 )
 from synesis.ast.results import (
     BundleCountMismatch,
@@ -38,7 +37,6 @@ from synesis.ast.results import (
     UnregisteredSource,
 )
 from synesis.semantic.validator import SemanticValidator
-
 
 # ===========================================================================
 # Helpers

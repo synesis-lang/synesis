@@ -138,6 +138,10 @@ def _build_main_help() -> str:
             ("check",             "Validates the syntax and integrity of a single file"),
             ("validate-template", "Verifies the structure and consistency of a template file"),
         ]),
+        ("Language Reference", [
+            ("help-field",        "Shows which properties a field type accepts, requires or forbids"),
+            ("export-snippets",   "Generates editor snippets (VS Code) from the language rules"),
+        ]),
     ]
 
     opt_rows = [
@@ -283,6 +287,22 @@ _EPILOG_VALIDATE_TEMPLATE = _ex(
 _EPILOG_INIT = _ex(
     "  # Initialize a new project in the current directory",
     "  synesis init",
+)
+
+_EPILOG_HELP_FIELD = _ex(
+    "  # What can a CHAIN field declare?",
+    "  synesis help-field CHAIN",
+    "",
+    "  # List the available field types",
+    "  synesis help-field",
+)
+
+_EPILOG_EXPORT_SNIPPETS = _ex(
+    "  # Print editor snippets to stdout",
+    "  synesis export-snippets",
+    "",
+    "  # Regenerate the VS Code extension snippets file",
+    "  synesis export-snippets -o snippets/synesis.code-snippets",
 )
 
 
@@ -824,6 +844,25 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
         if n_orphans:
             click.echo(click.style(f"⚠ {n_orphans} REFERS TO orfao(s) (valor sem IDENTIFIES correspondente).", fg="yellow"))
 
+        # Rotulos declarados que nao produziram nenhuma aresta. Sem isto o `✓`
+        # acima le como sucesso pleno mesmo quando a maior parte da ligacao
+        # projetada nao existe (projetos de origem ainda sem dados).
+        declared_entities = {row[0] for row in _link_declarations(members)}
+        if declared_entities:
+            resolved_entities = {e.entity for e in link_result.edges}
+            unresolved = sorted(declared_entities - resolved_entities)
+            if unresolved:
+                labels = ", ".join(f"'{e}'" for e in unresolved)
+                click.echo(click.style(
+                    f"⚠ {len(unresolved)} de {len(declared_entities)} rotulos sem nenhuma aresta: {labels}.",
+                    fg="yellow",
+                ))
+
+        click.echo("")
+        _print_link_topology(members)
+        click.echo("")
+        _print_link_resolution(members, link_result)
+
         if stats:
             click.echo("")
             _print_link_stats(member_stats, n_edges, n_orphans)
@@ -937,6 +976,71 @@ def validate_template(template: str) -> None:
     except (SynesisSyntaxError, TemplateLoadError) as exc:
         click.echo(str(exc), err=True)
         raise SystemExit(1)
+
+
+@main.command(name="help-field", cls=_SynesisCommand, epilog=_EPILOG_HELP_FIELD)
+@click.argument("field_type", required=False)
+def help_field(field_type: str | None) -> None:
+    """Show which properties a field type accepts, requires or forbids."""
+    from synesis.language_info import (
+        field_type_names,
+        get_field_type_info,
+        get_linkage_info,
+    )
+
+    if not field_type:
+        click.echo("")
+        click.echo(click.style("Tipos de campo disponiveis:", bold=True))
+        click.echo("")
+        for name in field_type_names():
+            click.echo("  " + click.style(name, fg="green"))
+        click.echo("")
+        click.echo(click.style(
+            "Use 'synesis help-field <TIPO>' para ver o que cada um exige e aceita.",
+            fg="bright_black",
+        ))
+        click.echo("")
+        return
+
+    info = get_field_type_info(field_type)
+    if info is None:
+        click.echo(click.style(
+            f"erro: tipo de campo desconhecido: `{field_type}`", fg="red"), err=True)
+        click.echo("Tipos validos: " + ", ".join(field_type_names()), err=True)
+        raise SystemExit(1)
+
+    _print_field_type_help(info, get_linkage_info())
+
+
+@main.command(name="export-snippets", cls=_SynesisCommand,
+              epilog=_EPILOG_EXPORT_SNIPPETS)
+@click.option("-o", "--output", type=click.Path(),
+              help="Write to this file instead of stdout.")
+def export_snippets(output: str | None) -> None:
+    """Generate editor snippets (VS Code format) from the language rules."""
+    import json as _json
+
+    from synesis.language_info import build_editor_snippets
+
+    payload = _json.dumps(build_editor_snippets(), indent=2, ensure_ascii=False)
+    # Cabecalho para que ninguem edite o arquivo a mao: o conteudo e derivado
+    # do compilador e qualquer ajuste local se perde na proxima geracao.
+    header = (
+        "// GERADO por `synesis export-snippets` — NAO EDITAR A MAO.\n"
+        f"// Fonte: synesis {VERSION}, modulo language_info.\n"
+        "// Quais propriedades entram em cada snippet derivam do validador;\n"
+        "// para regenerar apos mudanca na linguagem, rode o comando de novo.\n"
+    )
+    content = header + payload + "\n"
+
+    if output:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(content, encoding="utf-8")
+        n = len(build_editor_snippets())
+        click.echo(click.style(f"{n} snippets escritos em {out_path}", fg="green"))
+    else:
+        click.echo(content, nl=False)
 
 
 @main.command(cls=_SynesisCommand, epilog=_EPILOG_INIT)
@@ -1147,35 +1251,341 @@ def _print_stats(stats) -> None:
         click.echo(f"  {label:<{label_width}}  {formatted_n:>{num_width}}")
 
 
+#: Ordem de exibicao das propriedades — as especificas de tipo primeiro, as
+#: universais depois. Nomes fora da lista vao para o fim.
+_PROPERTY_DISPLAY_ORDER = (
+    "ARITY", "FORMAT", "RELATIONS", "VALUES",
+    "DESCRIPTION", "GUIDELINES", "CONTEXT FROM DATASET",
+)
+
+
+def _print_field_type_help(info, linkage_by_scope) -> None:
+    """Renderiza `synesis help-field <TIPO>`.
+
+    Todo o conteudo vem de `language_info` (derivado do compilador por
+    sondagem) — esta funcao so decide ordem, cor, rotulos e espacamento.
+
+    Publico-alvo e o pesquisador qualitativo, nao o programador: por isso o
+    codigo de erro sai contextualizado ("erro E047 se ausente") em vez de
+    solto numa coluna, e os rotulos evitam abreviacao tecnica.
+    """
+    def _rank(prop) -> int:
+        try:
+            return _PROPERTY_DISPLAY_ORDER.index(prop.name)
+        except ValueError:
+            return len(_PROPERTY_DISPLAY_ORDER)
+
+    click.echo("")
+    click.echo(
+        _safe_glyph("\U0001f4e6 ", "")
+        + click.style(f"CAMPO TYPE {info.name}", fg="green", bold=True)
+    )
+
+    def _section(icon: str, title: str, items, color: str,
+                 marker: str, condition: str) -> None:
+        if not items:
+            return
+        ordered = sorted(items, key=_rank)
+        # Alinha o codigo de erro apenas entre os itens que o possuem; sem
+        # isso, linhas sem codigo ficariam com espacos sobrando a direita.
+        width = max((len(p.name) for p in ordered if p.error_code), default=0)
+        click.echo("")
+        click.echo("  " + _safe_glyph(icon + " ", "") + click.style(title, bold=True))
+        for prop in ordered:
+            if prop.error_code:
+                short = prop.error_code.replace("SYNESIS_", "")
+                tail = click.style(f"   (erro {short} {condition})", fg="bright_black")
+                name = prop.name.ljust(width)
+            else:
+                tail = ""
+                name = prop.name
+            click.echo(f"    {click.style(marker, fg=color)} {name}{tail}")
+
+    _section("\U0001f4cc", "PROPRIEDADES OBRIGATORIAS",
+             info.required, "yellow", "*", "se ausente")
+    _section("✨", "PROPRIEDADES OPCIONAIS",
+             info.allowed, "green", "+", "")
+    _section("\U0001f6ab", "NAO SE APLICAM A ESTE TIPO",
+             info.forbidden, "red", "-", "se declarada")
+
+    # Texto didatico do proprio compilador — a mesma prosa que o pesquisador
+    # veria ao errar. Reaproveitar garante que ajuda e diagnostico nunca
+    # divirjam.
+    for prop in sorted(info.required, key=_rank):
+        if not prop.explanation:
+            continue
+        click.echo("")
+        click.echo(
+            "  " + _safe_glyph("\U0001f4a1 ", "")
+            + click.style(f"POR QUE {prop.name} E NECESSARIA?", bold=True)
+        )
+        for line in prop.explanation.splitlines():
+            click.echo("    " + click.style(line.strip(), fg="bright_black"))
+
+    scopes_allowing_linkage = [
+        scope for scope, props in linkage_by_scope.items()
+        if all(p.requirement.value == "allowed" for p in props)
+    ]
+    if scopes_allowing_linkage:
+        click.echo("")
+        click.echo(
+            "  " + _safe_glyph("\U0001f517 ", "")
+            + click.style("LIGACAO ENTRE PROJETOS", bold=True)
+        )
+        click.echo(
+            "    " + click.style(
+                "IDENTIFIES / REFERS TO: apenas em SCOPE "
+                + ", ".join(scopes_allowing_linkage),
+                fg="bright_black",
+            )
+        )
+    click.echo("")
+
+
+def _safe_glyph(preferred: str, fallback: str) -> str:
+    """Retorna `preferred` se o stdout atual conseguir codifica-lo.
+
+    Terminais legados (cp437/cp1252 no Windows) nao aceitam box-drawing e
+    quebrariam a saida com UnicodeEncodeError.
+    """
+    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        preferred.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return fallback
+    return preferred
+
+
+def _link_declarations(members) -> list[tuple[str, str, str, str, str]]:
+    """Extrai as ligacoes DECLARADAS nos templates dos membros.
+
+    Retorna tuplas (entity, owner_alias, owner_field, ref_alias, ref_field),
+    uma por par IDENTIFIES/REFERS TO, ordenadas por entidade e projeto.
+
+    Deriva dos TEMPLATES, nao do LinkResult: uma referencia declarada aparece
+    aqui mesmo que nao resolva nenhuma aresta (projeto sem dados ainda). E o
+    mapa de estrutura, nao de estado — ver Secao 1 vs Secao 2 na saida.
+
+    `owner_alias` fica vazio quando nenhum membro declara IDENTIFIES para a
+    entidade: e a falha estrutural que a tabela torna visivel (coluna vazia).
+    """
+    owners: dict[str, tuple[str, str]] = {}       # entity -> (alias, field)
+    refs: list[tuple[str, str, str]] = []          # (entity, alias, field)
+    for m in members:
+        for fname, spec in m.template.field_specs.items():
+            if getattr(spec, "identifies", None):
+                owners.setdefault(spec.identifies, (m.alias, fname))
+            if getattr(spec, "refers_to", None):
+                refs.append((spec.refers_to, m.alias, fname))
+
+    rows: list[tuple[str, str, str, str, str]] = []
+    for entity, ref_alias, ref_field in refs:
+        owner_alias, owner_field = owners.get(entity, ("", ""))
+        rows.append((entity, owner_alias, owner_field, ref_alias, ref_field))
+    rows.sort(key=lambda r: (r[0], r[3], r[4]))
+    return rows
+
+
+def _print_link_topology(members) -> None:
+    """Secao 1 — ESTRUTURA: como os projetos se ligam (sem numeros).
+
+    IDENTIFIES e REFERS TO sao propriedades de um FIELD, e o que vem depois
+    delas e o rotulo da entidade — nunca um projeto. Por isso a keyword vira
+    cabecalho de GRUPO sobre o par (PROJETO, CAMPO), em vez de nome de coluna:
+    nomear uma coluna `IDENTIFIES` com um projeto embaixo inverteria a relacao
+    que o template expressa.
+    """
+    rows = _link_declarations(members)
+    if not rows:
+        return
+
+    # Placeholders de entidade sem IDENTIFIES entram no calculo de largura:
+    # '(nenhum)' e mais longo que muitos nomes de projeto e desalinharia a
+    # tabela se so os valores reais fossem medidos.
+    no_owner, no_field = "(nenhum)", "-"
+    display = [
+        (
+            entity,
+            owner_alias or no_owner,
+            owner_field or no_field,
+            ref_alias,
+            ref_field,
+        )
+        for entity, owner_alias, owner_field, ref_alias, ref_field in rows
+    ]
+
+    headers = ("ENTITY", "PROJETO", "CAMPO", "PROJETO", "CAMPO")
+    widths = [
+        max(len(headers[i]), max(len(r[i]) for r in display))
+        for i in range(5)
+    ]
+
+    click.echo(click.style("Ligacao entre projetos:", bold=True))
+    click.echo("")
+
+    # Cabecalho de grupo: a regua tambem separa cabecalho de dados, dispensando
+    # uma linha divisoria propria. Degrada para '-' em terminal que nao aceite
+    # o box-drawing (mesma limitacao dos glifos ✓/⚠ ja usados na saida).
+    rule = _safe_glyph("─", "-")
+    g_ident = widths[1] + widths[2] + 2
+    g_refs = widths[3] + widths[4] + 2
+    click.echo(
+        "  " + " " * widths[0] + "  "
+        + click.style("IDENTIFIES".center(g_ident, rule), fg="yellow", bold=True)
+        + "  "
+        + click.style("REFERS TO".center(g_refs, rule), fg="yellow", bold=True)
+    )
+    click.echo(
+        "  " + "  ".join(
+            click.style(h.ljust(widths[i]), bold=True) for i, h in enumerate(headers)
+        ).rstrip()
+    )
+
+    colors = ["yellow", "cyan", None, "cyan", None]
+    previous_entity = None
+    for row in display:
+        entity = row[0]
+        # Entidade sem IDENTIFIES declarado: nenhum REFERS TO dela resolvera.
+        orphan_label = row[1] == no_owner
+        cells_raw = ["" if entity == previous_entity else entity, *row[1:]]
+        previous_entity = entity
+        cells = []
+        for i, raw in enumerate(cells_raw):
+            color = "red" if (orphan_label and i in (1, 2)) else colors[i]
+            padded = raw.ljust(widths[i])
+            cells.append(click.style(padded, fg=color) if color else padded)
+        click.echo("  " + "  ".join(cells).rstrip())
+
+
+def _print_link_resolution(members, link_result) -> None:
+    """Secao 2 — ESTADO: quanto cada ligacao resolveu (numeros).
+
+    Separada da topologia porque responde outra pergunta e muda por outro
+    motivo: a estrutura muda quando alguem edita um .synt; a resolucao muda a
+    cada coleta. `orphans` do LinkResult nao guarda o campo de origem, entao a
+    agregacao usa (entity, member) — chave suficiente porque um mesmo projeto
+    nao declara dois REFERS TO para a mesma entidade.
+    """
+    rows = _link_declarations(members)
+    if not rows:
+        return
+
+    edges: dict[tuple[str, str], int] = {}
+    for e in link_result.edges:
+        edges[(e.entity, e.from_member)] = edges.get((e.entity, e.from_member), 0) + 1
+    orphans: dict[tuple[str, str], int] = {}
+    for entity, _value, member in link_result.orphans:
+        orphans[(entity, member)] = orphans.get((entity, member), 0) + 1
+
+    empty_projects = [m.alias for m in members if not m.sources]
+
+    origins = [f"{ref_alias} ({ref_field})" for _e, _oa, _of, ref_alias, ref_field in rows]
+    entities = [r[0] for r in rows]
+    w_origin = max(len(o) for o in origins)
+    w_entity = max(len(e) for e in entities)
+
+    click.echo(click.style("Resolucao das ligacoes:", bold=True))
+    click.echo("")
+    for (entity, _oa, _of, ref_alias, ref_field), origin in zip(rows, origins):
+        n_edges = edges.get((entity, ref_alias), 0)
+        n_orphans = orphans.get((entity, ref_alias), 0)
+        if n_edges or n_orphans:
+            status = click.style(f"{n_edges:>3d} resolvidas", fg="green")
+            if n_orphans:
+                total = n_edges + n_orphans
+                status += (
+                    click.style(f"   {n_orphans:>2d} orfaos", fg="yellow")
+                    + f"  ({100 * n_edges / total:.0f}%)"
+                )
+        elif ref_alias in empty_projects:
+            # Distingue "ainda nao coletou" de "coletou e nada casou": um zero
+            # cru trataria as duas como falha.
+            status = "aguardando coleta"
+        else:
+            status = f"{0:>3d} resolvidas"
+        # Padding calculado sobre o texto sem cor: click.style acrescenta
+        # escapes ANSI que quebrariam um ljust() aplicado depois.
+        padding = " " * (w_origin - len(f"{ref_alias} ({ref_field})"))
+        click.echo(
+            "  " + click.style(ref_alias, fg="cyan") + f" ({ref_field})" + padding
+            + "  ->  " + click.style(entity.ljust(w_entity), fg="yellow")
+            + "   " + status
+        )
+
+    if empty_projects:
+        click.echo("")
+        click.echo(
+            "  Projetos sem SOURCEs: "
+            + click.style(", ".join(empty_projects), fg="red")
+            + "  (nenhuma aresta pode resolver)"
+        )
+
+
 def _print_link_stats(
     member_stats: list[tuple[str, CompilationStats, set]], n_edges: int, n_orphans: int
 ) -> None:
-    """Estatisticas do passo de linkagem: por membro + agregado.
+    """Estatisticas do passo de linkagem: por membro + ontologia + agregado.
 
-    Sources/Items/Chains sao PROPRIOS de cada membro -> soma simples. Ja a
-    ontologia e compartilhada (INCLUDE SHARED ONTOLOGY): somar os contadores
-    daria valor duplicado (74 + 74 = 148 para uma unica ontologia de 74
-    conceitos). Por isso ontologia/codigos sao DEDUPLICADOS pela uniao dos
-    conjuntos de conceitos, e rotulados como "Shared ..." quando ha sobreposicao.
+    Sources/Items/Chains sao PROPRIOS de cada membro -> soma simples e tabela
+    por projeto. Ja a ontologia e tipicamente compartilhada (INCLUDE SHARED
+    ONTOLOGY): repeti-la em cada linha da tabela seria a mesma contagem
+    impressa N vezes, sem informacao nova. Por isso ela sai da tabela e vira um
+    bloco proprio, deduplicado pela uniao dos conjuntos de conceitos.
     """
-    # Campos proprios de cada membro (agregam por soma).
     own_fields = [
-        ("Sources", "source_count"),
-        ("Items",   "item_count"),
-        ("Chains",  "chain_count"),
+        ("SOURCES", "source_count"),
+        ("ITEMS",   "item_count"),
+        ("CHAINS",  "chain_count"),
     ]
-    # Por-membro tambem exibimos ontologia/codigos (o valor local de cada um).
-    per_member_fields = own_fields + [("Ontologies", "ontology_count"), ("Codes", "code_count")]
 
-    alias_width = max(len(alias) for alias, _s, _k in member_stats)
+    # --- Tabela por membro: colunas alinhadas a direita (numeros comparaveis) ---
+    headers = ("PROJETO", *(label for label, _ in own_fields))
+    body = [
+        (alias, *(f"{getattr(s, attr):,}".replace(",", ".") for _label, attr in own_fields))
+        for alias, s, _keys in member_stats
+    ]
+    totals = tuple(
+        f"{sum(getattr(s, attr) for _a, s, _k in member_stats):,}".replace(",", ".")
+        for _label, attr in own_fields
+    )
+    widths = [
+        max(len(headers[i]), len("TOTAL") if i == 0 else len(totals[i - 1]),
+            max(len(r[i]) for r in body))
+        for i in range(len(headers))
+    ]
 
     click.echo(click.style("Estatisticas por membro:", bold=True))
-    for alias, s, _keys in member_stats:
-        click.echo(f"  {click.style(alias.ljust(alias_width), fg='cyan')}  " + ", ".join(
-            f"{label}={getattr(s, attr):,}".replace(",", ".") for label, attr in per_member_fields
-        ))
+    click.echo("")
+    click.echo(
+        "  " + click.style(headers[0].ljust(widths[0]), bold=True) + "  "
+        + "  ".join(click.style(headers[i].rjust(widths[i]), bold=True)
+                    for i in range(1, len(headers)))
+    )
+    for row in body:
+        # Projeto ainda sem SOURCEs: linha inteira em cinza — os zeros sao
+        # ausencia de coleta, nao resultado de compilacao.
+        dim = row[1] == "0"
+        click.echo(
+            "  " + click.style(row[0].ljust(widths[0]), fg="bright_black" if dim else "cyan")
+            + "  " + "  ".join(
+                click.style(row[i].rjust(widths[i]), fg="bright_black") if dim
+                else row[i].rjust(widths[i])
+                for i in range(1, len(headers))
+            )
+        )
+    rule = _safe_glyph("─", "-")
+    click.echo(
+        "  " + click.style(rule * widths[0], fg="bright_black") + "  "
+        + "  ".join(click.style(rule * widths[i], fg="bright_black")
+                    for i in range(1, len(headers)))
+    )
+    click.echo(
+        "  " + click.style("TOTAL".ljust(widths[0]), bold=True) + "  "
+        + "  ".join(click.style(totals[i - 1].rjust(widths[i]), bold=True)
+                    for i in range(1, len(headers)))
+    )
 
-    # Uniao deduplicada dos conceitos/codigos da ontologia compartilhada.
+    # --- Ontologia: uniao deduplicada dos conceitos de todos os membros ---
     all_concepts: set = set()
     for _alias, _s, keys in member_stats:
         all_concepts |= keys
@@ -1183,14 +1593,31 @@ def _print_link_stats(
     summed_ontology = sum(s.ontology_count for _a, s, _k in member_stats)
     shared = summed_ontology > unique_ontology  # ha sobreposicao entre membros
 
+    if unique_ontology or summed_ontology:
+        click.echo("")
+        click.echo(click.style(
+            "Ontologia compartilhada:" if shared else "Ontologia:", bold=True))
+        click.echo("")
+        n_members = len(member_stats)
+        if shared:
+            detail = f"identica nos {n_members} projetos"
+            suffix = click.style("  (INCLUDE SHARED ONTOLOGY)", fg="bright_black")
+        else:
+            detail = f"em {n_members} projeto(s)"
+            suffix = ""
+        # Nao ha caso a reportar de blocos != conceitos: conceito duplicado
+        # (mesmo diferindo so em caixa) e erro duro E068, detectado inclusive
+        # entre arquivos, e aborta a compilacao antes de chegar aqui.
+        click.echo(
+            f"  {unique_ontology:,}".replace(",", ".")
+            + f" conceitos, {detail}" + suffix
+        )
+
     rows: list[tuple[str, int]] = [
-        (label, sum(getattr(s, attr) for _a, s, _k in member_stats))
+        (label.capitalize(), sum(getattr(s, attr) for _a, s, _k in member_stats))
         for label, attr in own_fields
     ]
-    onto_label = "Shared ontology" if shared else "Ontologies"
-    code_label = "Shared codes" if shared else "Codes"
-    rows.append((onto_label, unique_ontology))
-    rows.append((code_label, unique_ontology))
+    rows.append(("Shared ontology" if shared else "Ontology", unique_ontology))
     rows.append(("Edges", n_edges))
     rows.append(("Orphans", n_orphans))
 

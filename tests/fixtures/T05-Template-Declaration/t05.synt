@@ -181,6 +181,21 @@ FIELD nota_com_relacoes TYPE TEXT
 END FIELD
 
 # ---------------------------------------------------------------------------
+# ERRO 86 (ERRO):
+#   VALUES definido em campo que não é TYPE ORDERED nem ENUMERATED.
+#   "nota_com_valores" é TYPE TEXT mas define bloco VALUES — a lista seria
+#   aceita, populada em spec.values e silenciosamente ignorada.
+#   Esperado: ValuesOnNonEnumerable para 'nota_com_valores'.
+# ---------------------------------------------------------------------------
+FIELD nota_com_valores TYPE TEXT
+    SCOPE ITEM
+    VALUES
+        [1] baixo: Nivel inferior
+        [2] alto: Nivel superior
+    END VALUES
+END FIELD
+
+# ---------------------------------------------------------------------------
 # ERRO 58 (ERRO):
 #   Valor em bloco VALUES com espaço no início ou no fim.
 #   "status_espaco" tem o valor "Ativo " (com espaço no final).

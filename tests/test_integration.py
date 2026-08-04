@@ -1,6 +1,8 @@
 """test_integration.py - Integration tests for case-studies/Tests projects."""
-import pytest
 from pathlib import Path
+
+import pytest
+
 from synesis.compiler import SynesisCompiler
 
 TESTS_ROOT = Path(__file__).parent / "fixtures"
@@ -64,6 +66,7 @@ class TestT05:
     def test_format_on_non_scale(self): assert "SYNESIS_E054" in ecodes(_compile("T05-Template-Declaration"))
     def test_arity_on_non_chain(self): assert "SYNESIS_E055" in ecodes(_compile("T05-Template-Declaration"))
     def test_relations_on_non_chain(self): assert "SYNESIS_E056" in ecodes(_compile("T05-Template-Declaration"))
+    def test_values_on_non_enumerable(self): assert "SYNESIS_E086" in ecodes(_compile("T05-Template-Declaration"))
     def test_duplicate_value(self): assert "SYNESIS_E059" in ecodes(_compile("T05-Template-Declaration"))
 
 
@@ -129,8 +132,8 @@ class TestT09OptionalBundle:
     """WI-4: OPTIONAL BUNDLE — ausência total válida; parcial e mismatch geram erros."""
 
     def test_template_loads_optional_bundle(self):
-        from synesis.parser.template_loader import load_template
         from synesis.ast.nodes import Scope
+        from synesis.parser.template_loader import load_template
         project_dir = TESTS_ROOT / "T09-OptionalBundle"
         template = load_template(project_dir / "t09.synt")
         assert Scope.ITEM in template.optional_bundles

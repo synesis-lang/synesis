@@ -956,6 +956,38 @@ class RelationsOnNonChain(ValidationError):
 
 
 @dataclass(frozen=True)
+class ValuesOnNonEnumerable(ValidationError):
+    """VALUES definido em campo que nao e ORDERED nem ENUMERATED. (erro 86)
+
+    Simetrico a FormatOnNonScale (E054), ArityOnNonChain (E055) e
+    RelationsOnNonChain (E056): fecha a lacuna em que um bloco `VALUES` era
+    aceito em qualquer tipo, populado em `spec.values` e silenciosamente
+    ignorado — o pesquisador escrevia uma lista de valores que nao restringia
+    nada.
+    """
+
+    field_name: str
+    field_type: str
+    CODE: ClassVar[str] = "SYNESIS_E086"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O campo '{self.field_name}' define um bloco `VALUES`, mas seu tipo e\n"
+            f"  `{self.field_type}`. Blocos `VALUES` enumeram as opcoes validas de um\n"
+            f"  vocabulario fechado — eles so tem efeito em campos `ORDERED` (opcoes com\n"
+            f"  ordem, ex.: Baixo, Medio, Alto) ou `ENUMERATED` (opcoes sem ordem).\n"
+            f"  Em `{self.field_type}` a lista seria ignorada na validacao.\n"
+            f"  Remova o bloco `VALUES` ou altere o tipo para `ORDERED`/`ENUMERATED`."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"VALUES declarado em `{self.field_name}` (tipo {self.field_type}) "
+            f"— VALUES e exclusivo de ORDERED/ENUMERATED"
+        )
+
+
+@dataclass(frozen=True)
 class DuplicateScopeBlock(ValidationError):
     """Dois ou mais blocos SCOPE FIELDS no mesmo template. (erro 57)"""
 

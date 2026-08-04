@@ -6,10 +6,8 @@ Cobre: parsing, armazenamento, serialização e regressão do campo guidelines e
 Gerado conforme: Especificação Synesis v1.1 / Feature GUIDELINES v0.3.0
 """
 
-import pytest
 
 from synesis.parser.template_loader import load_template_from_string
-
 
 # ===========================================================================
 # Caso 2.1 — FIELD com GUIDELINES multilinha é parseado corretamente

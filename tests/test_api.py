@@ -8,16 +8,13 @@ Gerado conforme: Especificacao Synesis v1.1
 """
 
 import pytest
-import synesis
-from synesis.api import MemoryCompilationResult, CompilationStats
-from synesis.parser.lexer import SynesisSyntaxError
-from tests.conftest import (
-    PROJECT_CONTENT,
-    TEMPLATE_BASIC,
-    BIBLIOGRAPHY_BASIC,
-    ONTOLOGY_VALID,
-)
 
+import synesis
+from synesis.api import MemoryCompilationResult
+from tests.conftest import (
+    BIBLIOGRAPHY_BASIC,
+    PROJECT_CONTENT,
+)
 
 # ===========================================================================
 # Compilacao bem-sucedida
@@ -298,7 +295,7 @@ ITEM @ref2024
 END ITEM
 """
         nodes = synesis.compile_string(content)
-        from synesis.ast.nodes import SourceNode, ItemNode
+        from synesis.ast.nodes import ItemNode, SourceNode
         assert any(isinstance(n, SourceNode) for n in nodes)
         assert any(isinstance(n, ItemNode) for n in nodes)
 

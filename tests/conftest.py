@@ -6,7 +6,6 @@ Gerado conforme: Especificacao Synesis v1.1
 
 import pytest
 
-
 # Usa nomes de campos sem colisao com keywords do parser (ex: 'code_description'
 # começa com 'code' que é KW_CODE — usamos 'definition' e 'theme' nos fixtures)
 

@@ -22,7 +22,6 @@ from synesis.ast.nodes import (
 from synesis.parser.lexer import SynesisSyntaxError
 from synesis.parser.template_loader import load_template_from_string
 
-
 # ===========================================================================
 # Helpers
 # ===========================================================================

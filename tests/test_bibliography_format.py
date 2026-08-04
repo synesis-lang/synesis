@@ -17,7 +17,6 @@ from tests.conftest import (
     TEMPLATE_BASIC,
 )
 
-
 # Formato invalido: sem tipo de entrada, chave fora de chaves, campos com ":"
 MALFORMED_BIB = """\
 @smith2024

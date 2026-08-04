@@ -9,7 +9,7 @@ Cobre:
 """
 from pathlib import Path
 
-from synesis.ast.nodes import FieldType, Scope
+from synesis.ast.nodes import Scope
 from synesis.compiler import SynesisCompiler
 from synesis.parser.template_loader import load_template_from_string, validate_template
 
@@ -66,7 +66,7 @@ def test_on_bibliography_sets_value_origin():
 
 def test_list_with_on_bibliography_is_syntax_error():
     """REQUIRED a, b ON BIBLIOGRAPHY e ambiguo -> rejeitado na gramatica."""
-    from synesis.parser.lexer import parse_string, SynesisSyntaxError
+    from synesis.parser.lexer import SynesisSyntaxError, parse_string
     with __import__("pytest").raises(SynesisSyntaxError):
         parse_string(
             "TEMPLATE d\n\nSOURCE FIELDS\n    REQUIRED a, b ON BIBLIOGRAPHY\n"

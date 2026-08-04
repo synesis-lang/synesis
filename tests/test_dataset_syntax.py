@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from synesis.parser.template_loader import load_template_from_string
 
-
 _TEMPLATE = """
 TEMPLATE lattes
 

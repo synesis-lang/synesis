@@ -31,9 +31,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
 
+    # Nao tolerar exit code 5 ("no tests collected"). Uma suite que nao coleta
+    # nada — por erro de import numa dependencia, por exemplo — passaria como
+    # verde e esconderia a quebra. Ja aconteceu no synesis-lsp (jsonschema
+    # desatualizado abortava a coleta inteira). Se algum dia houver um alvo
+    # legitimamente sem testes, trate o caso nele, nao globalmente aqui.
     - name: Run tests
       run: |
-        python -c "import sys, pytest; code = pytest.main(['--cov=synesis','--cov-report=xml','--cov-report=term']); sys.exit(0 if code == 5 else code)"
+        pytest --cov=synesis --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4
@@ -67,8 +72,8 @@ jobs:
       run: |
         ruff check synesis/
 
-    # MyPy is non-blocking against a measured legacy baseline (229 errors as of
-    # 2026-07-13, see CHANGELOG). Ruff above stays blocking. This mirrors the
+    # MyPy is non-blocking against a measured legacy baseline (257 errors as of
+    # 2026-08-04; was 229 on 2026-07-13). Ruff above stays blocking. This mirrors the
     # Golden Standard guidance for pre-existing debt: block on new code, track
     # the backlog with a visible number instead of silently masking it, and
     # burn it down in future cycles rather than in an unrelated PR.

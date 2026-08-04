@@ -385,8 +385,11 @@ def test_shared_ontology_stats_are_deduplicated():
     out = _capture_link_stats(member_stats, n_edges=7, n_orphans=0)
     import re
     # rotulo indica compartilhamento
-    assert "Shared ontology" in out
-    assert "Shared codes" in out
+    assert "Ontologia compartilhada" in out
+    assert "Shared ontology" in out  # agregado
+    # A ontologia sai da tabela por membro: repetir a mesma contagem em cada
+    # linha seria ruido (o valor e identico para todos os membros).
+    assert "Codes" not in out
     # valor deduplicado (74), nunca a soma (148)
     assert re.search(r"Shared ontology\s+74\b", out)
     assert "148" not in out
@@ -414,17 +417,187 @@ def test_no_overlap_uses_plain_labels():
         ("b", _stats(ontology_count=2, code_count=2), {"w", "z"}),
     ]
     out = _capture_link_stats(member_stats, n_edges=0, n_orphans=0)
-    assert "Ontologies" in out
+    assert "Ontologia:" in out       # sem "compartilhada"
     assert "Shared" not in out
     assert "conceitos unicos" not in out
 
 
-def test_no_ontology_at_all_uses_plain_labels():
-    """Zero conceitos (projetos sem ontologia): sem rotulo Shared."""
+def test_no_ontology_at_all_omits_ontology_block():
+    """Zero conceitos (projetos sem ontologia): o bloco proprio some por
+    completo, em vez de imprimir uma linha com zero."""
     member_stats = [
         ("a", _stats(source_count=1), set()),
         ("b", _stats(source_count=3), set()),
     ]
     out = _capture_link_stats(member_stats, n_edges=2, n_orphans=1)
     assert "Shared" not in out
-    assert "Ontologies" in out
+    assert "Ontologia" not in out
+    # a tabela por membro e o agregado continuam saindo
+    assert "PROJETO" in out
+    assert "Sources" in out
+
+
+# --------------------------------------------------------------------------
+# Secao 1 (estrutura) e Secao 2 (resolucao) da saida do link step
+# --------------------------------------------------------------------------
+
+_TMPL_OWNER = """TEMPLATE own
+SOURCE FIELDS
+    REQUIRED pid
+END SOURCE FIELDS
+ITEM FIELDS
+    REQUIRED trecho
+END ITEM FIELDS
+FIELD pid TYPE TEXT
+    SCOPE SOURCE
+    IDENTIFIES person
+END FIELD
+FIELD trecho TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+"""
+
+_TMPL_REF = """TEMPLATE ref
+SOURCE FIELDS
+    REQUIRED pid
+END SOURCE FIELDS
+ITEM FIELDS
+    REQUIRED trecho
+END ITEM FIELDS
+FIELD pid TYPE TEXT
+    SCOPE SOURCE
+    REFERS TO person
+END FIELD
+FIELD trecho TYPE QUOTATION
+    SCOPE ITEM
+END FIELD
+"""
+
+
+def test_link_declarations_derives_from_templates_without_data():
+    """A estrutura sai dos templates: uma referencia declarada aparece mesmo
+    sem nenhum SOURCE (projeto ainda em coleta)."""
+    from synesis.cli import _link_declarations
+
+    members = [
+        _inline_member("own", _TMPL_OWNER, {}),
+        _inline_member("ref", _TMPL_REF, {}),
+    ]
+    rows = _link_declarations(members)
+    assert rows == [("person", "own", "pid", "ref", "pid")]
+
+
+def test_link_declarations_marks_entity_without_identifies():
+    """REFERS TO sem IDENTIFIES correspondente: colunas de origem vazias."""
+    from synesis.cli import _link_declarations
+
+    members = [_inline_member("ref", _TMPL_REF, {})]
+    rows = _link_declarations(members)
+    assert rows == [("person", "", "", "ref", "pid")]
+
+
+def _capture_topology(members):
+    import io
+    from contextlib import redirect_stdout
+
+    from synesis.cli import _print_link_topology
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        _print_link_topology(members)
+    return buf.getvalue()
+
+
+def test_topology_groups_keywords_over_project_and_field():
+    """IDENTIFIES/REFERS TO sao cabecalho de GRUPO sobre (PROJETO, CAMPO) —
+    nomear uma coluna `IDENTIFIES` com um projeto embaixo inverteria a relacao
+    que o template expressa (a keyword qualifica um FIELD, nao um projeto)."""
+    members = [
+        _inline_member("own", _TMPL_OWNER, {}),
+        _inline_member("ref", _TMPL_REF, {}),
+    ]
+    out = _capture_topology(members)
+    assert "IDENTIFIES" in out
+    assert "REFERS TO" in out
+    header = next(line for line in out.splitlines() if "ENTITY" in line)
+    assert header.split() == ["ENTITY", "PROJETO", "CAMPO", "PROJETO", "CAMPO"]
+
+
+def test_topology_columns_stay_aligned_with_no_owner_placeholder():
+    """'(nenhum)' entra no calculo de largura: e mais longo que muitos nomes
+    de projeto e desalinharia a tabela se so os valores reais fossem medidos."""
+    members = [_inline_member("r", _TMPL_REF, {})]
+    out = _capture_topology(members)
+    lines = [ln for ln in out.splitlines() if ln.startswith("  ") and "ENTITY" not in ln]
+    data = [ln for ln in lines if "person" in ln]
+    assert data, out
+    assert "(nenhum)" in data[0]
+    # A coluna seguinte comeca depois do placeholder, sem colidir com ele.
+    assert data[0].index("(nenhum)") < data[0].index("r ") or " r" in data[0]
+
+
+def test_cli_link_prints_both_sections_by_default():
+    """As duas secoes saem sem --stats: estrutura e util justamente quando
+    ainda nao ha dados, que e quando --stats nao tem o que mostrar."""
+    from click.testing import CliRunner
+
+    from synesis.cli import main
+
+    runner = CliRunner()
+    result = runner.invoke(main, [
+        "compile",
+        str(FIXTURES / "T22-Link-Ok" / "lattes" / "lattes.synp"),
+        str(FIXTURES / "T22-Link-Ok" / "abstracts" / "abstracts.synp"),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Ligacao entre projetos:" in result.output
+    assert "Resolucao das ligacoes:" in result.output
+    assert "Estatisticas por membro" not in result.output
+
+
+def test_cli_link_warns_about_labels_without_edges():
+    """Rotulo declarado que nao resolveu nenhuma aresta precisa ser dito: sem
+    isso o ✓ le como sucesso pleno mesmo com a ligacao inexistente."""
+    from click.testing import CliRunner
+
+    from synesis.cli import main
+
+    runner = CliRunner()
+    result = runner.invoke(main, [
+        "compile",
+        str(FIXTURES / "T22-Link-Ok" / "lattes" / "lattes.synp"),
+        str(FIXTURES / "T22-Link-Ok" / "abstracts" / "abstracts.synp"),
+    ])
+    assert result.exit_code == 0, result.output
+    # Fixture resolve 'researcher'; nenhum rotulo deve ser reportado como orfao.
+    assert "rotulos sem nenhuma aresta" not in result.output
+
+
+def test_per_member_table_has_aligned_columns_and_total():
+    """A listagem por membro e tabela com TOTAL, nao `k=v` por linha: numeros
+    de projetos diferentes precisam ser comparaveis em coluna."""
+    member_stats = [
+        ("lattes", _stats(source_count=46, item_count=403, chain_count=35), {"x"}),
+        ("abstracts", _stats(source_count=7, item_count=32, chain_count=46), {"x"}),
+    ]
+    out = _capture_link_stats(member_stats, n_edges=7, n_orphans=0)
+    header = next(line for line in out.splitlines() if "PROJETO" in line)
+    assert header.split() == ["PROJETO", "SOURCES", "ITEMS", "CHAINS"]
+    assert "Sources=46" not in out  # formato antigo k=v
+    total = next(line for line in out.splitlines() if line.strip().startswith("TOTAL"))
+    assert total.split()[1:] == ["53", "435", "81"]
+
+
+def test_per_member_table_omits_ontology_columns():
+    """Ontologia compartilhada nao entra na tabela: seria a mesma contagem
+    repetida em todas as linhas."""
+    member_stats = [
+        ("a", _stats(source_count=1, ontology_count=144), {f"c{i}" for i in range(144)}),
+        ("b", _stats(source_count=2, ontology_count=144), {f"c{i}" for i in range(144)}),
+    ]
+    out = _capture_link_stats(member_stats, n_edges=0, n_orphans=0)
+    header = next(line for line in out.splitlines() if "PROJETO" in line)
+    assert "ONTOLOG" not in header.upper()
+    assert "CODES" not in header.upper()
+    # ...e aparece uma unica vez, no bloco proprio
+    assert out.count("144") == 2  # bloco de ontologia + linha do agregado

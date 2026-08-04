@@ -52,6 +52,7 @@ from synesis.ast.results import (
     SingleFieldBundle,
     UndefinedFieldInScopeFields,
     ValidationResult,
+    ValuesOnNonEnumerable,
     ValueWithWhitespace,
 )
 from synesis.parser.lexer import parse_string
@@ -283,6 +284,7 @@ def validate_template(template: TemplateNode) -> ValidationResult:
     _check_format_on_non_scale(template, result)
     _check_arity_on_non_chain(template, result)
     _check_relations_on_non_chain(template, result)
+    _check_values_on_non_enumerable(template, result)
     _check_values_whitespace(template, result)
     _check_values_duplicates(template, result)
     _check_linkage_modifier_scope(template, result)
@@ -561,6 +563,18 @@ def _check_relations_on_non_chain(template: TemplateNode, result: ValidationResu
         if spec.type != FieldType.CHAIN and spec.relations:
             loc = spec.location or template.location
             result.add(RelationsOnNonChain(
+                location=loc,
+                field_name=name,
+                field_type=spec.type.value,
+            ))
+
+
+def _check_values_on_non_enumerable(template: TemplateNode, result: ValidationResult) -> None:
+    """Erro 86: VALUES definido em campo que nao e ORDERED nem ENUMERATED."""
+    for name, spec in template.field_specs.items():
+        if spec.type not in (FieldType.ORDERED, FieldType.ENUMERATED) and spec.values:
+            loc = spec.location or template.location
+            result.add(ValuesOnNonEnumerable(
                 location=loc,
                 field_name=name,
                 field_type=spec.type.value,
