@@ -9,6 +9,7 @@ Cobre:
 A autorizacao mora na DECLARACAO (keyword), nao na geometria do path (D13) —
 por isso rede/drive, que nenhuma ancora de pasta conseguiria autorizar, passam.
 """
+import os
 from pathlib import Path
 
 from synesis.ast.nodes import ProjectNode
@@ -97,8 +98,18 @@ def test_shared_authorizes_network_and_drive_paths():
 
     O alvo nao existe nesta maquina, entao o esperado e NOT_FOUND (passou da
     contencao), nunca ESCAPES_PROJECT.
+
+    Os literais sao escolhidos por PLATAFORMA porque "escapar do projeto" e uma
+    propriedade do sistema de arquivos, nao do texto. `Z:/estudo/onto.syno` e
+    absoluto no Windows, mas no POSIX e apenas um diretorio chamado `Z:` — cai
+    DENTRO do projeto e o resultado legitimo passa a ser ESCAPES_PROJECT, nao
+    NOT_FOUND. Usar o mesmo literal nos dois sistemas quebrava a suite em
+    Linux/macOS enquanto passava no Windows.
     """
-    for raw in (r"\\servidor\equipe\ontologia.syno", "Z:/estudo/onto.syno"):
+    externos = [r"\\servidor\equipe\ontologia.syno"]  # normaliza p/ /servidor/... : absoluto em ambos
+    externos.append("Z:/estudo/onto.syno" if os.name == "nt" else "/mnt/equipe/onto.syno")
+
+    for raw in externos:
         sem = resolve_include(_BASE, raw)
         com = resolve_include(_BASE, raw, shared=True)
         assert sem.error.name == "ESCAPES_PROJECT", raw

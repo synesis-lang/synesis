@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Fixed — CI
+
+- **`test_shared_authorizes_network_and_drive_paths` falhava em Linux e macOS**
+  (`tests/test_shared_ontology.py`) — o teste usava `Z:/estudo/onto.syno` para
+  provar que a keyword `SHARED` autoriza um alvo fora do projeto. No Windows
+  isso é um caminho absoluto em outro drive; no POSIX é apenas um **diretório
+  chamado `Z:`**, que cai *dentro* do projeto. Lá o resultado correto passa a
+  ser `ESCAPES_PROJECT`, não `NOT_FOUND`:
+
+  ```
+  FAILED tests/test_shared_ontology.py::test_shared_authorizes_network_and_drive_paths
+  AssertionError: Z:/estudo/onto.syno
+  assert 'NOT_FOUND' == 'ESCAPES_PROJECT'
+  ```
+
+  Escapar do projeto é propriedade do **sistema de arquivos**, não do texto — o
+  literal do "outro drive" agora é escolhido por plataforma (`Z:/…` no Windows,
+  `/mnt/…` no POSIX). O caminho de rede `\\servidor\…` continua único: normaliza
+  para `/servidor/…`, absoluto nos dois sistemas.
+
+  Este era o **único** teste com falha real: os runs vermelhos desde 2026-07-16
+  mostravam 7 jobs de matriz caindo, todos por este mesmo caso — `1 failed, 487
+  passed, 4 skipped`. Windows sempre passou, o que mascarou o defeito no
+  desenvolvimento local.
+
+- **O job `Security` nunca auditou nada** (`.github/workflows/ci.yml`) — o passo
+  monta `runtime-requirements.txt` lendo o `pyproject.toml` com `tomllib`, que
+  só entrou na stdlib no **Python 3.11**, mas o job fixava `python-version:
+  '3.10'`. O script morria em `ModuleNotFoundError: No module named 'tomllib'`
+  **antes** de chamar o `pip-audit`.
+
+  O efeito era duplamente ruim: o job ficava vermelho sugerindo vulnerabilidade,
+  e a auditoria de fato nunca rodou desde que foi escrita. Verificado: com o
+  comando exato do CI sob 3.11, o resultado é `No known vulnerabilities found`.
+
+  Corrigido subindo **apenas o runner** desse job para 3.11. `requires-python =
+  ">=3.10"` continua valendo e a matriz de testes segue cobrindo 3.10, 3.11 e
+  3.12. (Ironia registrada: o próprio pacote já declara
+  `tomli >= 2.0 ; python_version < '3.11'` como dependência de runtime — o
+  problema estava resolvido no código e não no workflow.)
+
+  Mesmo defeito e mesma correção em `synesis-lsp`.
+
 ## [0.11.0] - 2026-08-04
 
 ### Added — Ligação entre projetos visível na saída do link step
