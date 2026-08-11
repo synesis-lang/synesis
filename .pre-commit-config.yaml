@@ -7,7 +7,7 @@
 # - mypy: runs in CI (non-blocking) until the type-error backlog is cleared.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.17
+    rev: v0.16.1
     hooks:
       - id: ruff
         args: [--fix]
