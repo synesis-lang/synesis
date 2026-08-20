@@ -69,6 +69,7 @@ class TestRepeatedDiagnosticCollapse:
 
     def _err(self, file: str, line: int, msg: str):
         from pathlib import Path
+
         from synesis.ast.nodes import SourceLocation
 
         class _Diag:
@@ -84,6 +85,7 @@ class TestRepeatedDiagnosticCollapse:
     def _capture(self, errors):
         import click
         from click.testing import CliRunner
+
         from synesis.cli import _print_diagnostics
 
         @click.command()
