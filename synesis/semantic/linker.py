@@ -193,6 +193,10 @@ class Linker:
     norm_cache: dict | None = None
 
     def link(self) -> LinkedProject:
+        # Forma canonica de ORDERED: o dado materializado e sempre o indice.
+        # Roda antes de qualquer consumo (topic_index, code_usage, export).
+        self._normalize_ordered_values()
+
         # Erro 70: bibrefs duplicados em blocos SOURCE (mesmo arquivo ou arquivos diferentes)
         self._check_duplicate_source_bibrefs()
 
@@ -298,6 +302,56 @@ class Linker:
         for idx in range(len(nodes) - 1):
             pairs.append((nodes[idx], nodes[idx + 1]))
         return pairs
+
+    def _normalize_ordered_values(self) -> None:
+        """Tipa valores de campos ORDERED escritos como texto numerico ("11" -> 11).
+
+        NAO resolve rotulo->indice: em ORDERED o dado E o indice, e escrever o
+        rotulo e erro de forma (E088, reportado pelo SemanticValidator, que roda
+        antes deste ponto). Normalizar o rotulo em silencio manteria o arquivo no
+        disco divergente do que o compilador entrega e deixaria a grafia livre se
+        acumular no corpus — o arquivo nunca convergiria para a forma canonica.
+
+        O que resta aqui e apenas coercao de TIPO: o valor ja esta na forma certa
+        (um indice), so nao chegou como int. Assim o consumidor recebe sempre int.
+
+        Os tres escopos guardam campos em atributos distintos — SourceNode.fields,
+        OntologyNode.fields e ItemNode.extra_fields.
+        """
+        if not self.template:
+            return
+
+        ordered_names = [
+            name
+            for name, spec in (self.template.field_specs or {}).items()
+            if spec.type == FieldType.ORDERED and spec.values
+        ]
+        if not ordered_names:
+            return
+
+        for source in self.sources:
+            self._coerce_ordered_in(source.fields, ordered_names)
+        for item in self.items:
+            self._coerce_ordered_in(item.extra_fields, ordered_names)
+        for ontology in self.ontologies:
+            self._coerce_ordered_in(ontology.fields, ordered_names)
+
+    @staticmethod
+    def _coerce_ordered_in(
+        fields: Dict[str, Any] | None,
+        ordered_names: List[str],
+    ) -> None:
+        """Converte indice escrito como texto para int, nos campos ORDERED."""
+        if not fields:
+            return
+
+        for field_name in ordered_names:
+            value = fields.get(field_name)
+            if not isinstance(value, str):
+                continue
+            stripped = value.strip()
+            if stripped.lstrip("-").isdigit():
+                fields[field_name] = int(stripped)
 
     def _extract_topics(self, ontology: OntologyNode) -> List[str]:
         if not self.template:

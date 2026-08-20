@@ -45,7 +45,7 @@ from synesis.ast.nodes import (
     SourceNode,
     TemplateNode,
 )
-from synesis.ast.normalize import normalize_code
+from synesis.ast.normalize import normalize_code, normalize_label
 from synesis.ast.results import (
     BundleCountMismatch,
     ChainArityViolation,
@@ -63,6 +63,7 @@ from synesis.ast.results import (
     InvalidFieldType,
     InvalidIdentifierCharacter,
     InvalidOrderedValue,
+    OrderedValueAsLabel,
     MalformedQualifiedChain,
     MissingBibliographyValue,
     MissingBundleField,
@@ -379,16 +380,33 @@ class SemanticValidator:
             return None
 
         if isinstance(value, str):
-            value_lower = value.lower()
-            matching = [v for v in field_spec.values if v.label.lower() == value_lower]
-            if not matching:
-                return InvalidOrderedValue(
+            stripped = value.strip()
+
+            # Indice escrito como texto ("11"): forma correta, so nao tipada.
+            if stripped.lstrip("-").isdigit():
+                return self.validate_ordered_value(field_spec, int(stripped), location)
+
+            # Rotulo que EXISTE no template: o valor foi entendido, mas a forma
+            # esta errada — em ORDERED grava-se o indice (E088). Distinto de um
+            # rotulo inexistente, que e erro de valor (InvalidOrderedValue).
+            normalized = normalize_label(stripped)
+            matching = [
+                v for v in field_spec.values if normalize_label(v.label) == normalized
+            ]
+            if matching:
+                return OrderedValueAsLabel(
                     location=location,
                     field_name=field_spec.name,
-                    value=value,
-                    valid_options=[v.label for v in field_spec.values],
+                    label=stripped,
+                    index=matching[0].index,
                 )
-            return None
+
+            return InvalidOrderedValue(
+                location=location,
+                field_name=field_spec.name,
+                value=value,
+                valid_options=[v.label for v in field_spec.values],
+            )
 
         return InvalidOrderedValue(
             location=location,

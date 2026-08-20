@@ -988,6 +988,76 @@ class ValuesOnNonEnumerable(ValidationError):
 
 
 @dataclass(frozen=True)
+class IndexOnEnumeratedValue(ValidationError):
+    """Prefixo de indice `[N]` em VALUES de campo ENUMERATED. (erro 87)
+
+    Simetrico a `ORDERED exige indice em VALUES`: em ORDERED o indice E o dado
+    materializado e define a ordem, portanto e obrigatorio; em ENUMERATED nao ha
+    ordem, o dado e o proprio rotulo e o indice nunca e usado.
+
+    Fecha a lacuna em que `[1] Aim: ...` era aceito num ENUMERATED, populado em
+    `spec.values[].index` e silenciosamente ignorado — o pesquisador declarava
+    uma ordem que o sistema nao honra em lugar nenhum.
+    """
+
+    field_name: str
+    CODE: ClassVar[str] = "SYNESIS_E087"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O campo '{self.field_name}' e do tipo `ENUMERATED`, mas seus valores usam\n"
+            f"  prefixo de indice (`[0]`, `[1]`, ...). O indice existe para estabelecer\n"
+            f"  ORDEM entre os valores e so tem efeito em campos `ORDERED`, onde ele e o\n"
+            f"  dado gravado nas anotacoes. Em `ENUMERATED` nao ha ordem: o dado e o\n"
+            f"  proprio rotulo, e o indice seria ignorado.\n"
+            f"  Remova os prefixos `[N]` ou altere o tipo do campo para `ORDERED`."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"Prefixo `[N]` em VALUES de `{self.field_name}` (tipo ENUMERATED) "
+            f"— indice e exclusivo de ORDERED"
+        )
+
+
+@dataclass(frozen=True)
+class OrderedValueAsLabel(ValidationError):
+    """Campo ORDERED escrito com o rotulo em vez do indice. (erro 88)
+
+    Em ORDERED o dado E o indice: ele define a ordem e nao admite variantes de
+    grafia. O rotulo pertence a DECLARACAO do template e e reconstituido na
+    apresentacao (inlay hint do LSP) — o pesquisador le `11 ← Economico` e
+    escreve `11`.
+
+    Rejeitar, em vez de normalizar em silencio, e o que faz o arquivo convergir
+    para a forma canonica: normalizacao silenciosa mantem o disco divergente do
+    que o compilador entrega e deixa a grafia livre se acumular no corpus.
+
+    Simetrico a IndexOnEnumeratedValue (E087): ali o indice sobra, aqui falta.
+    """
+
+    field_name: str
+    label: str
+    index: int
+    CODE: ClassVar[str] = "SYNESIS_E088"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"O campo '{self.field_name}' foi escrito com o rotulo `{self.label}`,\n"
+            f"  mas em campos `ORDERED` o dado gravado e o INDICE. O indice define a\n"
+            f"  ordem dos valores e nao admite variantes de grafia; o rotulo e\n"
+            f"  declarado no template e exibido pelo editor ao lado do indice.\n"
+            f"  Escreva `{self.field_name}: {self.index}`."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"`{self.field_name}: {self.label}` — em ORDERED grave o indice "
+            f"({self.index}); o rotulo e so exibicao"
+        )
+
+
+@dataclass(frozen=True)
 class DuplicateScopeBlock(ValidationError):
     """Dois ou mais blocos SCOPE FIELDS no mesmo template. (erro 57)"""
 

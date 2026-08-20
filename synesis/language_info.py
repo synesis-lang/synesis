@@ -79,10 +79,13 @@ _PROPERTY_SNIPPETS: Dict[str, str] = {
         "        RELACAO_B: descricao\n"
         "    END RELATIONS\n"
     ),
+    # Sem prefixo `[N]`: e a forma valida em ENUMERATED e a unica que serve de
+    # sonda neutra. ORDERED exige o indice e usa a variante em
+    # _PROPERTY_SNIPPETS_BY_TYPE (ver _snippet_for).
     "VALUES": (
         "    VALUES\n"
-        "        [1] rotulo_um: descricao\n"
-        "        [2] rotulo_dois: descricao\n"
+        "        rotulo_um: descricao\n"
+        "        rotulo_dois: descricao\n"
         "    END VALUES\n"
     ),
     "DESCRIPTION": "    DESCRIPTION texto explicativo do campo\n",
@@ -164,6 +167,27 @@ class LanguageInfo:
 # --------------------------------------------------------------------------
 # Sondagem
 # --------------------------------------------------------------------------
+
+# Propriedades cuja FORMA depende do tipo do campo. `VALUES` e o unico caso:
+# o prefixo `[N]` estabelece ordem, sendo obrigatorio em ORDERED (o indice e o
+# dado gravado) e proibido em ENUMERATED (E087). Sondar ambos com a mesma forma
+# faria a sonda reportar VALUES como proibido em um dos dois tipos.
+_PROPERTY_SNIPPETS_BY_TYPE: Dict[str, Dict[str, str]] = {
+    "ORDERED": {
+        "VALUES": (
+            "    VALUES\n"
+            "        [1] rotulo_um: descricao\n"
+            "        [2] rotulo_dois: descricao\n"
+            "    END VALUES\n"
+        ),
+    },
+}
+
+
+def _snippet_for(field_type: str, prop_name: str, default: str) -> str:
+    """Trecho de sondagem da propriedade, na forma valida para o tipo."""
+    return _PROPERTY_SNIPPETS_BY_TYPE.get(field_type, {}).get(prop_name, default)
+
 
 def _probe(field_type: str, scope: str = "ITEM", extra: str = "") -> List:
     """Compila um template minimo e devolve os erros de validacao.
@@ -249,7 +273,7 @@ def get_field_type_info(field_type: str) -> Optional[FieldTypeInfo]:
 
     baseline = _probe(wanted)
     properties = [
-        _classify(wanted, name, snippet, baseline)
+        _classify(wanted, name, _snippet_for(wanted, name, snippet), baseline)
         for name, snippet in _PROPERTY_SNIPPETS.items()
     ]
     return FieldTypeInfo(name=wanted, properties=properties)
@@ -313,10 +337,12 @@ def field_type_names() -> List[str]:
 _SNIPPET_BODIES: Dict[str, List[str]] = {
     "ARITY": ["    ARITY >= ${N:2}"],
     "FORMAT": ["    FORMAT [${N:0}..${M:3}]"],
+    # Sem `[N]`: forma valida em ENUMERATED. ORDERED usa a variante indexada em
+    # _SNIPPET_BODIES_BY_TYPE — o indice ali e obrigatorio (e o dado gravado).
     "VALUES": [
         "    VALUES",
-        "        [1] ${N:primeiro_rotulo}: ${M:descricao}",
-        "        [2] ${O:segundo_rotulo}: ${P:descricao}",
+        "        ${N:primeiro_rotulo}: ${M:descricao}",
+        "        ${O:segundo_rotulo}: ${P:descricao}",
         "    END VALUES",
     ],
     "RELATIONS": [
@@ -324,6 +350,19 @@ _SNIPPET_BODIES: Dict[str, List[str]] = {
         "        ${N:NOME_DA_RELACAO}: ${M:quando usar}",
         "    END RELATIONS",
     ],
+}
+
+#: Corpos que mudam conforme o tipo. `VALUES` em ORDERED leva o prefixo `[N]`,
+#: que estabelece a ordem e e o valor gravado nas anotacoes.
+_SNIPPET_BODIES_BY_TYPE: Dict[str, Dict[str, List[str]]] = {
+    "ORDERED": {
+        "VALUES": [
+            "    VALUES",
+            "        [1] ${N:primeiro_rotulo}: ${M:descricao}",
+            "        [2] ${O:segundo_rotulo}: ${P:descricao}",
+            "    END VALUES",
+        ],
+    },
 }
 
 #: Propriedades opcionais que valem a pena sugerir no snippet quando o tipo as
@@ -341,7 +380,8 @@ def _snippet_body(info: FieldTypeInfo) -> List[str]:
     included += [p for p in info.allowed if p.name in _SUGGESTED_OPTIONAL]
 
     for prop in included:
-        template = _SNIPPET_BODIES.get(prop.name)
+        by_type = _SNIPPET_BODIES_BY_TYPE.get(info.name, {})
+        template = by_type.get(prop.name) or _SNIPPET_BODIES.get(prop.name)
         if template is None:
             continue
         for line in template:

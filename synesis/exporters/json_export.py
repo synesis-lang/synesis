@@ -376,20 +376,25 @@ def _add_ordered_field_labels(
     Adiciona labels legiveis para campos ORDERED.
 
     Exemplo:
-        aspect: 11 -> adiciona aspect_label: "Economic"
+        aspect: 11 -> adiciona aspect_label: "Economico"
         dimension: 2 -> adiciona dimension_label: "Market_Acceptance"
+
+    O dado de ORDERED e sempre o indice (canonizado no Linker); o rotulo vive na
+    declaracao do template. Este enriquecimento reconstitui o rotulo para quem
+    consome o JSON sem ter o template em maos.
+
+    A iteracao percorre os FieldSpecs ORDERED do template — nao as chaves da
+    entrada. Assim as chaves numericas injetadas pelo proprio exporter
+    (frequency, source_count) e os campos de outros tipos ficam de fora por
+    construcao, sem depender de uma lista de exclusao por nome.
     """
-    for field_name, field_value in list(entry.items()):
-        if not isinstance(field_value, int) or field_name in {
-            "frequency", "source_count", "theoretical_significance"
-        }:
+    for field_name, spec in template.field_specs.items():
+        if spec.type != FieldType.ORDERED or not spec.values:
             continue
 
-        spec = template.field_specs.get(field_name)
-        if not spec or spec.type != FieldType.ORDERED:
-            continue
-
-        if not spec.values:
+        field_value = entry.get(field_name)
+        # bool e subclasse de int: nunca e um indice ORDERED.
+        if isinstance(field_value, bool) or not isinstance(field_value, int):
             continue
 
         for ordered_value in spec.values:

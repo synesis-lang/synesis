@@ -400,6 +400,79 @@ class TestChainValidation:
 
 
 # ===========================================================================
+# Indice em ENUMERATED (E087)
+# ===========================================================================
+
+class TestIndexOnEnumerated:
+    """O prefixo `[N]` estabelece ORDEM e e exclusivo de ORDERED.
+
+    Simetrico ao erro que ORDERED emite quando o indice esta AUSENTE: em
+    ENUMERATED nao ha ordem, o dado e o proprio rotulo e o indice seria ignorado.
+    O transformer usa index=-1 para "sem prefixo".
+    """
+
+    def _template_with(self, values: list, ftype=FieldType.ENUMERATED) -> TemplateNode:
+        spec = make_field_spec("zone", ftype, values=values)
+        return make_template({"zone": spec})
+
+    def _errors(self, template):
+        from synesis.parser.template_loader import validate_template
+        return validate_template(template).errors
+
+    def test_enumerated_without_index_is_valid(self):
+        from synesis.ast.results import IndexOnEnumeratedValue
+        template = self._template_with([
+            OrderedValue(index=-1, label="Aim", description="d", location=LOC),
+            OrderedValue(index=-1, label="Gap", description="d", location=LOC),
+        ])
+        assert not any(isinstance(e, IndexOnEnumeratedValue) for e in self._errors(template))
+
+    def test_enumerated_with_index_is_rejected(self):
+        from synesis.ast.results import IndexOnEnumeratedValue
+        template = self._template_with([
+            OrderedValue(index=1, label="Aim", description="d", location=LOC),
+            OrderedValue(index=2, label="Gap", description="d", location=LOC),
+        ])
+        assert any(isinstance(e, IndexOnEnumeratedValue) for e in self._errors(template))
+
+    def test_index_zero_is_rejected(self):
+        """`[0]` e prefixo explicito, nao a sentinela de ausencia (-1)."""
+        from synesis.ast.results import IndexOnEnumeratedValue
+        template = self._template_with([
+            OrderedValue(index=0, label="Aim", description="d", location=LOC),
+            OrderedValue(index=-1, label="Gap", description="d", location=LOC),
+        ])
+        assert any(isinstance(e, IndexOnEnumeratedValue) for e in self._errors(template))
+
+    def test_partial_index_is_rejected(self):
+        from synesis.ast.results import IndexOnEnumeratedValue
+        template = self._template_with([
+            OrderedValue(index=-1, label="Aim", description="d", location=LOC),
+            OrderedValue(index=2, label="Gap", description="d", location=LOC),
+        ])
+        assert any(isinstance(e, IndexOnEnumeratedValue) for e in self._errors(template))
+
+    def test_ordered_with_index_is_not_flagged(self):
+        """Em ORDERED o indice e obrigatorio — nunca deve disparar E087."""
+        from synesis.ast.results import IndexOnEnumeratedValue
+        template = self._template_with(
+            [OrderedValue(index=1, label="Baixo", description="d", location=LOC)],
+            ftype=FieldType.ORDERED,
+        )
+        assert not any(isinstance(e, IndexOnEnumeratedValue) for e in self._errors(template))
+
+    def test_error_is_accumulable_not_fatal(self):
+        """E087 e ValidationError acumulavel, nao TemplateLoadError fatal."""
+        from synesis.ast.results import IndexOnEnumeratedValue
+        template = self._template_with([
+            OrderedValue(index=1, label="Aim", description="d", location=LOC),
+        ])
+        errors = self._errors(template)  # nao levanta excecao
+        found = [e for e in errors if isinstance(e, IndexOnEnumeratedValue)]
+        assert found and found[0].CODE == "SYNESIS_E087"
+
+
+# ===========================================================================
 # ORDERED
 # ===========================================================================
 
@@ -413,10 +486,34 @@ class TestOrderedValidation:
         ]
         return make_field_spec("priority", FieldType.ORDERED, values=values)
 
-    def test_valid_label(self):
+    def test_label_is_rejected_as_wrong_form(self):
+        """Rotulo valido, forma errada: em ORDERED grava-se o indice (E088)."""
+        from synesis.ast.results import OrderedValueAsLabel
         spec = self._make_ordered_spec()
         validator = SemanticValidator(make_template({"priority": spec}), None, {})
-        assert validator.validate_ordered_value(spec, "medium", LOC) is None
+        error = validator.validate_ordered_value(spec, "medium", LOC)
+        assert isinstance(error, OrderedValueAsLabel)
+        assert error.index == 2  # aponta o indice a usar
+
+    def test_numeric_string_is_accepted(self):
+        """Indice escrito como texto ja esta na forma certa, so nao tipado."""
+        spec = self._make_ordered_spec()
+        validator = SemanticValidator(make_template({"priority": spec}), None, {})
+        assert validator.validate_ordered_value(spec, "2", LOC) is None
+
+    def test_label_form_error_code_is_e088(self):
+        spec = self._make_ordered_spec()
+        validator = SemanticValidator(make_template({"priority": spec}), None, {})
+        error = validator.validate_ordered_value(spec, "high", LOC)
+        assert error.CODE == "SYNESIS_E088"
+
+    def test_label_form_message_names_the_index(self):
+        """A mensagem precisa ser acionavel: dizer QUAL indice escrever."""
+        spec = self._make_ordered_spec()
+        validator = SemanticValidator(make_template({"priority": spec}), None, {})
+        error = validator.validate_ordered_value(spec, "high", LOC)
+        assert "3" in error.to_cli_line()
+        assert "priority: 3" in error.to_diagnostic()
 
     def test_valid_index(self):
         spec = self._make_ordered_spec()
@@ -433,10 +530,27 @@ class TestOrderedValidation:
         validator = SemanticValidator(make_template({"priority": spec}), None, {})
         assert isinstance(validator.validate_ordered_value(spec, 99, LOC), InvalidOrderedValue)
 
-    def test_case_insensitive_label(self):
+    def test_case_variant_label_is_rejected_as_wrong_form(self):
+        """Variante de caixa e reconhecida como rotulo — logo, E088, nao E029.
+
+        O reconhecimento tolerante existe para que a mensagem possa apontar o
+        indice correto, nao para aceitar a grafia.
+        """
+        from synesis.ast.results import OrderedValueAsLabel
         spec = self._make_ordered_spec()
         validator = SemanticValidator(make_template({"priority": spec}), None, {})
-        assert validator.validate_ordered_value(spec, "MEDIUM", LOC) is None
+        error = validator.validate_ordered_value(spec, "MEDIUM", LOC)
+        assert isinstance(error, OrderedValueAsLabel)
+        assert error.index == 2
+
+    def test_unknown_label_is_invalid_value_not_wrong_form(self):
+        """Rotulo inexistente e erro de VALOR, nao de forma."""
+        from synesis.ast.results import OrderedValueAsLabel
+        spec = self._make_ordered_spec()
+        validator = SemanticValidator(make_template({"priority": spec}), None, {})
+        error = validator.validate_ordered_value(spec, "extreme", LOC)
+        assert isinstance(error, InvalidOrderedValue)
+        assert not isinstance(error, OrderedValueAsLabel)
 
 
 # ===========================================================================

@@ -6,7 +6,119 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.12.0] - 2026-08-20
+
+Forma canônica de `ORDERED`: o dado gravado é o **índice**.
+
+⚠ **Mudança incompatível com dados existentes.** Anotações que gravavam o
+rótulo num campo `ORDERED` (`aspect: Econômico`) passam a ser rejeitadas com
+`SYNESIS_E088` — o compilador agora exige o índice (`aspect: 11`). O rótulo
+pertence à declaração do template e é reconstituído na apresentação (inlay hint
+do LSP), de modo que o arquivo continua legível sem carregá-lo.
+
+**Como migrar:** o erro nomeia o índice a escrever em cada ocorrência, e a
+saída agrupa as repetições. Projetos gerados pelo `synesis-coder` basta
+regerar com a versão 0.10.0 ou superior. Templates que declarem `ENUMERATED`
+com prefixo `[N]` também passam a falhar (`SYNESIS_E087`): remova o prefixo,
+ou troque o tipo para `ORDERED` se a ordem for intencional.
+
+### Added — `SYNESIS_E088`: campo `ORDERED` escrito com o rótulo
+
+- **Em `ORDERED`, o dado gravado é o ÍNDICE — escrever o rótulo passa a ser
+  erro.** `[11] Econômico: …` declara o valor `Econômico` na **posição 11**: o
+  índice é o dado (define a ordem e não admite variantes de grafia), enquanto o
+  rótulo pertence à declaração e é reconstituído na apresentação. O pesquisador
+  lê `11 ← Econômico` no editor e escreve `11`.
+
+  Antes, ambas as formas eram aceitas e o valor chegava ao consumidor exatamente
+  como estava no arquivo — o **mesmo campo do mesmo template** retornava tipos
+  diferentes:
+
+  ```
+  'acumulação_flexível'                    -> aspect = 'Econômico'  (str)
+  'agravamento_das_disparidades_regionais' -> aspect = 2            (int)
+  ```
+
+  Isso quebra `group_by(aspect)` e `aspect == "Econômico"` em silêncio (`11` e
+  `'Econômico'` são o mesmo aspecto e não comparam iguais) e obriga cada
+  consumidor a reimplementar a resolução índice↔rótulo.
+
+  **Rejeitar, em vez de normalizar em silêncio**, é o que faz o arquivo
+  convergir: normalização silenciosa manteria o disco divergente do que o
+  compilador entrega e deixaria a grafia livre continuar se acumulando no corpus.
+  A mensagem é acionável — nomeia o índice a escrever:
+
+  ```
+  face85.syno:1:1  [ERROR]  `aspect: Econômico` — em ORDERED grave o índice (11);
+                            o rótulo é só exibição
+  ```
+
+  Rótulo **inexistente** continua sendo erro de valor (`InvalidOrderedValue`,
+  E029); rótulo válido na posição errada é erro de **forma** (E088). Índice
+  escrito como texto (`"11"`) já está na forma certa e é aceito, apenas tipado.
+
+- **Novo `normalize_label()`** em `synesis/ast/normalize.py`: casefold + remoção
+  de acento. Serve para **reconhecer** o rótulo e poder apontar o índice correto
+  na mensagem — não para aceitar a grafia.
+
+- **`Linker` tipa valores `ORDERED`** (`_normalize_ordered_values`): índice
+  escrito como texto vira `int`, de modo que o consumidor receba sempre `int`.
+  Cobre os três escopos, que guardam campos em atributos distintos
+  (`SourceNode.fields`, `OntologyNode.fields`, `ItemNode.extra_fields`).
+
+### Changed — diagnósticos repetidos são agrupados na CLI
+
+- **Mensagens idênticas passam a ser colapsadas** em `_print_diagnostics`, com a
+  contagem e uma amostra de locais. Um defeito sistemático — um `.syno` inteiro
+  gravado na forma errada — produzia centenas de linhas iguais que rolavam o
+  terminal e escondiam os demais diagnósticos. No corpus de referência, a saída
+  passou de **184 linhas para 32**:
+
+  ```
+  45x                [ERROR]  `aspect: Econômico` — em ORDERED grave o índice (11); …
+                             em face85.syno:1:1, face85.syno:13:1, face85.syno:19:1, ... e mais 42
+  ```
+
+  Mesmo princípio já adotado por `ValidationResult._to_diagnostics_compact`, que
+  agrupa `UndefinedCode` por código — aqui generalizado para qualquer mensagem
+  repetida, em erros, avisos e informações.
+
+  O agrupamento só age a partir de 4 repetições: abaixo disso, listar cada
+  ocorrência é mais útil que resumir, e as linhas continuam saindo uma a uma
+  (como se vê acima, `Cinemático` e `Espacial`, com 2 ocorrências cada).
+
+### Fixed — `<campo>_label` ausente em parte das entradas do export JSON
+
+- **`_add_ordered_field_labels` selecionava pelas chaves da entrada.** A função
+  agia `if isinstance(field_value, int)` e dependia de uma lista de exclusão por
+  nome (`frequency`, `source_count`, `theoretical_significance`) para não tratar
+  inteiros comuns como índices `ORDERED` — lista que precisaria crescer a cada
+  novo campo numérico injetado pelo exporter.
+
+  A seleção passou a percorrer os `FieldSpec` **`ORDERED` do template**. A
+  exclusão tornou-se desnecessária: chaves injetadas pelo exporter não estão no
+  template, e campos de outros tipos (`SCALE`, `ENUMERATED`) não são `ORDERED`.
+  A proteção deixou de ser uma lista de nomes e passou a ser estrutural.
+
+### Added — `SYNESIS_E087`: prefixo `[N]` em `VALUES` de campo `ENUMERATED`
+
+- **Novo erro `IndexOnEnumeratedValue` (E087)**, simétrico ao erro que `ORDERED`
+  já emite quando o índice está **ausente**. O prefixo estabelece **ordem**:
+  é obrigatório em `ORDERED` (onde o índice é o dado gravado) e não faz sentido
+  em `ENUMERATED`, que não tem ordem e cujo dado é o próprio rótulo.
+
+  Fecha a assimetria em que `[1] Aim: …` era aceito num `ENUMERATED`, populado em
+  `spec.values[].index` e **silenciosamente ignorado** — o pesquisador declarava
+  uma ordem que o sistema não honrava em lugar nenhum. Mesmo padrão de
+  `ValuesOnNonEnumerable` (E086): erro acumulável, não `TemplateLoadError` fatal.
+
+  Nenhum template do ecossistema (72 varridos) usa a construção, então a regra
+  não invalida material existente.
+
+- **Snippets de `VALUES` passam a variar por tipo.** O corpo era único e trazia
+  `[1]`/`[2]`, o que faria o editor sugerir — e a sondagem de `language_info`
+  compilar — um `ENUMERATED` inválido sob a nova regra. `ORDERED` recebe a
+  variante indexada; `ENUMERATED`, a forma sem prefixo.
 
 ### Fixed — CI
 
@@ -1212,6 +1324,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LSP adapter documentation
 ---
 
+[0.12.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.12.0
+[0.11.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.11.0
+[0.10.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.10.0
+[0.9.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.9.0
+[0.8.1]: https://github.com/synesis-lang/synesis/releases/tag/v0.8.1
+[0.8.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.8.0
+[0.7.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.7.0
+[0.6.0]: https://github.com/synesis-lang/synesis/releases/tag/v0.6.0
 [0.4.6]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.6
 [0.4.5]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.5
 [0.4.4]: https://github.com/synesis-lang/synesis/releases/tag/v0.4.4

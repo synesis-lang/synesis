@@ -1209,7 +1209,26 @@ def init() -> None:
     click.echo(click.style("Basic project initialized.", fg="green"))
 
 
+#: A partir de quantas repeticoes da MESMA mensagem o bloco e colapsado. Abaixo
+#: disso, listar tudo e mais util que resumir: o pesquisador ve cada local.
+_REPEAT_COLLAPSE_THRESHOLD = 4
+
+#: Quantos locais sao exibidos antes do "... e mais N".
+_REPEAT_LOCATIONS_SHOWN = 3
+
+
 def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | None = None) -> None:
+    """Imprime diagnosticos, colapsando mensagens identicas repetidas.
+
+    Um defeito sistematico (ex.: todo um `.syno` gravado na forma errada) produz
+    centenas de linhas identicas que rolam o terminal e escondem os demais
+    diagnosticos. Mensagens iguais sao agrupadas com a contagem e uma amostra de
+    locais — mesmo principio ja adotado em `ValidationResult._to_diagnostics_compact`,
+    que agrupa `UndefinedCode` por codigo.
+
+    Mensagens que se repetem pouco continuam listadas uma a uma: resumir cedo
+    demais esconderia informacao util.
+    """
     label_color = {"ERROR": "red", "WARNING": "yellow", "INFO": "cyan"}.get(severity_label, "yellow")
 
     def _fmt_location(loc) -> str:
@@ -1226,12 +1245,40 @@ def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | N
     if not formatted:
         return
 
-    col_width = max(len(loc) for loc, _ in formatted) + 2
-
+    # Agrupa por mensagem; dict preserva a ordem de primeira aparicao.
+    by_message: dict[str, list[str]] = {}
     for loc_str, msg in formatted:
-        loc_part = click.style(loc_str.ljust(col_width), fg="cyan")
-        label_part = click.style(f"[{severity_label}]", fg=label_color, bold=True)
-        click.echo(f"{loc_part}{label_part}  {msg}", err=True)
+        by_message.setdefault(msg, []).append(loc_str)
+
+    # A primeira coluna acomoda o que sera de fato impresso: o local, nas
+    # mensagens listadas uma a uma, ou o contador ("45x"), nas colapsadas.
+    printed_labels: list[str] = []
+    for locs in by_message.values():
+        if len(locs) < _REPEAT_COLLAPSE_THRESHOLD:
+            printed_labels.extend(locs)
+        else:
+            printed_labels.append(f"{len(locs)}x")
+    col_width = max(len(label) for label in printed_labels) + 2
+    label_part = click.style(f"[{severity_label}]", fg=label_color, bold=True)
+    indent = " " * (col_width + len(f"[{severity_label}]") + 2)
+
+    for msg, locations in by_message.items():
+        if len(locations) < _REPEAT_COLLAPSE_THRESHOLD:
+            for loc_str in locations:
+                loc_part = click.style(loc_str.ljust(col_width), fg="cyan")
+                click.echo(f"{loc_part}{label_part}  {msg}", err=True)
+            continue
+
+        # Bloco colapsado: contagem + amostra de locais.
+        count_part = click.style(f"{len(locations)}x".ljust(col_width), fg="cyan", bold=True)
+        click.echo(f"{count_part}{label_part}  {msg}", err=True)
+
+        shown = locations[:_REPEAT_LOCATIONS_SHOWN]
+        remaining = len(locations) - len(shown)
+        sample = ", ".join(shown)
+        if remaining:
+            sample += f", ... e mais {remaining}"
+        click.echo(click.style(f"{indent}em {sample}", fg="cyan"), err=True)
 
 
 def _print_stats(stats) -> None:

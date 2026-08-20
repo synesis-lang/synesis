@@ -39,6 +39,7 @@ from synesis.ast.results import (
     ChainWithoutArity,
     DuplicateValue,
     EnumeratedWithoutValues,
+    IndexOnEnumeratedValue,
     FieldScopeListMismatch,
     FormatOnNonScale,
     InvalidArityOperator,
@@ -278,6 +279,7 @@ def validate_template(template: TemplateNode) -> ValidationResult:
     _check_arity_relations_mismatch(template, result)
     _check_ordered_without_values(template, result)
     _check_enumerated_without_values(template, result)
+    _check_index_on_enumerated(template, result)
     _check_scale_without_format(template, result)
     _check_format_syntax(template, result)
     _check_invalid_arity_operator(template, result)
@@ -472,6 +474,20 @@ def _check_ordered_without_values(template: TemplateNode, result: ValidationResu
         if spec.type == FieldType.ORDERED and not spec.values:
             loc = spec.location or template.location
             result.add(OrderedWithoutValues(location=loc, field_name=name))
+
+
+def _check_index_on_enumerated(template: TemplateNode, result: ValidationResult) -> None:
+    """Erro 87: prefixo `[N]` em VALUES de campo ENUMERATED.
+
+    O transformer usa index=-1 para "sem prefixo" (ver value_entry), de modo que
+    qualquer index >= 0 significa prefixo explicito — inclusive `[0]`.
+    """
+    for name, spec in template.field_specs.items():
+        if spec.type != FieldType.ENUMERATED or not spec.values:
+            continue
+        if any(value.index >= 0 for value in spec.values):
+            loc = spec.location or template.location
+            result.add(IndexOnEnumeratedValue(location=loc, field_name=name))
 
 
 def _check_enumerated_without_values(template: TemplateNode, result: ValidationResult) -> None:
