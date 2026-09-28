@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.1] - 2026-09-28
+
+Suporte ao `bibtexparser` 2.x, com resultado idêntico ao da 1.x.
+
+A 0.13.0 limitou a dependência a `bibtexparser < 2` porque a 2.0 trocou a API.
+Esta versão aceita `>= 1.4, < 3`: `parser.bib_loader.parse_bibtex` isola a
+diferença, e o resto do compilador — e o `synesis-coder` — recebe o mesmo
+formato com qualquer das duas.
+
+### Added
+
+- **`parse_bibtex(content)`** devolve as entradas no formato da 1.x e os
+  blocos não reconhecidos, com a versão do `bibtexparser` que estiver instalada.
+
+### Fixed
+
+- **A 2.x com a pilha padrão entregava valores diferentes da 1.x.** Medido em
+  43 arquivos e 3.422 entradas dos estudos de caso: diferença em 9 arquivos
+  (abstracts, títulos, autores, meses). O caminho 2.x agora faz o parse sem
+  middlewares e resolve o valor bruto com as regras da 1.x:
+  - remove a indentação das linhas de continuação e converte `\r\n`;
+  - expande as macros de mês (`month = jan` → `January`), mas `{jan}` entre
+    chaves continua literal;
+  - resolve concatenação e `@string` encadeadas (`pub # " Ltda"`);
+  - chave repetida no mesmo arquivo: a última vence, como na 1.x;
+  - nome de campo em minúsculas e a mesma ordem de chaves (o JSON exportado
+    percorre a entrada nessa ordem).
+
+  Com as duas versões, os 3.422 registros saem idênticos, inclusive a ordem, e o
+  JSON exportado do face85 (2,7 MB) é igual byte a byte, exceto o horário.
+- **Tipos de entrada não padrão (`@online`, `@dataset`, `@software`) eram
+  descartados em silêncio pela 1.x** ("not considered"), e o bibref virava
+  `SYNESIS_E001`. Exportações do Zotero usam `@online` com frequência. Agora são
+  aceitos com as duas versões.
+
+### Changed
+
+- O CI roda os testes de bibliografia também com `bibtexparser` 1.x, em todos
+  os 9 ambientes. A suíte principal usa a versão mais nova que a restrição
+  aceita.
+
 ## [0.13.0] - 2026-09-28
 
 Vários arquivos, curingas e pastas em todos os `INCLUDE` do `.synp`.

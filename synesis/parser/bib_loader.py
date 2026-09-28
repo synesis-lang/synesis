@@ -6,6 +6,7 @@ Proposito:
     Inclui sugestoes por similaridade quando referencias faltam.
 
 Componentes principais:
+    - parse_bibtex: parse compatível com bibtexparser 1.x e 2.x
     - load_bibliography: carrega e normaliza entradas BibTeX
     - merge_bibliographies: une varios .bib, com proveniencia e deteccao de
       chave duplicada entre arquivos (E089)
@@ -37,7 +38,7 @@ import re
 from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple, TypedDict
+from typing import Dict, Iterable, List, Optional, Tuple, TypedDict, cast
 
 import bibtexparser
 
@@ -64,6 +65,142 @@ class DuplicateBibKey:
     first_line: int
     duplicate_file: str
     duplicate_line: int
+
+
+# bibtexparser 2.x trocou a API (parse_string/Library no lugar de
+# loads/BibDatabase). parse_bibtex() isola a diferença: o resto do módulo — e o
+# synesis-coder — recebe o mesmo formato com as duas versões.
+_BIBTEXPARSER_V2 = hasattr(bibtexparser, "parse_string")
+
+
+@dataclass(frozen=True)
+class ParsedBibtex:
+    """Resultado de parse_bibtex, idêntico nas versões 1.x e 2.x do bibtexparser.
+
+    Attributes:
+        entries: Entradas no formato 1.x — dict com `ID`, `ENTRYTYPE` (minúsculo)
+            e os campos com nome em minúsculas —, na ordem do arquivo. Uma chave
+            repetida no mesmo arquivo aparece duas vezes (quem monta o dict fica
+            com a última, como sempre foi).
+        comments: Texto dos blocos que o parser não reconheceu como entrada
+            (comentários implícitos e explícitos); é onde uma entrada malformada
+            vai parar.
+    """
+
+    entries: List[Dict[str, str]]
+    comments: List[str]
+
+
+def parse_bibtex(content: str) -> ParsedBibtex:
+    """Parseia um .bib com o bibtexparser instalado, 1.x ou 2.x.
+
+    Normaliza as duas diferenças que mudariam o resultado:
+      - nomes de campo em minúsculas (a 2.x preserva a caixa: `Author`);
+      - tipos de entrada não padrão (`@online`, `@dataset`, `@software`): a 1.x,
+        com o parser padrão, os DESCARTAVA em silêncio ("not considered") — e o
+        bibref virava E001. Aqui os dois lados os aceitam.
+
+    Chave repetida no mesmo arquivo: a 2.x separa a repetição num bloco de erro;
+    ela é devolvida como entrada, na posição em que aparece, para que a última
+    ocorrência vença nas duas versões.
+    """
+    if _BIBTEXPARSER_V2:
+        return _parse_bibtex_v2(content)
+
+    from bibtexparser.bparser import BibTexParser
+
+    database = bibtexparser.loads(content, parser=BibTexParser(ignore_nonstandard_types=False))
+    return ParsedBibtex(entries=list(database.entries), comments=list(database.comments))
+
+
+# Macros de mês que a 1.x pré-define (bibdatabase.COMMON_STRINGS).
+_MONTH_STRINGS = {
+    "jan": "January", "feb": "February", "mar": "March", "apr": "April",
+    "may": "May", "jun": "June", "jul": "July", "aug": "August",
+    "sep": "September", "oct": "October", "nov": "November", "dec": "December",
+}
+_CONTINUATION_INDENT = re.compile(r"\n[ \t]+")
+
+
+def _parse_bibtex_v2(content: str) -> ParsedBibtex:
+    """Caminho 2.x, reproduzindo o valor que a 1.x entrega.
+
+    A 2.x com a pilha padrão difere da 1.x em quatro pontos, todos medidos:
+    mantém a indentação das linhas de continuação (abstracts, títulos), não
+    converte `\\r\\n`, não pré-define as macros de mês (`month = jan`) e não
+    resolve concatenação (`pub # " Ltda"` chega cru). Por isso o parse é feito
+    SEM middlewares, e o valor bruto é resolvido aqui com as regras da 1.x.
+    """
+    library = bibtexparser.parse_string(content.replace("\r\n", "\n"), parse_stack=[])
+
+    strings: Dict[str, str] = dict(_MONTH_STRINGS)
+    for string in library.strings:  # em ordem: uma @string pode usar as anteriores
+        strings[string.key.lower()] = _resolve_value(string.value, strings)
+
+    positioned: List[Tuple[int, Dict[str, str]]] = [
+        (entry.start_line, _entry_from_v2(entry, strings)) for entry in library.entries
+    ]
+    comments = [block.comment for block in library.comments]
+    for block in library.failed_blocks:
+        duplicate = getattr(block, "ignore_error_block", None)
+        if type(block).__name__ == "DuplicateBlockKeyBlock":
+            # Chave repetida no mesmo arquivo: a 1.x devolvia as duas entradas.
+            if duplicate is not None and hasattr(duplicate, "fields"):
+                positioned.append((block.start_line, _entry_from_v2(duplicate, strings)))
+        else:
+            comments.append(block.raw)
+    positioned.sort(key=lambda item: item[0])
+    return ParsedBibtex(entries=[entry for _, entry in positioned], comments=comments)
+
+
+def _entry_from_v2(entry, strings: Dict[str, str]) -> Dict[str, str]:
+    """Entry do bibtexparser 2.x no formato de dict da 1.x.
+
+    Inclusive a ORDEM das chaves: a 1.x devolve os campos na ordem inversa à do
+    arquivo, seguidos de ENTRYTYPE e ID. O JSON exportado percorre a entrada
+    nessa ordem — sem isto, o mesmo projeto geraria JSON diferente conforme a
+    versão do bibtexparser instalada.
+    """
+    data: Dict[str, str] = {
+        field.key.lower(): _resolve_value(field.value, strings)
+        for field in reversed(entry.fields)
+    }
+    data["ENTRYTYPE"] = entry.entry_type.lower()
+    data["ID"] = entry.key
+    return data
+
+
+def _resolve_value(raw: str, strings: Dict[str, str]) -> str:
+    """Valor bruto da 2.x (`{..}`, `"..."`, macro, número, `a # b`) -> texto da 1.x."""
+    parts = []
+    for part in _split_concatenation(raw.strip()):
+        if len(part) >= 2 and part[0] == "{" and part[-1] == "}":
+            parts.append(part[1:-1])
+        elif len(part) >= 2 and part[0] == '"' and part[-1] == '"':
+            parts.append(part[1:-1])
+        else:
+            parts.append(strings.get(part.lower(), part))
+    return _CONTINUATION_INDENT.sub("\n", "".join(parts))
+
+
+def _split_concatenation(value: str) -> List[str]:
+    """Divide `a # {b # c} # "d"` nos `#` de nível zero (fora de chaves e aspas)."""
+    parts: List[str] = []
+    depth = 0
+    in_quotes = False
+    start = 0
+    for i, ch in enumerate(value):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        elif ch == '"' and depth == 0:
+            in_quotes = not in_quotes
+        elif ch == "#" and depth == 0 and not in_quotes:
+            parts.append(value[start:i].strip())
+            start = i + 1
+    parts.append(value[start:].strip())
+    return [part for part in parts if part]
 
 
 def load_bibliography(path: Path | str) -> Dict[str, BibEntry]:
@@ -106,16 +243,14 @@ def load_bibliography_from_string(content: str) -> Dict[str, BibEntry]:
         >>> bib["silva2023"]["author"]
         'Silva, Maria'
     """
-    bib_database = bibtexparser.loads(content)
-
     normalized: Dict[str, BibEntry] = {}
-    for entry in bib_database.entries:
+    for entry in parse_bibtex(content).entries:
         original_key = entry.get("ID", "")
         key = original_key.lower().strip()
         if not key:
             continue
         entry["_original_key"] = original_key
-        normalized[key] = entry
+        normalized[key] = cast(BibEntry, entry)
     return normalized
 
 
@@ -190,12 +325,12 @@ def detect_malformed_entries(content: str) -> list[tuple[str, int]]:
         Lista de tuplas (chave_suspeita, numero_da_linha), uma por entrada
         malformada. A linha e 1-indexed; 0 quando a chave nao e localizada.
     """
-    bib_database = bibtexparser.loads(content)
+    parsed = parse_bibtex(content)
     lines = content.splitlines()
     malformed: list[tuple[str, int]] = []
 
     # Caso 1: entradas sem tipo/chave que caíram nos comentários implícitos do parser
-    for comment in bib_database.comments:
+    for comment in parsed.comments:
         for match in re.finditer(r"(?m)^[ \t]*@([A-Za-z][\w-]*)", comment):
             key = match.group(1)
             line_number = next(
@@ -209,7 +344,7 @@ def detect_malformed_entries(content: str) -> list[tuple[str, int]]:
             malformed.append((key, line_number))
 
     # Caso 2: entradas parseadas cuja chave começa com @ (ex: @book{@BibliaNVT,...})
-    for entry in bib_database.entries:
+    for entry in parsed.entries:
         entry_id = entry.get("ID", "")
         if entry_id.startswith("@"):
             clean_key = entry_id.lstrip("@")
