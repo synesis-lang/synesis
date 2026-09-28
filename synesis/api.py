@@ -42,11 +42,16 @@ from synesis.ast.nodes import (
     SourceNode,
     TemplateNode,
 )
-from synesis.ast.results import MalformedBibliographyEntry, ValidationResult
+from synesis.ast.results import (
+    DuplicateKeyAcrossFiles,
+    MalformedBibliographyEntry,
+    ValidationResult,
+)
 from synesis.parser.bib_loader import (
     BibEntry,
+    DuplicateBibKey,
     detect_malformed_entries,
-    load_bibliography_from_string,
+    merge_bibliographies,
 )
 from synesis.parser.lexer import parse_string
 from synesis.parser.template_loader import load_template_from_string
@@ -244,6 +249,7 @@ def load(
     dataset_index: Optional[Dict[str, Any]] = None,
     project_filename: str = "<project>",
     template_filename: str = "<template>",
+    bibliography_contents: Optional[Dict[str, str]] = None,
 ) -> MemoryCompilationResult:
     """
     Compila projeto Synesis a partir de strings em memoria.
@@ -257,7 +263,12 @@ def load(
         template_content: Conteudo do arquivo .synt
         annotation_contents: Dict[filename, content] para arquivos .syn
         ontology_contents: Dict[filename, content] para arquivos .syno
-        bibliography_content: Conteudo do arquivo .bib (opcional)
+        bibliography_content: Conteudo de um arquivo .bib (opcional). Forma
+            antiga, mantida por compatibilidade; equivale a
+            `bibliography_contents={"<bibliography>": conteudo}`.
+        bibliography_contents: Dict[filename, content] para varios arquivos .bib,
+            unidos na ordem do dict. Chave repetida entre arquivos e E089 (vale a
+            primeira). Nao pode ser usado junto com `bibliography_content`.
         dataset_index: Registros TOML ja carregados/indexados por chave
             (ON DATASET). Pre-carregado pelo chamador (dataset_loader) para
             manter load() sem I/O de disco, espelhando bibliography_content.
@@ -269,6 +280,8 @@ def load(
 
     Raises:
         SynesisSyntaxError: Se houver erro de sintaxe nos conteudos
+        ValueError: Se `bibliography_content` e `bibliography_contents` forem
+            passados juntos
 
     Example:
         >>> import synesis
@@ -313,9 +326,19 @@ def load(
     # None quando nenhum conteudo .bib e passado: os identificadores de SOURCE sao
     # tratados como chaves internas e a validacao de bibref (E001) e desativada,
     # espelhando compiler.load_bibliography(). {} so ocorreria com .bib vazio explicito.
-    bibliography: Optional[Dict[str, BibEntry]] = None
+    if bibliography_content is not None and bibliography_contents is not None:
+        raise ValueError(
+            "Use bibliography_content (um .bib) OU bibliography_contents (varios), nao os dois."
+        )
+    bib_parts: Dict[str, str] = dict(bibliography_contents or {})
     if bibliography_content:
-        bibliography = load_bibliography_from_string(bibliography_content)
+        bib_parts = {"<bibliography>": bibliography_content}
+    bib_parts = {name: text for name, text in bib_parts.items() if text}
+
+    bibliography: Optional[Dict[str, BibEntry]] = None
+    duplicates: List[DuplicateBibKey] = []
+    if bib_parts:
+        bibliography, duplicates = merge_bibliographies(bib_parts.items())
 
     # 4. Parse ontologies (se fornecido)
     ontologies: List[OntologyNode] = []
@@ -341,13 +364,23 @@ def load(
     validation_result = ValidationResult()
 
     # Erro 72: entradas BibTeX malformadas na bibliografia fornecida
-    if bibliography_content:
-        for entry_key, line_number in detect_malformed_entries(bibliography_content):
+    for bib_name, bib_text in bib_parts.items():
+        for entry_key, line_number in detect_malformed_entries(bib_text):
             validation_result.add(MalformedBibliographyEntry(
-                location=SourceLocation(Path("<bibliography>"), line_number or 1, 1),
-                filename="<bibliography>",
+                location=SourceLocation(Path(bib_name), line_number or 1, 1),
+                filename=bib_name,
                 entry_key=entry_key,
             ))
+    # Erro 89: mesma chave em dois arquivos .bib
+    for dup in duplicates:
+        validation_result.add(DuplicateKeyAcrossFiles(
+            location=SourceLocation(Path(dup.duplicate_file), dup.duplicate_line or 1, 1),
+            kind="BIBLIOGRAPHY",
+            key=dup.key,
+            first_file=dup.first_file,
+            first_line=dup.first_line,
+            duplicate_file=dup.duplicate_file,
+        ))
 
     malformed_keys = {
         e.entry_key.lower() for e in validation_result.errors

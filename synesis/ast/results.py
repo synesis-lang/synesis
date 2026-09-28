@@ -1058,6 +1058,43 @@ class OrderedValueAsLabel(ValidationError):
 
 
 @dataclass(frozen=True)
+class DuplicateKeyAcrossFiles(ValidationError):
+    """Mesma chave em dois arquivos da bibliografia ou do dataset. (erro 89)
+
+    Com varios `.bib` (ou `.toml`) declarados — por pasta, curinga ou varias
+    linhas INCLUDE —, uma chave repetida faria um registro sombrear o outro em
+    silencio. A primeira ocorrencia, na ordem deterministica dos arquivos, e a
+    que vale; a repeticao vira erro, porque decidir qual e o registro certo cabe
+    ao pesquisador.
+    """
+
+    kind: str  # "BIBLIOGRAPHY" ou "DATASET"
+    key: str
+    first_file: str
+    first_line: int
+    duplicate_file: str
+    CODE: ClassVar[str] = "SYNESIS_E089"
+
+    def _what(self) -> str:
+        return "referencia" if self.kind == "BIBLIOGRAPHY" else "registro de dataset"
+
+    def _first(self) -> str:
+        return f"{self.first_file}:{self.first_line}" if self.first_line else self.first_file
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"A chave `{self.key}` aparece em dois arquivos do projeto: `{self._first()}`\n"
+            f"  e `{self.duplicate_file}`. Cada {self._what()} precisa de uma chave unica\n"
+            f"  no projeto inteiro; o compilador usou a primeira ocorrencia e ignorou esta.\n"
+            f"  Se for o mesmo item, apague uma das duas entradas. Se forem itens\n"
+            f"  diferentes, de a um deles outra chave e atualize as anotacoes que o citam."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"Chave `{self.key}` duplicada: ja definida em `{self._first()}`"
+
+
+@dataclass(frozen=True)
 class DuplicateScopeBlock(ValidationError):
     """Dois ou mais blocos SCOPE FIELDS no mesmo template. (erro 57)"""
 
@@ -1473,12 +1510,26 @@ class MissingOntologyInclude(ValidationError):
 
 @dataclass(frozen=True)
 class MissingBibliographyFile(ValidationError):
-    """Arquivo .bib declarado no projeto nao encontrado no caminho indicado. (erro 63)"""
+    """Arquivo .bib declarado no projeto nao encontrado no caminho indicado. (erro 63)
+
+    Tambem cobre curinga ou pasta que nao casou nenhum `.bib` (`no_matches`).
+    """
 
     filename: str
+    no_matches: bool = False
     CODE: ClassVar[str] = "SYNESIS_E063"
 
     def to_diagnostic(self) -> str:
+        if self.no_matches:
+            return (
+                f"O padrao `{self.filename}` declarado em `INCLUDE BIBLIOGRAPHY` nao\n"
+                f"  encontrou nenhum arquivo `.bib`. Sem bibliografia, nenhuma referencia\n"
+                f"  `@bibref` pode ser validada.\n"
+                f"  Verifique se os arquivos foram copiados para a pasta e se o padrao\n"
+                f"  esta correto. Uma pasta e percorrida por inteiro (subpastas incluidas)\n"
+                f"  em busca de `.bib`; um curinga como `fontes/*.bib` casa so o que\n"
+                f"  descreve. O caminho e relativo a pasta do arquivo de projeto (`.synp`)."
+            )
         return (
             f"O arquivo de referencias bibliograficas `{self.filename}` declarado no\n"
             f"  projeto nao foi encontrado. Sem ele, nenhuma referencia `@bibref` pode\n"
@@ -1488,6 +1539,8 @@ class MissingBibliographyFile(ValidationError):
         )
 
     def to_cli_line(self) -> str:
+        if self.no_matches:
+            return f"`{self.filename}` nao encontrou nenhum arquivo .bib"
         return f"Arquivo de referencias `{self.filename}` declarado no projeto nao encontrado"
 
 

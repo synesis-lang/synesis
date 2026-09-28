@@ -7,6 +7,8 @@ Proposito:
 
 Componentes principais:
     - load_bibliography: carrega e normaliza entradas BibTeX
+    - merge_bibliographies: une varios .bib, com proveniencia e deteccao de
+      chave duplicada entre arquivos (E089)
     - detect_malformed_entries: localiza entradas BibTeX em formato invalido
     - find_bibref: busca por chave com normalizacao
     - suggest_bibref: sugestoes por fuzzy matching
@@ -23,6 +25,8 @@ Exemplo de uso:
 Notas de implementacao:
     - Chaves sempre normalizadas com lowercase + trim.
     - entry['_original_key'] preserva a chave original.
+    - Campos iniciados por `_` sao internos (proveniencia): nao fazem parte da
+      entrada BibTeX e nao sao exportados.
 
 Gerado conforme: Especificacao Synesis v1.1
 """
@@ -30,9 +34,10 @@ Gerado conforme: Especificacao Synesis v1.1
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Dict, Optional, TypedDict
+from typing import Dict, Iterable, List, Optional, Tuple, TypedDict
 
 import bibtexparser
 
@@ -46,6 +51,19 @@ class BibEntry(TypedDict, total=False):
     journal: str
     booktitle: str
     _original_key: str
+    _source_file: str  # arquivo .bib de origem (quando varios sao unidos)
+    _source_line: int  # linha da entrada no arquivo; 0 quando nao localizada
+
+
+@dataclass(frozen=True)
+class DuplicateBibKey:
+    """Mesma chave em dois arquivos .bib do projeto (base do E089)."""
+
+    key: str
+    first_file: str
+    first_line: int
+    duplicate_file: str
+    duplicate_line: int
 
 
 def load_bibliography(path: Path | str) -> Dict[str, BibEntry]:
@@ -99,6 +117,59 @@ def load_bibliography_from_string(content: str) -> Dict[str, BibEntry]:
         entry["_original_key"] = original_key
         normalized[key] = entry
     return normalized
+
+
+_ENTRY_START = re.compile(r"^[ \t]*@\w+\s*[{(]\s*([^,\s]+)\s*,")
+
+
+def entry_lines(content: str) -> Dict[str, int]:
+    """Mapa chave-normalizada -> linha (1-indexed) em que a entrada comeca.
+
+    Uma unica passada pelo arquivo: linear no tamanho do .bib.
+    """
+    lines: Dict[str, int] = {}
+    for i, line in enumerate(content.splitlines(), start=1):
+        match = _ENTRY_START.match(line)
+        if match:
+            lines.setdefault(match.group(1).lower().strip(), i)
+    return lines
+
+
+def merge_bibliographies(
+    parts: Iterable[Tuple[str, str]],
+) -> Tuple[Dict[str, BibEntry], List[DuplicateBibKey]]:
+    """Une varios .bib, na ordem recebida, registrando a origem de cada entrada.
+
+    Args:
+        parts: Pares (rotulo_do_arquivo, conteudo). O rotulo vai para
+            `_source_file` e para as mensagens de erro.
+
+    Returns:
+        (bibliografia, duplicatas). Numa chave repetida entre arquivos vale a
+        PRIMEIRA ocorrencia — a ordem e deterministica, e a duplicata e
+        reportada (E089) em vez de sombreada em silencio.
+    """
+    merged: Dict[str, BibEntry] = {}
+    duplicates: List[DuplicateBibKey] = []
+    for label, content in parts:
+        lines = entry_lines(content)
+        for key, entry in load_bibliography_from_string(content).items():
+            line = lines.get(key, 0)
+            if key in merged:
+                first = merged[key]
+                if first.get("_source_file") != label:
+                    duplicates.append(DuplicateBibKey(
+                        key=entry.get("_original_key", key),
+                        first_file=first.get("_source_file", ""),
+                        first_line=first.get("_source_line", 0),
+                        duplicate_file=label,
+                        duplicate_line=line,
+                    ))
+                continue
+            entry["_source_file"] = label
+            entry["_source_line"] = line
+            merged[key] = entry
+    return merged, duplicates
 
 
 def detect_malformed_entries(content: str) -> list[tuple[str, int]]:

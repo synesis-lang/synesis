@@ -191,6 +191,22 @@ PROJECT demo
 END PROJECT
 ```
 
+Every `INCLUDE` accepts a file, a glob or a folder, and several lines of the
+same type add up. A folder is searched recursively for the type's extension
+(`.bib`, `.syn`, `.syno`, `.toml`). This is how a large corpus is organized in
+batches:
+
+```synesis
+PROJECT corpus
+    TEMPLATE "template.synt"
+    INCLUDE BIBLIOGRAPHY "Sources"              # one .bib per author
+    INCLUDE ANNOTATIONS  "annotations_*/*.syn"  # one folder per coding run
+    INCLUDE ONTOLOGY     "ontology.syno"
+END PROJECT
+```
+
+The same key in two `.bib` files is an error (`SYNESIS_E089`).
+
 ---
 
 ## CLI

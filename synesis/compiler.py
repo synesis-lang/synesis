@@ -44,6 +44,7 @@ from synesis.ast.nodes import (
     TemplateNode,
 )
 from synesis.ast.results import (
+    DuplicateKeyAcrossFiles,
     DuplicateProjectBlock,
     IncludePathEscapesProject,
     MalformedBibliographyEntry,
@@ -63,16 +64,22 @@ from synesis.exporters.alpaca_export import export_alpaca
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
 from synesis.exporters.xls_export import export_xls
-from synesis.parser.bib_loader import BibEntry, detect_malformed_entries, load_bibliography
-from synesis.parser.dataset_loader import DatasetError, load_dataset
+from synesis.parser.bib_loader import (
+    BibEntry,
+    DuplicateBibKey,
+    detect_malformed_entries,
+    merge_bibliographies,
+)
+from synesis.parser.dataset_loader import SOURCE_FILE_KEY, DatasetError, load_dataset
 from synesis.parser.lexer import SynesisSyntaxError, parse_file, read_source_file
 from synesis.parser.parse_cache import get_cached_nodes, put_cached_nodes
 from synesis.parser.paths import (
+    INCLUDE_EXTENSIONS,
     IncludeError,
+    IncludeExpansion,
     canonical_path,
-    has_glob,
+    expand_include,
     normalize_include_path,
-    resolve_glob,
     resolve_include,
 )
 from synesis.parser.template_loader import load_template, validate_template
@@ -140,6 +147,12 @@ class SynesisCompiler:
     def __init__(self, project_path: Path):
         self.project_path = Path(project_path)
         self.project_dir = self.project_path.parent
+        # Texto de cada .bib lido nesta compilacao. A CLI chama as etapas da
+        # bibliografia em separado (_check_bibliography_file/_format,
+        # load_bibliography): o cache garante que um .bib seja lido e unido uma
+        # vez so, e que as etapas vejam exatamente os mesmos arquivos.
+        self._bib_texts: Dict[Path, Optional[str]] = {}
+        self._bib_merged: Optional[tuple[tuple[Path, ...], Dict[str, BibEntry], List[DuplicateBibKey]]] = None
 
     def compile(self) -> CompilationResult:
         project, project_validation = self.parse_project()
@@ -252,18 +265,90 @@ class SynesisCompiler:
         # Retorna None quando o projeto NAO declara INCLUDE BIBLIOGRAPHY: nesse caso
         # os identificadores de SOURCE sao chaves internas e a validacao de bibref
         # (E001) e desativada no SemanticValidator. Quando ha INCLUDE BIBLIOGRAPHY
-        # mas o arquivo nao existe ou nao pode ser lido, retorna {} (a falta do
-        # arquivo ja e reportada como E063/E076 e os bibrefs ainda sao validados).
+        # mas nenhum arquivo existe ou pode ser lido, retorna {} (a falta ja e
+        # reportada como E063/E076 e os bibrefs ainda sao validados).
+        #
+        # Varias linhas INCLUDE BIBLIOGRAPHY, curingas e pastas se somam, na ordem
+        # do .synp; numa chave repetida vale a primeira ocorrencia (E089).
+        if not self._declares(project, "BIBLIOGRAPHY"):
+            return None
+        paths, _result = self._bibliography_files(project)
+        merged, _duplicates = self._merge_bibliography(paths)
+        return merged
+
+    def _declares(self, project: ProjectNode, include_type: str) -> bool:
+        return any(inc.include_type.upper() == include_type for inc in project.includes)
+
+    def _expand_includes(
+        self, project: ProjectNode, include_type: str
+    ) -> List[tuple[Any, IncludeExpansion]]:
+        """Expande cada INCLUDE do tipo em arquivos (arquivo, curinga ou pasta)."""
+        extension = INCLUDE_EXTENSIONS.get(include_type)
+        expansions = []
         for include in project.includes:
-            if include.include_type.upper() == "BIBLIOGRAPHY":
-                resolution = resolve_include(self.project_dir, include.path)
-                if not resolution.ok:
-                    return {}
-                try:
-                    return load_bibliography(resolution.path)
-                except (OSError, UnicodeDecodeError):
-                    return {}
-        return None
+            if include.include_type.upper() != include_type:
+                continue
+            # SHARED so autoriza escape para ONTOLOGY (D13); nos demais tipos o uso
+            # indevido vira E084 em validate_project_structure.
+            shared = include.shared and include_type == "ONTOLOGY"
+            expansions.append(
+                (include, expand_include(self.project_dir, include.path, extension, shared=shared))
+            )
+        return expansions
+
+    def _bibliography_files(self, project: ProjectNode) -> tuple[List[Path], ValidationResult]:
+        """Arquivos .bib do projeto, sem repeticao e em ordem deterministica. (E063, E075)"""
+        result = ValidationResult()
+        paths: List[Path] = []
+        seen: set = set()
+        for include, expansion in self._expand_includes(project, "BIBLIOGRAPHY"):
+            for escaped in expansion.outside:
+                result.add(IncludePathEscapesProject(location=include.location, filename=str(escaped)))
+            if expansion.error is IncludeError.ESCAPES_PROJECT:
+                result.add(IncludePathEscapesProject(location=include.location, filename=include.path))
+            elif expansion.error is IncludeError.NO_MATCHES:
+                result.add(MissingBibliographyFile(
+                    location=include.location, filename=include.path, no_matches=True,
+                ))
+            elif expansion.error is not None:
+                result.add(MissingBibliographyFile(location=include.location, filename=include.path))
+            for path in expansion.files:
+                key = self._canonical(path)
+                if key not in seen:
+                    seen.add(key)
+                    paths.append(path)
+        return paths, result
+
+    def _bib_text(self, path: Path) -> Optional[str]:
+        """Conteudo do .bib (cacheado); None quando ilegivel."""
+        if path not in self._bib_texts:
+            try:
+                self._bib_texts[path] = read_source_file(path)
+            except (OSError, UnicodeDecodeError):
+                self._bib_texts[path] = None
+        return self._bib_texts[path]
+
+    def _merge_bibliography(self, paths: List[Path]) -> tuple[Dict[str, BibEntry], List[DuplicateBibKey]]:
+        """Une os .bib legiveis (cacheado pela lista de arquivos)."""
+        key = tuple(paths)
+        if self._bib_merged is None or self._bib_merged[0] != key:
+            parts = []
+            for path in paths:
+                text = self._bib_text(path)
+                if text is not None:
+                    parts.append((self._file_label(path), text))
+            merged, duplicates = merge_bibliographies(parts)
+            self._bib_merged = (key, merged, duplicates)
+        return self._bib_merged[1], self._bib_merged[2]
+
+    def _file_label(self, path: Path) -> str:
+        """Rotulo do arquivo: caminho relativo ao projeto, com `/`."""
+        for base in (self._canonical(self.project_dir), self.project_dir.resolve()):
+            try:
+                return path.relative_to(base).as_posix()
+            except ValueError:
+                continue
+        return str(path)
 
     @staticmethod
     def _dataset_key_path(template: Optional[TemplateNode]) -> Optional[str]:
@@ -302,63 +387,73 @@ class SynesisCompiler:
           {}   = declarado mas o caminho nao resolve / o TOML falha ao carregar
                  (o erro correspondente vai no ValidationResult);
           dict = carregado e indexado pela chave do template.
+
+        Varias linhas INCLUDE DATASET, curingas e pastas se somam. Uma chave
+        repetida entre arquivos e E089: vale a primeira ocorrencia, na ordem
+        deterministica dos arquivos (antes, o ultimo arquivo sobrescrevia em
+        silencio). Curinga ou pasta sem nenhum .toml nao e erro — o dataset
+        pedido fica vazio ({}) e E085 continua exigindo os campos REQUIRED.
         """
         result = ValidationResult()
-        for include in project.includes:
-            if include.include_type.upper() != "DATASET":
+        if not self._declares(project, "DATASET"):
+            return None, result
+
+        key_path = self._dataset_key_path(template)
+        if key_path is None:
+            # Sem campo ON DATASET no template nao ha como indexar os
+            # registros. Nao e erro: o INCLUDE fica inerte, como um .bib
+            # declarado num projeto que nao usa bibref.
+            return None, result
+
+        index: Dict[str, Any] = {}
+        seen: set = set()
+        for include, expansion in self._expand_includes(project, "DATASET"):
+            for escaped in expansion.outside:
+                result.add(IncludePathEscapesProject(
+                    location=include.location,
+                    filename=str(escaped),
+                ))
+            if expansion.error is IncludeError.ESCAPES_PROJECT:
+                result.add(IncludePathEscapesProject(
+                    location=include.location,
+                    filename=include.path,
+                ))
+                continue
+            if expansion.error in (IncludeError.NOT_FOUND, IncludeError.NOT_A_FILE):
+                result.add(UnreadableIncludedFile(
+                    location=include.location,
+                    filename=include.path,
+                    reason="arquivo de dataset declarado nao encontrado",
+                ))
                 continue
 
-            key_path = self._dataset_key_path(template)
-            if key_path is None:
-                # Sem campo ON DATASET no template nao ha como indexar os
-                # registros. Nao e erro: o INCLUDE fica inerte, como um .bib
-                # declarado num projeto que nao usa bibref.
-                return None, result
-
-            raw = normalize_include_path(include.path)
-            if has_glob(raw):
-                inside, outside = resolve_glob(self.project_dir, raw)
-                for escaped in outside:
-                    result.add(IncludePathEscapesProject(
-                        location=include.location,
-                        filename=str(escaped),
-                    ))
-                if not inside:
-                    # Glob declarado sem nenhum match: o dataset foi pedido e
-                    # nao existe. Distingue-se de "projeto sem dataset" ({} vs
-                    # None) para que E085 continue exigindo os campos REQUIRED.
-                    return {}, result
-                paths: List[Path] = inside
-            else:
-                resolution = resolve_include(self.project_dir, raw)
-                if resolution.error is IncludeError.ESCAPES_PROJECT:
-                    result.add(IncludePathEscapesProject(
-                        location=include.location,
-                        filename=include.path,
-                    ))
-                    return {}, result
-                if not resolution.ok:
-                    result.add(UnreadableIncludedFile(
-                        location=include.location,
-                        filename=include.path,
-                        reason="arquivo de dataset declarado nao encontrado",
-                    ))
-                    return {}, result
-                paths = [resolution.path]
-
-            index: Dict[str, Any] = {}
-            for path in paths:
+            for path in expansion.files:
+                canonical = self._canonical(path)
+                if canonical in seen:
+                    continue
+                seen.add(canonical)
                 try:
-                    index.update(load_dataset(path, key_path=key_path, base_dir=self.project_dir))
+                    records = load_dataset(path, key_path=key_path, base_dir=self.project_dir)
                 except DatasetError as exc:
                     result.add(UnreadableIncludedFile(
                         location=include.location,
                         filename=include.path,
                         reason=str(exc),
                     ))
-                    return {}, result
-            return index, result
-        return None, result
+                    continue
+                for key, record in records.items():
+                    if key in index:
+                        result.add(DuplicateKeyAcrossFiles(
+                            location=SourceLocation(path, 1, 1),
+                            kind="DATASET",
+                            key=key,
+                            first_file=self._file_label(Path(index[key].get(SOURCE_FILE_KEY, ""))),
+                            first_line=0,
+                            duplicate_file=self._file_label(path),
+                        ))
+                        continue
+                    index[key] = record
+        return index, result
 
     def parse_ontologies(
         self, project: ProjectNode
@@ -374,7 +469,7 @@ class SynesisCompiler:
     def parse_annotations(
         self, project: ProjectNode
     ) -> tuple[List[SourceNode], List[ItemNode], ValidationResult]:
-        paths, result = self._collect_include_paths(project, "ANNOTATIONS", allow_glob=True)
+        paths, result = self._collect_include_paths(project, "ANNOTATIONS")
 
         if len(paths) <= 3:
             sources, items, parse_result = self._parse_annotations_sequential(paths)
@@ -492,12 +587,11 @@ class SynesisCompiler:
         # Erros 61-62: arquivos .syn/.syno no diretorio nao referenciados no .synp.
         # Os paths sao comparados na caixa real do disco (resolve_include), senao um
         # .synp que escreve "NOTES.SYN" para o arquivo "notes.syn" produz E061
-        # falso-positivo em sistemas de arquivos case-insensitive.
-        included_annotations = set()
-        included_ontologies = set()
+        # falso-positivo em sistemas de arquivos case-insensitive. Arquivo, curinga
+        # e pasta sao expandidos pela mesma regra usada para carrega-los.
+        included: Dict[str, set] = {"ANNOTATIONS": set(), "ONTOLOGY": set()}
         for include in project.includes:
             inc_type = include.include_type.upper()
-            raw = normalize_include_path(include.path)
 
             # Erro 84: SHARED so autoriza escape para ONTOLOGY (D13)
             if include.shared and inc_type != "ONTOLOGY":
@@ -507,15 +601,17 @@ class SynesisCompiler:
                     path=include.path,
                 ))
 
-            if inc_type == "ANNOTATIONS":
-                if has_glob(raw):
-                    inside, _outside = resolve_glob(self.project_dir, raw)
-                    for p in inside:
-                        included_annotations.add(self._canonical(p))
-                else:
-                    included_annotations.add(self._canonical(self.project_dir / raw))
-            elif inc_type == "ONTOLOGY":
-                included_ontologies.add(self._canonical(self.project_dir / raw))
+            if inc_type in included:
+                expansion = expand_include(
+                    self.project_dir, include.path, INCLUDE_EXTENSIONS[inc_type],
+                    shared=include.shared and inc_type == "ONTOLOGY",
+                )
+                included[inc_type].update(self._canonical(p) for p in expansion.files)
+                if expansion.kind == "file" and not expansion.files:
+                    raw = normalize_include_path(include.path)
+                    included[inc_type].add(self._canonical(self.project_dir / raw))
+        included_annotations = included["ANNOTATIONS"]
+        included_ontologies = included["ONTOLOGY"]
 
         for syn_file in self.project_dir.glob("*.syn"):
             if self._canonical(syn_file) not in included_annotations:
@@ -575,104 +671,93 @@ class SynesisCompiler:
             return None, result
 
     def _check_bibliography_file(self, project: ProjectNode) -> ValidationResult:
-        """Erros 63 e 75: arquivo .bib declarado nao encontrado ou fora do projeto."""
-        result = ValidationResult()
-        for include in project.includes:
-            if include.include_type.upper() == "BIBLIOGRAPHY":
-                resolution = resolve_include(self.project_dir, include.path)
-                if resolution.error is IncludeError.ESCAPES_PROJECT:
-                    result.add(IncludePathEscapesProject(
-                        location=include.location,
-                        filename=include.path,
-                    ))
-                elif not resolution.ok:
-                    result.add(MissingBibliographyFile(
-                        location=include.location,
-                        filename=include.path,
-                    ))
-                break
+        """Erros 63 e 75: .bib declarado nao encontrado, curinga/pasta vazios, ou fora do projeto."""
+        _paths, result = self._bibliography_files(project)
         return result
 
     def _check_bibliography_format(self, project: ProjectNode) -> ValidationResult:
-        """Erros 72 e 76: entradas BibTeX malformadas ou arquivo .bib ilegivel."""
+        """Erros 72, 76 e 89: entrada BibTeX malformada, .bib ilegivel, chave repetida entre arquivos."""
         result = ValidationResult()
-        for include in project.includes:
-            if include.include_type.upper() == "BIBLIOGRAPHY":
-                resolution = resolve_include(self.project_dir, include.path)
-                if resolution.ok:
-                    path = resolution.path
-                    try:
-                        content = read_source_file(path)
-                    except (OSError, UnicodeDecodeError) as exc:
-                        result.add(UnreadableIncludedFile(
-                            location=include.location,
-                            filename=include.path,
-                            reason=str(exc),
-                        ))
-                        break
-                    for entry_key, line_number in detect_malformed_entries(content):
-                        result.add(MalformedBibliographyEntry(
-                            location=SourceLocation(path, line_number or 1, 1),
-                            filename=include.path,
-                            entry_key=entry_key,
-                        ))
-                break
+        paths, _ = self._bibliography_files(project)
+        for path in paths:
+            label = self._file_label(path)
+            content = self._bib_text(path)
+            if content is None:
+                try:
+                    read_source_file(path)
+                    reason = "arquivo ilegivel"
+                except (OSError, UnicodeDecodeError) as exc:
+                    reason = str(exc)
+                result.add(UnreadableIncludedFile(
+                    location=SourceLocation(path, 1, 1),
+                    filename=label,
+                    reason=reason,
+                ))
+                continue
+            for entry_key, line_number in detect_malformed_entries(content):
+                result.add(MalformedBibliographyEntry(
+                    location=SourceLocation(path, line_number or 1, 1),
+                    filename=label,
+                    entry_key=entry_key,
+                ))
+        _merged, duplicates = self._merge_bibliography(paths)
+        by_label = {self._file_label(p): p for p in paths}
+        for dup in duplicates:
+            result.add(DuplicateKeyAcrossFiles(
+                location=SourceLocation(by_label.get(dup.duplicate_file, Path(dup.duplicate_file)),
+                                        dup.duplicate_line or 1, 1),
+                kind="BIBLIOGRAPHY",
+                key=dup.key,
+                first_file=dup.first_file,
+                first_line=dup.first_line,
+                duplicate_file=dup.duplicate_file,
+            ))
         return result
 
     def _collect_include_paths(
         self,
         project: ProjectNode,
         include_type: str,
-        allow_glob: bool = False,
     ) -> tuple[List[Path], ValidationResult]:
-        """Resolve os caminhos de um tipo de INCLUDE.
+        """Resolve os caminhos de um tipo de INCLUDE: arquivo, curinga ou pasta.
 
-        Devolve apenas os caminhos legiveis; arquivos ausentes ou fora da pasta do
-        projeto viram erros de validacao (E073/E074/E075) em vez de excecao.
+        Devolve apenas os caminhos legiveis, sem repeticao e em ordem
+        deterministica; arquivos ausentes ou fora da pasta do projeto viram erros
+        de validacao (E073/E074/E075) em vez de excecao.
+
+        Curinga ou pasta sem nenhum arquivo nao e erro aqui: a ausencia de
+        arquivos .syn/.syno ja e coberta por E061/E062 em
+        validate_project_structure.
         """
         result = ValidationResult()
         paths: List[Path] = []
+        seen: set = set()
         missing_cls = (
             MissingOntologyFile if include_type == "ONTOLOGY" else MissingAnnotationsFile
         )
 
-        for include in project.includes:
-            if include.include_type.upper() != include_type:
-                continue
-
-            raw = normalize_include_path(include.path)
-
-            if allow_glob and has_glob(raw):
-                # Glob sem match nao e erro aqui: a ausencia de arquivos .syn ja e
-                # coberta por E061/E062 em validate_project_structure. Mas o glob
-                # segue `..`, entao filtramos os matches que escapam do projeto.
-                inside, outside = resolve_glob(self.project_dir, raw)
-                paths.extend(inside)
-                for escaped in outside:
-                    result.add(IncludePathEscapesProject(
-                        location=include.location,
-                        filename=str(escaped),
-                    ))
-                continue
-
-            # SHARED so autoriza escape para ONTOLOGY (D13); o uso indevido em
-            # outros tipos e reportado como SharedOnlyForOntology na validacao
-            # estrutural — aqui o escape simplesmente nao se aplica.
-            shared = include.shared and include_type == "ONTOLOGY"
-
-            resolution = resolve_include(self.project_dir, raw, shared=shared)
-            if resolution.ok:
-                paths.append(resolution.path)
-            elif resolution.error is IncludeError.ESCAPES_PROJECT:
+        for include, expansion in self._expand_includes(project, include_type):
+            # Curinga e pasta seguem `..` e links: o que escapa do projeto e recusado.
+            for escaped in expansion.outside:
+                result.add(IncludePathEscapesProject(
+                    location=include.location,
+                    filename=str(escaped),
+                ))
+            if expansion.error is IncludeError.ESCAPES_PROJECT:
                 result.add(IncludePathEscapesProject(
                     location=include.location,
                     filename=include.path,
                 ))
-            else:
+            elif expansion.error in (IncludeError.NOT_FOUND, IncludeError.NOT_A_FILE):
                 result.add(missing_cls(
                     location=include.location,
                     filename=include.path,
                 ))
+            for path in expansion.files:
+                key = self._canonical(path)
+                if key not in seen:
+                    seen.add(key)
+                    paths.append(path)
 
         return paths, result
 

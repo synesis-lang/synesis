@@ -102,7 +102,9 @@ def _build_bibliography_section(
 
     if bibliography:
         for key, entry in bibliography.items():
-            cleaned = {k: v for k, v in entry.items() if k != "_original_key"}
+            # Campos iniciados por `_` sao internos do compilador (chave original,
+            # arquivo e linha de origem) e nao pertencem a entrada BibTeX.
+            cleaned = {k: v for k, v in entry.items() if not str(k).startswith("_")}
             result[_normalize_bibref(key)] = cleaned
 
     # Enrich with SOURCE synthetic fields
@@ -731,13 +733,3 @@ def _format_item_id(bibref: str, index: int) -> str:
     return f"{source}_item{index:0{_ITEM_INDEX_WIDTH}d}"
 
 
-def _get_bib_metadata(
-    bibliography: Optional[Dict[str, BibEntry]],
-    bibref: str,
-) -> Dict[str, Any]:
-    if not bibliography:
-        return {}
-    entry = bibliography.get(_normalize_bibref(bibref))
-    if not entry:
-        return {}
-    return {key: value for key, value in entry.items() if key != "_original_key"}

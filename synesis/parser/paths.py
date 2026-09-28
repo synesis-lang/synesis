@@ -10,6 +10,8 @@ Componentes principais:
     - normalize_include_path: canoniza o literal escrito em INCLUDE/TEMPLATE
     - resolve_include: resolve o literal contra o diretorio do projeto
     - IncludeResolution: resultado da resolucao (path canonico + motivo da falha)
+    - expand_include: resolve arquivo, curinga OU pasta de um INCLUDE em lista de
+      arquivos (IncludeExpansion) — ponto unico usado pelo compilador e pelo LSP
 
 Notas de implementacao:
     - O literal do .synp aceita `/` e `\\` como separador; ambos sao canonizados
@@ -32,9 +34,12 @@ from typing import Optional
 from urllib.parse import unquote, urlparse
 
 __all__ = [
+    "INCLUDE_EXTENSIONS",
     "IncludeError",
+    "IncludeExpansion",
     "IncludeResolution",
     "canonical_path",
+    "expand_include",
     "has_glob",
     "is_within",
     "normalize_include_path",
@@ -51,6 +56,17 @@ class IncludeError(Enum):
     NOT_FOUND = "not_found"
     ESCAPES_PROJECT = "escapes_project"
     NOT_A_FILE = "not_a_file"
+    NO_MATCHES = "no_matches"  # curinga ou pasta que nao casou nenhum arquivo
+
+
+# Extensao que uma PASTA declarada em cada tipo de INCLUDE seleciona. Um curinga
+# explicito nao e filtrado: o autor ja escolheu o que casa.
+INCLUDE_EXTENSIONS = {
+    "BIBLIOGRAPHY": ".bib",
+    "ANNOTATIONS": ".syn",
+    "ONTOLOGY": ".syno",
+    "DATASET": ".toml",
+}
 
 
 @dataclass(frozen=True)
@@ -65,6 +81,30 @@ class IncludeResolution:
 
     path: Path
     error: Optional[IncludeError] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+@dataclass(frozen=True)
+class IncludeExpansion:
+    """Resultado da expansao de um literal de INCLUDE em arquivos.
+
+    Attributes:
+        files: Arquivos legiveis, em ordem deterministica (ordem de caminho).
+        outside: Matches recusados por escaparem do projeto (para reporte E075).
+        error: None quando ha arquivos; senao o motivo — NOT_FOUND/NOT_A_FILE/
+            ESCAPES_PROJECT para literal, NO_MATCHES para curinga ou pasta vazios.
+        kind: "file", "glob" ou "directory" — como o literal foi interpretado.
+        path: Caminho canonico do literal (para mensagens de erro).
+    """
+
+    files: tuple[Path, ...]
+    outside: tuple[Path, ...] = ()
+    error: Optional[IncludeError] = None
+    kind: str = "file"
+    path: Optional[Path] = None
 
     @property
     def ok(self) -> bool:
@@ -177,6 +217,85 @@ def resolve_glob(project_dir: Path, raw: str) -> tuple[list[Path], list[Path]]:
         else:
             outside.append(resolved)
     return inside, outside
+
+
+def _path_order(path: Path) -> tuple[str, str]:
+    """Chave de ordenacao identica em todo sistema operacional.
+
+    `sorted()` de Path compara sem caixa no Windows e com caixa no POSIX:
+    `Kely.bib` vem antes de `face85.bib` no Linux e depois no Windows. Como a
+    primeira ocorrencia de uma chave repetida e a que vale (E089), a ordem tem
+    de ser a mesma nas duas plataformas.
+    """
+    posix = path.as_posix()
+    return (posix.casefold(), posix)
+
+
+def expand_include(
+    project_dir: Path,
+    raw: str,
+    extension: Optional[str] = None,
+    *,
+    shared: bool = False,
+) -> IncludeExpansion:
+    """Expande o literal de um INCLUDE em arquivos: arquivo, curinga ou pasta.
+
+    - Curinga (`fontes/*.bib`): os arquivos que casam, sem filtrar extensao.
+    - Pasta (`fontes`): busca RECURSIVA pelos arquivos com `extension` (a mesma
+      semantica da extensao do VS Code). Sem `extension`, pasta e NOT_A_FILE.
+    - Arquivo: o proprio arquivo, com os erros de resolve_include.
+
+    A contencao ao projeto (E075) vale para os tres casos; `shared=True`
+    (INCLUDE SHARED ONTOLOGY) a desliga. A ordem e deterministica — ordem de
+    caminho —, para que mensagens e exportacoes sejam estaveis entre maquinas.
+    Nunca levanta excecao.
+    """
+    normalized = normalize_include_path(raw)
+    base = project_dir.resolve()
+
+    if has_glob(normalized):
+        if shared:
+            matches = [p.resolve() for p in base.glob(normalized) if p.is_file()]
+            files = tuple(sorted((_real_case(p) for p in matches), key=_path_order))
+            outside: tuple[Path, ...] = ()
+        else:
+            inside, out = resolve_glob(project_dir, normalized)
+            files = tuple(sorted(inside, key=_path_order))
+            outside = tuple(sorted(out, key=_path_order))
+        error = IncludeError.NO_MATCHES if not files and not outside else None
+        return IncludeExpansion(files=files, outside=outside, error=error, kind="glob",
+                                path=base / normalized)
+
+    candidate = (base / normalized).resolve()
+    if not shared and not is_within(candidate, base):
+        return IncludeExpansion(files=(), error=IncludeError.ESCAPES_PROJECT, path=candidate)
+    if not candidate.exists():
+        return IncludeExpansion(files=(), error=IncludeError.NOT_FOUND, path=candidate)
+
+    if candidate.is_dir():
+        if not extension:
+            return IncludeExpansion(files=(), error=IncludeError.NOT_A_FILE,
+                                    kind="directory", path=candidate)
+        suffix = extension.lower()
+        found: list[Path] = []
+        escaped: list[Path] = []
+        for match in candidate.rglob("*"):
+            if not match.is_file() or match.suffix.lower() != suffix:
+                continue
+            resolved = match.resolve()
+            # Link simbolico dentro da pasta pode apontar para fora do projeto.
+            if not shared and not is_within(resolved, base):
+                escaped.append(resolved)
+            else:
+                found.append(_real_case(resolved))
+        error = IncludeError.NO_MATCHES if not found and not escaped else None
+        return IncludeExpansion(files=tuple(sorted(found, key=_path_order)),
+                                outside=tuple(sorted(escaped, key=_path_order)), error=error,
+                                kind="directory", path=candidate)
+
+    if not candidate.is_file():
+        return IncludeExpansion(files=(), error=IncludeError.NOT_A_FILE, path=candidate)
+    return IncludeExpansion(files=(_real_case(candidate),), path=candidate)
 
 
 def canonical_path(path: Path | str) -> Path:

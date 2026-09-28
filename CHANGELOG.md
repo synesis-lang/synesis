@@ -6,6 +6,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.0] - 2026-09-28
+
+Vários arquivos, curingas e pastas em todos os `INCLUDE` do `.synp`.
+
+Um corpus grande é organizado por lote: um `.bib` por docente, uma pasta de
+anotações por rodada. Até aqui, só `INCLUDE ANNOTATIONS` aceitava isso. A
+bibliografia lia **um** arquivo: uma segunda linha `INCLUDE BIBLIOGRAPHY` era
+ignorada em silêncio, e curinga ou pasta davam E063. O sintoma aparecia longe
+da causa, como `SYNESIS_E001` nas anotações.
+
+### Added
+
+- **Arquivo, curinga ou pasta em `INCLUDE BIBLIOGRAPHY`, `ANNOTATIONS`,
+  `ONTOLOGY` e `DATASET`, e várias linhas do mesmo tipo se somam.** Uma pasta é
+  percorrida **recursivamente** pela extensão do tipo (`.bib`, `.syn`, `.syno`,
+  `.toml`); um curinga casa só o que descreve.
+
+  ```synesis
+  INCLUDE BIBLIOGRAPHY "Sources"                  # todos os .bib da pasta
+  INCLUDE ANNOTATIONS  "annotations_*/*.syn"
+  INCLUDE ONTOLOGY     "ontologia"                # todos os .syno da pasta
+  INCLUDE DATASET      "curriculos/2025/*.toml"
+  ```
+
+  A ordem é determinística e **igual em todos os sistemas operacionais**: linhas
+  na ordem do `.synp` e, dentro de curinga ou pasta, ordem de caminho sem
+  diferenciar caixa. A restrição ao projeto (`SYNESIS_E075`) vale para curinga e
+  pasta, inclusive para links simbólicos. `INCLUDE SHARED ONTOLOGY` continua
+  podendo apontar para fora.
+
+- **`SYNESIS_E089` — chave repetida entre arquivos da bibliografia ou do
+  dataset.** A mensagem aponta os dois arquivos e a linha da primeira
+  ocorrência, que é a que vale. Decidir qual registro é o certo cabe ao
+  pesquisador.
+
+- **`synesis.load(bibliography_contents={nome: conteúdo, ...})`** para vários
+  `.bib` em memória. `bibliography_content` (um `.bib`) continua aceito; passar
+  os dois é `ValueError`.
+
+- **Origem de cada entrada BibTeX:** campos internos `_source_file` e
+  `_source_line`. Servem às mensagens de erro e ao editor. Não vão para o JSON
+  exportado.
+
+- **`parser.paths.expand_include`**: ponto único de expansão, usado pelo
+  compilador e pelo `lsp_adapter`.
+
+### Changed
+
+- ⚠ **Uma segunda linha `INCLUDE BIBLIOGRAPHY`, antes ignorada, passa a valer.**
+- ⚠ **Dataset com a mesma chave em dois `.toml`:** o compilador ficava com o
+  último arquivo, sem aviso. Agora é `SYNESIS_E089`, e vale o primeiro.
+- `SYNESIS_E063` ganha texto próprio quando um curinga ou uma pasta de
+  `INCLUDE BIBLIOGRAPHY` não encontra nenhum `.bib`.
+- `SYNESIS_E072` e `SYNESIS_E076` da bibliografia passam a apontar o arquivo
+  `.bib` em que ocorrem, não mais a linha `INCLUDE` do `.synp`.
+- A ordem dos arquivos de um curinga de `ANNOTATIONS` passa a ignorar a caixa
+  também no Linux e no macOS. No Windows, nada muda.
+- `SYNESIS_E061`/`SYNESIS_E062` (arquivo na raiz não declarado) passam a
+  reconhecer arquivos cobertos por pasta ou por curinga de `ONTOLOGY`.
+- Um mesmo arquivo alcançado por dois `INCLUDE` (pasta e literal) é lido uma vez.
+- O `lsp_adapter` lê todas as bibliografias e ontologias pela mesma regra do
+  compilador. Antes, parava no primeiro `INCLUDE BIBLIOGRAPHY`.
+
+### Removed
+
+- `lsp_adapter._find_bibliography` e `json_export._get_bib_metadata`: código sem
+  nenhum chamador.
+
 ## [0.12.0] - 2026-08-20
 
 Forma canônica de `ORDERED`: o dado gravado é o **índice**.

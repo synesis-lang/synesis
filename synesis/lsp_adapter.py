@@ -63,9 +63,9 @@ from synesis.ast.nodes import (
 )
 from synesis.ast.normalize import normalize_bibref
 from synesis.ast.results import DuplicateSourceBibref, ValidationResult
-from synesis.parser.bib_loader import BibEntry, load_bibliography
-from synesis.parser.lexer import SynesisSyntaxError, parse_string
-from synesis.parser.paths import resolve_include, uri_to_path
+from synesis.parser.bib_loader import BibEntry, merge_bibliographies
+from synesis.parser.lexer import SynesisSyntaxError, parse_string, read_source_file
+from synesis.parser.paths import INCLUDE_EXTENSIONS, expand_include, resolve_include, uri_to_path
 from synesis.parser.template_loader import load_template
 from synesis.parser.transformer import SynesisTransformer
 from synesis.semantic.validator import SemanticValidator
@@ -406,13 +406,8 @@ def discover_context(file_uri: str) -> tuple[ValidationContext, List["Validation
         if template_resolution.ok:
             monitored_files.append(template_resolution.path)
 
-        # .bib (se presente)
-        for include in project_node.includes:
-            if include.include_type.upper() == "BIBLIOGRAPHY":
-                bib_resolution = resolve_include(project_dir, include.path)
-                if bib_resolution.ok:
-                    monitored_files.append(bib_resolution.path)
-                break
+        # .bib — todos os arquivos que a bibliografia expande
+        monitored_files.extend(_bibliography_files(project_dir, project_node))
 
         _set_cached_context(workspace_root, context, monitored_files)
 
@@ -470,22 +465,19 @@ def _find_template(directory: Path) -> Optional[TemplateNode]:
     return None
 
 
-def _find_bibliography(directory: Path) -> Optional[Dict[str, BibEntry]]:
-    """
-    Busca arquivo .bib no diretório.
 
-    Estratégia:
-        1. Busca primeiro .bib encontrado no diretório
-        2. Se não encontrar, retorna None (gera WARNINGs para bibrefs)
-    """
-    bib_files = list(directory.glob("*.bib"))
-    if bib_files:
-        try:
-            return load_bibliography(bib_files[0])
-        except Exception:
-            return None
-
-    return None
+def _bibliography_files(project_dir: Path, project: "ProjectNode") -> List[Path]:
+    """Arquivos .bib do projeto: todas as linhas INCLUDE BIBLIOGRAPHY, com
+    arquivo, curinga ou pasta, sem repeticao — mesma regra do compilador."""
+    files: List[Path] = []
+    for include in project.includes:
+        if include.include_type.upper() != "BIBLIOGRAPHY":
+            continue
+        expansion = expand_include(project_dir, include.path, INCLUDE_EXTENSIONS["BIBLIOGRAPHY"])
+        for path in expansion.files:
+            if path not in files:
+                files.append(path)
+    return files
 
 
 # ============================================
@@ -646,48 +638,51 @@ def _load_context_from_project(
             logger.warning("Falha ao carregar template %s: %s", template_path, e)
 
     # 2. CARREGAR BIBLIOGRAFIA (opcional)
-    for include in project.includes:
-        if include.include_type.upper() == "BIBLIOGRAPHY":
-            bib_resolution = resolve_include(project_dir, include.path)
-
-            if bib_resolution.ok:
-                try:
-                    bibliography = load_bibliography(bib_resolution.path)
-                    logger.info("Bibliografia carregada: %s", bib_resolution.path)
-                except Exception as e:
-                    # Bibliografia existe mas não pode ser carregada
-                    # Não é erro fatal - apenas logar
-                    logger.warning(
-                        "Erro ao carregar bibliografia %s: %s", bib_resolution.path, e
-                    )
-            else:
-                logger.warning("Bibliografia nao encontrada: %s", bib_resolution.path)
-            break  # Usar apenas primeiro INCLUDE BIBLIOGRAPHY
+    # Varias linhas INCLUDE BIBLIOGRAPHY, curingas e pastas se somam, pela mesma
+    # regra do compilador (expand_include + merge_bibliographies).
+    bib_files = _bibliography_files(project_dir, project)
+    if any(inc.include_type.upper() == "BIBLIOGRAPHY" for inc in project.includes):
+        parts = []
+        for bib_path in bib_files:
+            try:
+                parts.append((str(bib_path), read_source_file(bib_path)))
+            except (OSError, UnicodeDecodeError) as e:
+                # Bibliografia existe mas nao pode ser lida — nao e erro fatal
+                logger.warning("Erro ao carregar bibliografia %s: %s", bib_path, e)
+        try:
+            bibliography, _duplicates = merge_bibliographies(parts)
+            logger.info("Bibliografia carregada: %d arquivo(s)", len(parts))
+        except Exception as e:
+            logger.warning("Erro ao unir bibliografias: %s", e)
+            bibliography = None
+        if not bib_files:
+            logger.warning("Bibliografia declarada mas nenhum .bib encontrado")
 
     # 3. CARREGAR ONTOLOGIAS (opcional)
     from synesis.ast.nodes import OntologyNode
     from synesis.parser.lexer import parse_file
 
     for include in project.includes:
-        if include.include_type.upper() == "ONTOLOGY":
-            # INCLUDE SHARED ONTOLOGY autoriza alvo externo (D13); os demais
-            # includes mantem a contencao byte-identica.
-            ont_resolution = resolve_include(project_dir, include.path, shared=include.shared)
-            ont_path = ont_resolution.path
-            if ont_resolution.ok:
-                try:
-                    tree = parse_file(ont_path)
-                    from synesis.parser.transformer import SynesisTransformer
-                    transformer = SynesisTransformer(ont_path)
-                    nodes = transformer.transform(tree)
-                    for node in nodes:
-                        if isinstance(node, OntologyNode):
-                            ontology_index[node.concept] = node
-                    logger.info("Ontologia carregada: %s (%d conceitos)", ont_path, len(ontology_index))
-                except Exception as e:
-                    logger.warning("Erro ao carregar ontologia %s: %s", ont_path, e)
-            else:
-                logger.warning("Ontologia nao encontrada: %s", ont_path)
+        if include.include_type.upper() != "ONTOLOGY":
+            continue
+        # INCLUDE SHARED ONTOLOGY autoriza alvo externo (D13); os demais
+        # includes mantem a contencao. Arquivo, curinga ou pasta.
+        expansion = expand_include(project_dir, include.path, INCLUDE_EXTENSIONS["ONTOLOGY"],
+                                   shared=include.shared)
+        if not expansion.files:
+            logger.warning("Ontologia nao encontrada: %s", expansion.path)
+        for ont_path in expansion.files:
+            try:
+                tree = parse_file(ont_path)
+                from synesis.parser.transformer import SynesisTransformer
+                transformer = SynesisTransformer(ont_path)
+                nodes = transformer.transform(tree)
+                for node in nodes:
+                    if isinstance(node, OntologyNode):
+                        ontology_index[node.concept] = node
+                logger.info("Ontologia carregada: %s (%d conceitos)", ont_path, len(ontology_index))
+            except Exception as e:
+                logger.warning("Erro ao carregar ontologia %s: %s", ont_path, e)
 
     # 4. RETORNAR CONTEXTO
     context = ValidationContext(
