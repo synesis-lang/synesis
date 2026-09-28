@@ -74,6 +74,16 @@ da causa, como `SYNESIS_E001` nas anotações.
 - `lsp_adapter._find_bibliography` e `json_export._get_bib_metadata`: código sem
   nenhum chamador.
 
+### Fixed
+
+- **Dependência `bibtexparser` limitada a `< 2`.** A 2.0 trocou a API: não tem
+  mais `bibtexparser.loads` nem `BibDatabase`. Com a restrição antiga
+  (`>= 1.4`, sem teto), uma instalação nova a partir de hoje trazia a 2.x, e
+  **toda leitura de `.bib` falhava** com `AttributeError`. Isso vale também para
+  a 0.12.0 já publicada: quem a instalar agora precisa fixar
+  `bibtexparser < 2` à mão, ou atualizar para esta versão. A migração para a
+  API 2.x fica para uma versão futura.
+
 ## [0.12.0] - 2026-08-20
 
 Forma canônica de `ORDERED`: o dado gravado é o **índice**.
