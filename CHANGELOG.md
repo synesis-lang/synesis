@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.2] - 2026-10-09
+
+Campos CHAIN coletados pelo tipo, não pelo nome.
+
+### Fixed
+
+- **Um CHAIN com nome diferente de `chain`/`chains` ficava fora de
+  `all_triples` e `relation_index`.** O parser só põe em `item.chains` os campos
+  com esses nomes, e o linker só lia `item.chains`. Com isso, o synesis-lsp
+  (relações, grafo, estatísticas) e a lista de conceitos do synesis-coder ficavam
+  cegos para o campo. O linker agora percorre todos os campos CHAIN do template
+  pelo tipo (`_collect_item_chains`, espelho de `_collect_item_codes`), sem
+  repetir a mesma cadeia. Nenhum template dos estudos de caso é afetado (todos
+  usam `chain`); a correção é de generalidade da linguagem.
+- **`has_relations` era global.** Bastava um campo CHAIN declarar RELATIONS para
+  todas as cadeias serem lidas como qualificadas. Agora cada cadeia usa o modo do
+  seu campo, e o `relation_index` registra `qualified`/`simple` por cadeia.
+
+O linker não valida conceitos de cadeia contra a ontologia; a coleta ampliada
+acrescenta triplas, sem avisos novos.
+
+
 ## [0.13.1] - 2026-09-28
 
 Suporte ao `bibtexparser` 2.x, com resultado idêntico ao da 1.x.

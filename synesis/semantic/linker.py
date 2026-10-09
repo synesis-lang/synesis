@@ -243,7 +243,6 @@ class Linker:
 
         # Hoist invariantes: computar UMA VEZ antes do loop de items
         has_relations = self._has_chain_relations()
-        relation_type = "qualified" if has_relations else "simple"
 
         for item in self.items:
             for code in self._collect_item_codes(item):
@@ -259,8 +258,8 @@ class Linker:
                         )
                     )
 
-            for chain in item.chains:
-                triples = chain.to_triples(has_relations=has_relations)
+            for chain, qualified in self._collect_item_chains(item, has_relations):
+                triples = chain.to_triples(has_relations=qualified)
                 all_triples.extend(triples)
 
                 chain_location = chain.location or item.location or SourceLocation(Path("<unknown>"), 1, 1)
@@ -268,7 +267,7 @@ class Linker:
                     if triple not in relation_index:
                         relation_index[triple] = {
                             "location": chain_location,
-                            "type": relation_type,
+                            "type": "qualified" if qualified else "simple",
                         }
 
         hierarchy: Dict[str, str] = {}
@@ -385,6 +384,50 @@ class Linker:
             if spec.type == FieldType.CHAIN and spec.relations:
                 return True
         return False
+
+    def _collect_item_chains(
+        self, item: ItemNode, default_qualified: bool
+    ) -> List[Tuple[ChainNode, bool]]:
+        """Cadeias do ITEM, de TODOS os campos CHAIN do template, pelo TIPO.
+
+        Espelho de `_collect_item_codes`. O parser só põe em `item.chains` os
+        campos chamados `chain`/`chains`; um CHAIN com outro nome ia para
+        `extra_fields` e ficava fora de `all_triples` e de `relation_index` —
+        e, por eles, do LSP (relações, grafo) e da lista de conceitos do coder.
+
+        Cada cadeia sai com o modo do SEU campo (qualificada se o campo declara
+        RELATIONS): com dois CHAIN de configurações diferentes, um flag global
+        leria a cadeia simples como qualificada. Sem template, ou sem campo
+        CHAIN declarado, o comportamento anterior é mantido.
+
+        Returns:
+            Lista de (cadeia, qualificada), sem repetir a mesma cadeia.
+        """
+        chain_fields = []
+        if self.template:
+            chain_fields = [
+                (name, spec)
+                for name, spec in self.template.field_specs.items()
+                if spec.scope == Scope.ITEM and spec.type == FieldType.CHAIN
+            ]
+        if not chain_fields:
+            return [(chain, default_qualified) for chain in item.chains]
+
+        out: List[Tuple[ChainNode, bool]] = []
+        seen: set = set()
+        for name, spec in chain_fields:
+            raw = self._get_item_field_value(item, name)
+            values = raw if isinstance(raw, list) else [raw]
+            for chain in values:
+                if isinstance(chain, ChainNode) and id(chain) not in seen:
+                    seen.add(id(chain))
+                    out.append((chain, bool(spec.relations)))
+        # Cadeia em item.chains que nenhum campo declarado cobriu: modo anterior.
+        for chain in item.chains:
+            if id(chain) not in seen:
+                seen.add(id(chain))
+                out.append((chain, default_qualified))
+        return out
 
     def _collect_item_codes(self, item: ItemNode) -> List[str]:
         if not self.template:
