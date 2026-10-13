@@ -584,17 +584,29 @@ class SynesisTransformer(Transformer):
             return str(item)
         return str(item)
 
-    def guideline_line(self, items: List[Any]) -> str:
-        """Reconstrói uma linha de guidelines a partir de seus tokens sem espaços desnecessários."""
+    def _transform_tree(self, tree: Any) -> Any:
+        # guideline_line é remontada dos tokens BRUTOS: os callbacks de terminal
+        # (KW_* em maiúsculas, NUMBER em int) alterariam o texto que vai ao LLM.
+        if tree.data == "guideline_line":
+            return self._raw_guideline_line(tree)
+        return super()._transform_tree(tree)  # type: ignore[misc]
+
+    @staticmethod
+    def _raw_guideline_line(tree: Any) -> str:
+        """Reconstrói a linha como escrita: grafia original e espaço só onde havia."""
+        tokens = [
+            tok
+            for tok in tree.scan_values(lambda v: isinstance(v, Token))
+            if tok.type != "NEWLINE"
+        ]
+        tokens.sort(key=lambda t: t.start_pos if t.start_pos is not None else 0)
         parts: List[str] = []
-        _no_space_before = {":", ",", "->"}
-        for item in items:
-            if isinstance(item, Token) and item.type == "NEWLINE":
-                break
-            token_str = str(item) if isinstance(item, Token) else str(item)
-            if parts and token_str not in _no_space_before:
+        prev_end: Optional[int] = None
+        for tok in tokens:
+            if parts and (prev_end is None or tok.start_pos is None or tok.start_pos > prev_end):
                 parts.append(" ")
-            parts.append(token_str)
+            parts.append(tok.value)
+            prev_end = tok.end_pos
         return "".join(parts)
 
     def guidelines_lines(self, items: List[Any]) -> List[Any]:

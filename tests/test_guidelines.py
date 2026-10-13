@@ -177,3 +177,52 @@ def test_guidelines_regression_existing_templates(template_basic):
     result = load_template_from_string(template_basic)
     for name, spec in result.field_specs.items():
         assert spec.guidelines is None, f"spec '{name}' deveria ter guidelines=None"
+
+
+# ===========================================================================
+# Linhas de GUIDELINES chegam como foram escritas
+# ===========================================================================
+
+def _guidelines_de(linhas: str) -> str:
+    template = (
+        "TEMPLATE test\n\n"
+        "ITEM FIELDS\n    REQUIRED citation\nEND ITEM FIELDS\n\n"
+        "FIELD citation TYPE QUOTATION\n"
+        "    SCOPE ITEM\n"
+        "    GUIDELINES\n"
+        f"{linhas}"
+        "    END GUIDELINES\n"
+        "END FIELD\n"
+    )
+    return load_template_from_string(template).field_specs["citation"].guidelines
+
+
+def test_guidelines_palavra_iniciada_por_keyword_nao_e_cortada():
+    """'Formativo' não pode virar KW_FORMAT + 'ivo' (chegava 'FORMAT ivo')."""
+    guidelines = _guidelines_de(
+        "        Formativo → produz planos.\n"
+        "        Typeset, Scoped, Ended, Itemized, Fieldwork, Valuesless.\n"
+    )
+    assert guidelines.splitlines() == [
+        "Formativo → produz planos.",
+        "Typeset, Scoped, Ended, Itemized, Fieldwork, Valuesless.",
+    ]
+
+
+def test_guidelines_lista_numerada_preservada():
+    """'1. Uso' não pode virar '1 . Uso' (NUMBER e TEXT_LINE colados)."""
+    guidelines = _guidelines_de(
+        "        1. Uso semântico\n"
+        "        2.5 casos\n"
+        "        10) item\n"
+    )
+    assert guidelines.splitlines() == ["1. Uso semântico", "2.5 casos", "10) item"]
+
+
+def test_guidelines_keyword_inteira_preserva_espacamento():
+    """Keyword como palavra inteira segue aceita, com o espaçamento do texto."""
+    guidelines = _guidelines_de(
+        "        Format: data ISO\n"
+        "        TYPE TEXT apenas\n"
+    )
+    assert guidelines.splitlines() == ["Format: data ISO", "TYPE TEXT apenas"]

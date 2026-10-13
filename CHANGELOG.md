@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.3] - 2026-10-13
+
+Linhas de GUIDELINES chegam ao modelo como foram escritas.
+
+### Fixed
+
+- **O texto das GUIDELINES era alterado na remontagem.** Cada linha era
+  reconstruída dos tokens já transformados, com um espaço entre eles:
+  - palavra iniciada por keyword era partida — `Formativo` virava `FORMAT ivo`;
+  - lista numerada ganhava espaço — `1. Uso` virava `1 . Uso`;
+  - keyword saía em maiúsculas — `Format:` virava `FORMAT:`, e o exemplo
+    `code: X` chegava como `CODE: X`.
+
+  A `guideline_line` agora é remontada dos tokens brutos (`_transform_tree`),
+  com a grafia original e espaço só onde o arquivo tinha. A gramática não muda.
+  Nos templates dos estudos de caso, 254 linhas em 27 arquivos mudam, e as
+  12.404 linhas de GUIDELINES passam a conferir com o texto do arquivo. O aviso
+  de linha alterada do synesis-coder (`template_lint.py`) deixa de disparar
+  nesses casos.
+
+
 ## [0.13.2] - 2026-10-09
 
 Campos CHAIN coletados pelo tipo, não pelo nome.
