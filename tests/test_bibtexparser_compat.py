@@ -94,6 +94,17 @@ def test_chave_repetida_no_mesmo_arquivo_fica_a_ultima():
     assert [e["title"] for e in parse_bibtex(src).entries] == ["Primeira", "Segunda"]
 
 
+def test_parse_guardado_entrega_copias_independentes():
+    """O parse é guardado por conteúdo; quem altera a entrada não afeta a próxima leitura."""
+    src = "@article{c,\n  title = {T}\n}\n"
+    primeira = load_bibliography_from_string(src)
+    primeira["c"]["title"] = "alterado"
+    primeira["c"]["_source_file"] = "x.bib"
+    segunda = parse_bibtex(src).entries[0]
+    assert segunda["title"] == "T"
+    assert "_source_file" not in segunda and "_original_key" not in segunda
+
+
 def test_tipos_nao_padrao_sao_aceitos():
     src = "@online{s,\n  title = {Web}\n}\n@dataset{d,\n  title = {Dados}\n}\n"
     bib = load_bibliography_from_string(src)

@@ -306,6 +306,48 @@ class TestUndefinedCodes:
         result = validator.validate_item(item)
         assert any(isinstance(e, UndefinedCode) for e in result.warnings)
 
+    def test_suggestion_is_closest_concept(self):
+        specs = {"tag": make_field_spec("tag", FieldType.CODE)}
+        template = make_template(specs)
+        ontology_index = {
+            "social_cohesion": make_ontology("Social_Cohesion"),
+            "social_capital": make_ontology("Social_Capital"),
+        }
+        validator = SemanticValidator(template, None, ontology_index)
+        result = validator.validate_item(make_item(codes=["social_cohesio"]))
+        undefined = [e for e in result.warnings if isinstance(e, UndefinedCode)]
+        assert undefined[0].suggestions == ["Social_Cohesion"]
+
+    def test_closest_match_equals_difflib(self):
+        """A busca com corte devolve o mesmo que get_close_matches, inclusive no empate."""
+        from difflib import get_close_matches
+
+        from synesis.semantic.validator import _closest_match
+
+        candidates = ["abc", "abd", "abe", "xyz", "cultura", "cultural", "custos_de_transporte",
+                      "pontualidade", "mortalidade", "realizacao", "criacao", "a", ""]
+        words = candidates + ["ab", "abx", "culturas", "mortal", "criação", "zzz", "", "b"]
+        for word in words:
+            expected = get_close_matches(word, candidates, n=1, cutoff=0.6)
+            assert _closest_match(word, candidates) == (expected[0] if expected else None), word
+
+    def test_check_codes_off_counts_instead_of_warning(self):
+        specs = {"tag": make_field_spec("tag", FieldType.CODE)}
+        validator = SemanticValidator(make_template(specs), None, {}, check_codes=False)
+        result = validator.validate_item(make_item(codes=["Alpha", "Beta", "alpha"]))
+        assert not any(isinstance(e, UndefinedCode) for e in result.warnings)
+        summary = validator.undefined_codes_summary(SourceLocation(Path("p.synp"), 1, 1))
+        assert summary is not None
+        assert (summary.code_count, summary.occurrence_count) == (2, 3)
+        assert summary.CODE == "SYNESIS_E090"
+
+    def test_summary_absent_when_all_codes_defined(self):
+        specs = {"tag": make_field_spec("tag", FieldType.CODE)}
+        ontology_index = {"alpha": make_ontology("Alpha")}
+        validator = SemanticValidator(make_template(specs), None, ontology_index, check_codes=False)
+        validator.validate_item(make_item(codes=["Alpha"]))
+        assert validator.undefined_codes_summary(SourceLocation(Path("p.synp"), 1, 1)) is None
+
     def test_code_normalization_case_insensitive(self):
         specs = {"tag": make_field_spec("tag", FieldType.CODE)}
         template = make_template(specs)

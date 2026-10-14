@@ -245,6 +245,10 @@ _EPILOG_COMPILE = _ex(
     "  # Show compilation statistics",
     "  synesis compile project.synp --stats",
     "",
+    "  # List each code missing from the ontology, with suggestions",
+    "  # (default: one summary line; --strict also turns this on)",
+    "  synesis compile project.synp --check-codes",
+    "",
     "  # Link two or more projects: fields declared with IDENTIFIES/REFERS TO",
     "  # in the templates are resolved into edges across the aggregate.",
     "  synesis compile lattes.synp abstracts.synp",
@@ -415,18 +419,22 @@ def main(ctx: click.Context, verbose: int, quiet: int) -> None:
 @click.option("--csv", "csv_dir", type=click.Path(), help="Export CSV tables to directory")
 @click.option("--xls", "xls_path", type=click.Path(), help="Export Excel workbook (.xlsx)")
 @click.option("--alpaca", "alpaca_path", type=click.Path(), help="Export Alpaca JSONL for LLM fine-tuning")
-@click.option("--strict", is_flag=True, help="Treat warnings as errors")
+@click.option("--strict", is_flag=True, help="Treat warnings as errors (implies --check-codes)")
+@click.option("--check-codes", is_flag=True,
+              help="List every code missing from the ontology, with suggestions (default: one-line summary)")
 @click.option("--stats", is_flag=True, help="Show compilation statistics")
 @click.option("--force", is_flag=True, help="Generate artifacts even with errors")
-def compile(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
+def compile(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, check_codes: bool, stats: bool, force: bool) -> None:
     """Compile one Synesis project, or link several (compile p1 p2 ...)."""
+    # --strict e o portao: nao pode passar com codigos indefinidos escondidos.
+    check_codes = check_codes or strict
     if len(projects) == 1:
-        _compile_single(projects[0], json_path, csv_dir, xls_path, alpaca_path, strict, stats, force)
+        _compile_single(projects[0], json_path, csv_dir, xls_path, alpaca_path, strict, stats, force, check_codes)
     else:
-        _link_projects(projects, json_path, csv_dir, xls_path, alpaca_path, strict, stats, force)
+        _link_projects(projects, json_path, csv_dir, xls_path, alpaca_path, strict, stats, force, check_codes)
 
 
-def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
+def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False) -> None:
     """Compile a single Synesis project (unchanged legacy path)."""
     click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + "  Compile seu pensamento.")
 
@@ -438,7 +446,7 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
         from synesis.ast.results import MalformedBibliographyEntry, ValidationResult
         from synesis.parser.template_loader import validate_template
 
-        compiler = SynesisCompiler(project_path)
+        compiler = SynesisCompiler(project_path, check_codes=check_codes)
 
         # Etapa 1: projeto + template + bibliografia
         spinner.start("Lendo projeto e template")
@@ -767,7 +775,7 @@ def _write_links_xlsx(link_result, members, member_results, path: Path) -> None:
     wb.save(path)
 
 
-def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool) -> None:
+def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False) -> None:
     """Link step: compila N projetos isolados e resolve IDENTIFIES/REFERS TO entre eles.
 
     Modelo do linker C/C++ (D2): a agregacao e modo de CLI, nunca de LSP. Cada
@@ -788,7 +796,7 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
         proj_path = Path(proj)
         alias = proj_path.stem
         click.echo(f"  compilando {click.style(alias, bold=True)} …")
-        result = SynesisCompiler(proj_path).compile()
+        result = SynesisCompiler(proj_path, check_codes=check_codes).compile()
         if result.has_errors():
             member_errors = True
             _print_diagnostics(result.validation_result.errors, "ERROR", proj_path.parent)

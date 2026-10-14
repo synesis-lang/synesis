@@ -50,7 +50,6 @@ from synesis.ast.results import (
     DuplicateSourceBibref,
     OrphanItem,
     SourceWithoutItems,
-    UndefinedCode,
     ValidationResult,
 )
 
@@ -244,19 +243,12 @@ class Linker:
         # Hoist invariantes: computar UMA VEZ antes do loop de items
         has_relations = self._has_chain_relations()
 
+        # Código sem conceito (E004/E090) é diagnosticado pelo SemanticValidator;
+        # emiti-lo também aqui contava cada código de ITEM duas vezes.
         for item in self.items:
             for code in self._collect_item_codes(item):
                 norm_code = normalize_code(code, self.norm_cache)
                 code_usage.setdefault(norm_code, []).append(item)
-                if norm_code not in ontology_index:
-                    location = item.location or SourceLocation(Path("<unknown>"), 1, 1)
-                    self.validation_result.add(
-                        UndefinedCode(
-                            location=location,
-                            code=norm_code,
-                            context="ITEM",
-                        )
-                    )
 
             for chain, qualified in self._collect_item_chains(item, has_relations):
                 triples = chain.to_triples(has_relations=qualified)

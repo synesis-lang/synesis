@@ -27,6 +27,7 @@ Notas de implementacao:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -212,8 +213,8 @@ def resolve_glob(project_dir: Path, raw: str) -> tuple[list[Path], list[Path]]:
     outside: list[Path] = []
     for match in sorted(base.glob(normalized)):
         resolved = match.resolve()
-        if is_within(resolved, base) and resolved.is_file():
-            inside.append(_real_case(resolved))
+        if _within_resolved(resolved, base) and resolved.is_file():
+            inside.append(_real_case_existing(resolved))
         else:
             outside.append(resolved)
     return inside, outside
@@ -256,7 +257,7 @@ def expand_include(
     if has_glob(normalized):
         if shared:
             matches = [p.resolve() for p in base.glob(normalized) if p.is_file()]
-            files = tuple(sorted((_real_case(p) for p in matches), key=_path_order))
+            files = tuple(sorted((_real_case_existing(p) for p in matches), key=_path_order))
             outside: tuple[Path, ...] = ()
         else:
             inside, out = resolve_glob(project_dir, normalized)
@@ -284,10 +285,10 @@ def expand_include(
                 continue
             resolved = match.resolve()
             # Link simbolico dentro da pasta pode apontar para fora do projeto.
-            if not shared and not is_within(resolved, base):
+            if not shared and not _within_resolved(resolved, base):
                 escaped.append(resolved)
             else:
-                found.append(_real_case(resolved))
+                found.append(_real_case_existing(resolved))
         error = IncludeError.NO_MATCHES if not found and not escaped else None
         return IncludeExpansion(files=tuple(sorted(found, key=_path_order)),
                                 outside=tuple(sorted(escaped, key=_path_order)), error=error,
@@ -310,8 +311,17 @@ def canonical_path(path: Path | str) -> Path:
 
 def is_within(candidate: Path, base: Path) -> bool:
     """Indica se `candidate` esta contido em `base` (bloqueia `..` que escapa)."""
+    return _within_resolved(candidate.resolve(), base.resolve())
+
+
+def _within_resolved(resolved: Path, resolved_base: Path) -> bool:
+    """is_within para caminhos ja resolvidos: sem novo acesso ao disco.
+
+    A expansao de um curinga resolve cada match uma vez e a base uma vez; chamar
+    is_within resolvia os dois de novo para cada um dos milhares de arquivos.
+    """
     try:
-        candidate.resolve().relative_to(base.resolve())
+        resolved.relative_to(resolved_base)
     except ValueError:
         return False
     return True
@@ -328,18 +338,30 @@ def _real_case(path: Path) -> Path:
     resolved = path.resolve()
     if not resolved.exists():
         return resolved
+    return _real_case_existing(resolved)
 
+
+def _real_case_existing(resolved: Path) -> Path:
+    """_real_case de um caminho ja resolvido e que existe (sem repetir resolve/exists)."""
     parent = resolved.parent
     if parent == resolved:  # raiz do sistema
         return resolved
 
+    # No Windows resolve() ja devolve a caixa real (GetFinalPathNameByHandle).
+    # Listar a pasta para cada arquivo era quadratico: 2.400 anotacoes numa
+    # pasta = 40 s so para comparar caminhos.
+    if os.name == "nt":
+        return resolved
+
     try:
-        for entry in parent.iterdir():
-            if entry.name == resolved.name:
-                return entry  # ja e a caixa real
-            if entry.name.lower() == resolved.name.lower():
-                return entry
+        names = os.listdir(parent)
     except OSError:
         return resolved
+    if resolved.name in names:
+        return resolved  # ja e a caixa real
+    folded = resolved.name.lower()
+    for name in names:
+        if name.lower() == folded:
+            return parent / name
 
     return resolved

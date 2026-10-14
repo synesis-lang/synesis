@@ -144,15 +144,22 @@ class CompilationResult:
 
 
 class SynesisCompiler:
-    def __init__(self, project_path: Path):
+    def __init__(self, project_path: Path, *, check_codes: bool = False):
         self.project_path = Path(project_path)
         self.project_dir = self.project_path.parent
+        # Desligado: codigo sem conceito na ontologia vira uma linha de resumo
+        # (E090) em vez de um E004 com sugestao por ocorrencia. Antes de gerar a
+        # ontologia, todo codigo in vivo dispararia o aviso.
+        self.check_codes = check_codes
         # Texto de cada .bib lido nesta compilacao. A CLI chama as etapas da
         # bibliografia em separado (_check_bibliography_file/_format,
         # load_bibliography): o cache garante que um .bib seja lido e unido uma
         # vez so, e que as etapas vejam exatamente os mesmos arquivos.
         self._bib_texts: Dict[Path, Optional[str]] = {}
         self._bib_merged: Optional[tuple[tuple[Path, ...], Dict[str, BibEntry], List[DuplicateBibKey]]] = None
+        # Expansao dos INCLUDE por tipo, valida para o ProjectNode guardado.
+        self._expansions_project: Optional[ProjectNode] = None
+        self._expansions: Dict[str, List[tuple[Any, IncludeExpansion]]] = {}
 
     def compile(self) -> CompilationResult:
         project, project_validation = self.parse_project()
@@ -282,7 +289,24 @@ class SynesisCompiler:
     def _expand_includes(
         self, project: ProjectNode, include_type: str
     ) -> List[tuple[Any, IncludeExpansion]]:
-        """Expande cada INCLUDE do tipo em arquivos (arquivo, curinga ou pasta)."""
+        """Expande cada INCLUDE do tipo em arquivos (arquivo, curinga ou pasta).
+
+        Guardado por compilacao, como o texto dos .bib: a estrutura (E061/E062)
+        e a leitura das anotacoes pedem a mesma expansao, e expandir 2.200
+        anotacoes custava ~1,5 s a cada vez.
+        """
+        if self._expansions_project is not project:
+            self._expansions_project = project
+            self._expansions = {}
+        cached = self._expansions.get(include_type)
+        if cached is None:
+            cached = self._expand_includes_uncached(project, include_type)
+            self._expansions[include_type] = cached
+        return cached
+
+    def _expand_includes_uncached(
+        self, project: ProjectNode, include_type: str
+    ) -> List[tuple[Any, IncludeExpansion]]:
         extension = INCLUDE_EXTENSIONS.get(include_type)
         expansions = []
         for include in project.includes:
@@ -312,10 +336,10 @@ class SynesisCompiler:
                 ))
             elif expansion.error is not None:
                 result.add(MissingBibliographyFile(location=include.location, filename=include.path))
+            # expansion.files ja vem canonicos (caixa real do disco)
             for path in expansion.files:
-                key = self._canonical(path)
-                if key not in seen:
-                    seen.add(key)
+                if path not in seen:
+                    seen.add(path)
                     paths.append(path)
         return paths, result
 
@@ -427,11 +451,10 @@ class SynesisCompiler:
                 ))
                 continue
 
-            for path in expansion.files:
-                canonical = self._canonical(path)
-                if canonical in seen:
+            for path in expansion.files:  # ja canonicos
+                if path in seen:
                     continue
-                seen.add(canonical)
+                seen.add(path)
                 try:
                     records = load_dataset(path, key_path=key_path, base_dir=self.project_dir)
                 except DatasetError as exc:
@@ -527,6 +550,7 @@ class SynesisCompiler:
             norm_cache=norm_cache,
             malformed_bib_keys=malformed_bib_keys or set(),
             dataset=dataset or {},
+            check_codes=self.check_codes,
         )
         result = ValidationResult()
 
@@ -541,6 +565,11 @@ class SynesisCompiler:
             self._merge(result, validator.validate_item(item))
         for ontology in ontologies:
             self._merge(result, validator.validate_ontology(ontology))
+        summary = validator.undefined_codes_summary(
+            project.location or SourceLocation(self.project_path, 1, 1)
+        )
+        if summary is not None:
+            result.add(summary)
         return result
 
     def link_all(
@@ -589,7 +618,6 @@ class SynesisCompiler:
         # .synp que escreve "NOTES.SYN" para o arquivo "notes.syn" produz E061
         # falso-positivo em sistemas de arquivos case-insensitive. Arquivo, curinga
         # e pasta sao expandidos pela mesma regra usada para carrega-los.
-        included: Dict[str, set] = {"ANNOTATIONS": set(), "ONTOLOGY": set()}
         for include in project.includes:
             inc_type = include.include_type.upper()
 
@@ -601,15 +629,15 @@ class SynesisCompiler:
                     path=include.path,
                 ))
 
-            if inc_type in included:
-                expansion = expand_include(
-                    self.project_dir, include.path, INCLUDE_EXTENSIONS[inc_type],
-                    shared=include.shared and inc_type == "ONTOLOGY",
-                )
-                included[inc_type].update(self._canonical(p) for p in expansion.files)
+        # A expansao e a mesma que parse_annotations/parse_ontologies usam
+        # (_expand_includes guarda); seus arquivos ja vem na caixa real do disco.
+        included: Dict[str, set] = {"ANNOTATIONS": set(), "ONTOLOGY": set()}
+        for inc_type, paths in included.items():
+            for include, expansion in self._expand_includes(project, inc_type):
+                paths.update(expansion.files)
                 if expansion.kind == "file" and not expansion.files:
                     raw = normalize_include_path(include.path)
-                    included[inc_type].add(self._canonical(self.project_dir / raw))
+                    paths.add(self._canonical(self.project_dir / raw))
         included_annotations = included["ANNOTATIONS"]
         included_ontologies = included["ONTOLOGY"]
 
@@ -753,10 +781,10 @@ class SynesisCompiler:
                     location=include.location,
                     filename=include.path,
                 ))
+            # expansion.files ja vem canonicos (caixa real do disco)
             for path in expansion.files:
-                key = self._canonical(path)
-                if key not in seen:
-                    seen.add(key)
+                if path not in seen:
+                    seen.add(path)
                     paths.append(path)
 
         return paths, result

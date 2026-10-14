@@ -6,6 +6,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.4] - 2026-10-14
+
+Compilação de projetos grandes muito mais rápida, e códigos sem conceito na
+ontologia passam a ser resumidos numa linha. No face85 (2.409 fontes, 13.924
+ITEMs, 3.338 códigos in vivo sem ontologia), o `synesis compile` caiu de ~400 s
+para **4,2 s**; com `--check-codes`, 18,8 s.
+
+Verificação: os 50 projetos dos estudos de caso foram compilados nos dois modos
+antes e depois das correções de desempenho (100 compilações). Diagnósticos
+(35.700), estatísticas, bibliografia e os 94 JSON exportados saíram idênticos;
+nos JSON, só o `timestamp` da exportação foi ignorado.
+
+### Added
+
+- **`--check-codes` e o resumo E090.** Antes de a ontologia existir, todo código
+  in vivo dispara o E004 (66 mil avisos no face85, com uma sugestão calculada
+  para cada um). Agora a checagem por ocorrência é opcional e vem desligada:
+  - sem a opção, o projeto recebe um único aviso no `.synp`,
+    `SYNESIS_E090 UndefinedCodesSummary`:
+    `3338 codigo(s) sem conceito na ontologia (33044 ocorrencia(s)); use --check-codes para listar`;
+  - `synesis compile --check-codes` lista cada ocorrência com a sugestão, como
+    antes. **`--strict` liga `--check-codes`**: o portão não passa com códigos
+    indefinidos escondidos;
+  - na API: `SynesisCompiler(path, check_codes=...)`, `synesis.load(..., check_codes=...)`,
+    `validate_single_file(..., check_codes=...)` e
+    `SemanticValidator(..., check_codes=...)`. O padrão é `False`, exceto no
+    `SemanticValidator`, que mantém `True`. Desligada, a validação de um arquivo
+    só (LSP) não emite nada sobre códigos; o resumo vem da compilação do
+    projeto.
+
+### Fixed
+
+- **Código sem conceito era contado duas vezes.** O código de CHAIN recebia um
+  E004 em `validate_chain`, na linha da chain, e outro em
+  `_validate_codes_defined`, na linha do ITEM. O código de campo CODE recebia
+  um do validador e outro do linker. Agora há um aviso por ocorrência: o
+  face85 tem 33.044 ocorrências, não 66.088.
+
+### Performance
+
+- **Sugestão de conceito (E004).** `get_close_matches` comparava cada uso com
+  todos os conceitos: 364 s de validação no face85. Agora a sugestão é
+  calculada uma vez por código e guardada entre compilações do mesmo processo
+  enquanto a ontologia não muda; o LSP recompila sem pagar de novo. A busca
+  para cedo quando nenhum candidato pode vencer (`_closest_match`), com o
+  mesmo resultado do difflib, inclusive no desempate: conferido em 5.345
+  palavras.
+- **Caixa real do caminho.** `_real_case` listava a pasta inteira para cada
+  arquivo incluído, um custo quadrático (40 s com 2.400 anotações numa pasta).
+  No Windows o `resolve()` já devolve a caixa real e a listagem foi retirada; nos
+  demais sistemas o nome exato é testado antes da busca sem caixa.
+- **.bib processado uma vez.** O formato (E072) e a união (E089) faziam cada
+  um o parse do mesmo .bib (5 s por passada no face85). `parse_bibtex`
+  guarda o resultado por conteúdo e devolve cópias das entradas.
+- **bibtexparser >= 2.1.** A 1.x lê o .bib com pyparsing, ~10 vezes mais
+  devagar: os 4,4 MB do face85 levavam 4,3 s; com a 2.1, 0,5 s.
+  `parse_bibtex` já entregava o mesmo resultado nas duas versões (2.409
+  entradas idênticas no face85, inclusive a ordem dos campos e as entradas
+  malformadas). O caminho 1.x continua no código e no CI para ambiente que fixe
+  a versão antiga, mas a dependência passa a exigir a 2.1.
+- **INCLUDE expandido uma vez por compilação.** A estrutura (E061/E062) e a
+  leitura das anotações expandiam os mesmos INCLUDE, e cada arquivo custava
+  cerca de 8 acessos ao disco (`resolve` repetido, contenção e caixa calculadas
+  de novo). Agora a expansão é guardada por compilação, e cada match leva um
+  `resolve` e um `is_file`. A contenção (E075) usa os caminhos já resolvidos,
+  com a mesma regra. No face85, 2.221 anotações: de ~1,7 s por expansão (duas
+  vezes) para uma só, mais barata.
+
 ## [0.13.3] - 2026-10-13
 
 Linhas de GUIDELINES chegam ao modelo como foram escritas.

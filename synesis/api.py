@@ -250,6 +250,7 @@ def load(
     project_filename: str = "<project>",
     template_filename: str = "<template>",
     bibliography_contents: Optional[Dict[str, str]] = None,
+    check_codes: bool = False,
 ) -> MemoryCompilationResult:
     """
     Compila projeto Synesis a partir de strings em memoria.
@@ -274,6 +275,8 @@ def load(
             manter load() sem I/O de disco, espelhando bibliography_content.
         project_filename: Nome virtual para mensagens de erro
         template_filename: Nome virtual para mensagens de erro
+        check_codes: True emite um E004 (com sugestao) por codigo usado sem
+            conceito na ontologia. False (padrao) emite um unico resumo E090.
 
     Returns:
         MemoryCompilationResult com projeto compilado e metodos de exportacao
@@ -390,6 +393,7 @@ def load(
         template, bibliography, ontology_index,
         malformed_bib_keys=malformed_keys,
         dataset=dataset_index or {},
+        check_codes=check_codes,
     )
 
     _merge_validation(validation_result, validator.validate_project(project))
@@ -403,6 +407,11 @@ def load(
         _merge_validation(validation_result, validator.validate_item(item))
     for ontology in ontologies:
         _merge_validation(validation_result, validator.validate_ontology(ontology))
+    summary = validator.undefined_codes_summary(
+        project.location or SourceLocation(Path(project_filename), 1, 1)
+    )
+    if summary is not None:
+        validation_result.add(summary)
 
     # 7. Vinculacao
     linker = Linker(sources, items, ontologies, project=project, template=template)

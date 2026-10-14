@@ -340,6 +340,7 @@ END FIELD
             template_content=self._TEMPLATE_NO_ONTOLOGY,
             annotation_contents={"annotations.syn": annotations},
             bibliography_content=BIBLIOGRAPHY_BASIC,
+            check_codes=True,
         )
         if ontology:
             kw["ontology_contents"] = {"ontology.syno": ontology}
@@ -454,3 +455,58 @@ END ITEM
 """
         result = self._load(ann)
         assert result.get_diagnostics() == result.get_diagnostics(verbose=True)
+
+
+# ===========================================================================
+# Codigos sem conceito: uma ocorrencia, um aviso
+# ===========================================================================
+
+class TestUndefinedCodeCount:
+    """Cada uso de codigo sem conceito gera um E004 so (antes: chain 2x, ITEM 2x)."""
+
+    _TEMPLATE = """\
+TEMPLATE T
+SOURCE FIELDS
+    OPTIONAL note
+END SOURCE FIELDS
+ITEM FIELDS
+    REQUIRED code
+    OPTIONAL chain
+END ITEM FIELDS
+FIELD note TYPE TEXT SCOPE SOURCE END FIELD
+FIELD code TYPE CODE SCOPE ITEM END FIELD
+FIELD chain TYPE CHAIN SCOPE ITEM END FIELD
+"""
+    _ANN = """\
+SOURCE @a
+    note: x
+END SOURCE
+ITEM @a
+    code: alfa, beta
+    chain: alfa -> gama
+END ITEM
+"""
+
+    def _load(self, check_codes):
+        return synesis.load(
+            project_content='PROJECT P\n    TEMPLATE "t.synt"\nEND PROJECT\n',
+            template_content=self._TEMPLATE,
+            annotation_contents={"a.syn": self._ANN},
+            check_codes=check_codes,
+        )
+
+    def test_one_warning_per_occurrence(self):
+        from synesis.ast.results import UndefinedCode
+
+        warns = [w for w in self._load(True).validation_result.warnings if isinstance(w, UndefinedCode)]
+        assert sorted((w.code, w.context, w.location.line) for w in warns) == [
+            ("alfa", "CHAIN", 6), ("alfa", "ITEM", 4), ("beta", "ITEM", 4), ("gama", "CHAIN", 6),
+        ]
+
+    def test_summary_counts_occurrences_once(self):
+        from synesis.ast.results import UndefinedCode, UndefinedCodesSummary
+
+        warns = self._load(False).validation_result.warnings
+        assert not any(isinstance(w, UndefinedCode) for w in warns)
+        (summary,) = [w for w in warns if isinstance(w, UndefinedCodesSummary)]
+        assert (summary.code_count, summary.occurrence_count) == (3, 4)

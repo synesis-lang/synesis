@@ -50,6 +50,34 @@ def test_compile_subcommand_help():
     assert "--strict" in out
 
 
+class TestCheckCodes:
+    """Codigos sem conceito: resumo de uma linha por padrao; lista com --check-codes/--strict."""
+
+    def _compile(self, *flags: str) -> str:
+        from pathlib import Path
+
+        synp = sorted((Path(__file__).parent / "fixtures" / "T01-Bibliographic-Ontology-Links").glob("*.synp"))[0]
+        return _run("compile", str(synp), *flags).output
+
+    def test_default_prints_only_summary(self):
+        out = self._compile()
+        assert "use --check-codes para listar" in out
+        assert "nao definido na ontologia" not in out
+
+    def test_check_codes_lists_each_code(self):
+        out = self._compile("--check-codes")
+        assert "nao definido na ontologia" in out
+        assert "use --check-codes para listar" not in out
+
+    def test_strict_implies_check_codes(self):
+        out = self._compile("--strict")
+        assert "nao definido na ontologia" in out
+        assert "use --check-codes para listar" not in out
+
+    def test_help_mentions_check_codes(self):
+        assert "--check-codes" in _run("compile", "--help").output
+
+
 def test_check_subcommand_help():
     result = _run("check", "--help")
     assert result.exit_code == 0

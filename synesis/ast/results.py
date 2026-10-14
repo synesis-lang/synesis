@@ -222,6 +222,35 @@ class UndefinedCode(ValidationError):
 
 
 @dataclass(frozen=True)
+class UndefinedCodesSummary(ValidationError):
+    """Resumo dos codigos sem conceito na ontologia, quando a checagem esta desligada.
+
+    A checagem de codigo por ocorrencia (E004) e opcional: antes de a ontologia
+    existir, todo codigo in vivo a dispara (66 mil avisos no face85). Desligada,
+    os codigos continuam sendo contados e o projeto recebe esta unica linha.
+    """
+
+    code_count: int
+    occurrence_count: int
+    CODE: ClassVar[str] = "SYNESIS_E090"
+    DEFAULT_SEVERITY: ClassVar[ErrorSeverity] = ErrorSeverity.WARNING
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"{self.code_count} codigo(s) usados nas anotacoes nao tem conceito na\n"
+            f"  ontologia ({self.occurrence_count} ocorrencia(s)). A lista por ocorrencia,\n"
+            f"  com sugestoes, esta desligada: use `synesis compile --check-codes` ou a\n"
+            f"  configuracao `synesisExplorer.diagnostics.checkCodes` da extensao."
+        )
+
+    def to_cli_line(self) -> str:
+        return (
+            f"{self.code_count} codigo(s) sem conceito na ontologia "
+            f"({self.occurrence_count} ocorrencia(s)); use --check-codes para listar"
+        )
+
+
+@dataclass(frozen=True)
 class MissingProjectFile(ValidationError):
     """Nenhum arquivo .synp encontrado na raiz do workspace."""
 

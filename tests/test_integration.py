@@ -8,13 +8,13 @@ from synesis.compiler import SynesisCompiler
 TESTS_ROOT = Path(__file__).parent / "fixtures"
 
 
-def _compile(project_name, synp_filename=None):
+def _compile(project_name, synp_filename=None, check_codes=False):
     project_dir = TESTS_ROOT / project_name
     if synp_filename is None:
         synp_path = sorted(project_dir.glob("*.synp"))[0]
     else:
         synp_path = project_dir / synp_filename
-    return SynesisCompiler(synp_path).compile().validation_result
+    return SynesisCompiler(synp_path, check_codes=check_codes).compile().validation_result
 
 
 def ecodes(r): return [e.CODE for e in r.errors]
@@ -26,7 +26,14 @@ class TestT01:
     def test_orphan_item(self): assert "SYNESIS_E002" in ecodes(_compile("T01-Bibliographic-Ontology-Links"))
     def test_duplicate_ontology_concept(self): assert "SYNESIS_E068" in ecodes(_compile("T01-Bibliographic-Ontology-Links"))
     def test_duplicate_source_bibref(self): assert "SYNESIS_E070" in ecodes(_compile("T01-Bibliographic-Ontology-Links"))
-    def test_undefined_code_warning(self): assert "SYNESIS_E004" in wcodes(_compile("T01-Bibliographic-Ontology-Links"))
+    def test_undefined_code_warning(self):
+        assert "SYNESIS_E004" in wcodes(_compile("T01-Bibliographic-Ontology-Links", check_codes=True))
+
+    def test_undefined_codes_summarized_by_default(self):
+        """Sem check_codes: nenhum E004, um unico resumo E090."""
+        codes = wcodes(_compile("T01-Bibliographic-Ontology-Links"))
+        assert "SYNESIS_E004" not in codes
+        assert codes.count("SYNESIS_E090") == 1
 
 
 class TestT02:

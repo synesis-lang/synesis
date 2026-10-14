@@ -50,10 +50,10 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
         fail_ci_if_error: false
 
-    # A suite acima roda com o bibtexparser mais novo que a restricao aceita
-    # (2.x). parse_bibtex() promete o MESMO resultado com a 1.x — que continua
-    # aceita e e a instalada em muitos ambientes. Sem esta rodada, uma quebra
-    # so na 1.x passaria verde. Depois do upload: nao sobrescreve a cobertura.
+    # A suite acima roda com o bibtexparser 2.x exigido (>=2.1). parse_bibtex()
+    # mantem o caminho 1.x para ambiente que fixe a versao antiga e promete o
+    # MESMO resultado nele. Sem esta rodada, uma quebra so na 1.x passaria
+    # verde. Depois do upload: nao sobrescreve a cobertura.
     - name: Run bibliography tests with bibtexparser 1.x
       run: |
         pip install "bibtexparser>=1.4,<2"

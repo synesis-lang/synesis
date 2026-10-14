@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from difflib import get_close_matches
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -75,12 +75,56 @@ from synesis.ast.results import (
     SimpleChainWithRelationsRequired,
     TopicWithSpaces,
     UndefinedCode,
+    UndefinedCodesSummary,
     UnknownFieldName,
     UnregisteredSource,
     ValidationError,
     ValidationResult,
 )
 from synesis.parser.bib_loader import find_bibref, suggest_bibref
+
+_SUGGESTION_CUTOFF = 0.6
+
+# Sugestões da última ontologia vista, reaproveitadas entre compilações do mesmo
+# processo (o LSP recompila o projeto inteiro): só códigos novos pagam a busca.
+_last_suggestions: tuple[tuple[str, ...], dict[str, list[str]]] = ((), {})
+
+
+def _suggestion_cache_for(concept_keys: List[str]) -> dict[str, list[str]]:
+    global _last_suggestions
+    keys = tuple(concept_keys)
+    if _last_suggestions[0] != keys:
+        _last_suggestions = (keys, {})
+    return _last_suggestions[1]
+
+
+def _closest_match(word: str, candidates: List[str]) -> Optional[str]:
+    """Equivale a `get_close_matches(word, candidates, n=1, cutoff=0.6)[0]`.
+
+    `quick_ratio` é limite superior de `ratio`: os candidatos são visitados do
+    maior limite para o menor e a busca para quando o limite fica abaixo do
+    melhor `ratio` já achado. Empate continua sendo decidido como no difflib
+    (maior par `(ratio, candidato)`), por isso a parada é só com limite menor.
+    """
+    matcher = SequenceMatcher()
+    matcher.set_seq2(word)
+    bounded: list[tuple[float, str]] = []
+    for candidate in candidates:
+        matcher.set_seq1(candidate)
+        if matcher.real_quick_ratio() >= _SUGGESTION_CUTOFF:
+            bound = matcher.quick_ratio()
+            if bound >= _SUGGESTION_CUTOFF:
+                bounded.append((bound, candidate))
+    bounded.sort(reverse=True)
+    best: Optional[tuple[float, str]] = None
+    for bound, candidate in bounded:
+        if best is not None and bound < best[0]:
+            break
+        matcher.set_seq1(candidate)
+        score = matcher.ratio()
+        if score >= _SUGGESTION_CUTOFF and (best is None or (score, candidate) > best):
+            best = (score, candidate)
+    return best[1] if best is not None else None
 
 
 @dataclass
@@ -91,9 +135,15 @@ class SemanticValidator:
     norm_cache: dict | None = None
     malformed_bib_keys: set = field(default_factory=set)
     dataset: Dict[str, Any] = field(default_factory=dict)  # registros TOML (ON DATASET)
+    # E004 por ocorrencia, com sugestao. Desligado, o codigo indefinido so e
+    # contado em undefined_codes, e undefined_codes_summary() devolve o E090.
+    check_codes: bool = True
 
     def __post_init__(self) -> None:
+        self.undefined_codes: Dict[str, int] = {}
         self.ontology_index = {normalize_code(key, self.norm_cache): value for key, value in self.ontology_index.items()}
+        self._concept_keys: list[str] = list(self.ontology_index.keys())
+        self._suggestion_cache = _suggestion_cache_for(self._concept_keys)
 
         # Pre-indexar: nomes de fields CODE no scope ITEM, excluindo "code"/"codes"
         # Invariante por compilação — evita iterar template.field_specs por item
@@ -116,17 +166,23 @@ class SemanticValidator:
         self._identifier_invalid_re = re.compile(r"[^\w\-]", re.UNICODE)
 
     def _suggest_concept(self, code: str) -> list[str]:
-        """Retorna até 1 conceito similar ao code usando get_close_matches."""
-        candidates = list(self.ontology_index.keys())
+        """Retorna até 1 conceito similar ao code (mesmo resultado de get_close_matches).
+
+        Guardado por código normalizado: a busca compara com todos os conceitos
+        e, num projeto ainda sem ontologia para os códigos in vivo, rodava uma
+        vez por uso (66 mil usos no face85 = 6 minutos de validação).
+        """
         normalized = normalize_code(code, self.norm_cache)
-        matches = get_close_matches(normalized, candidates, n=1, cutoff=0.6)
-        # Desnormalizar: retornar a forma original do conceito, não a normalizada
-        if matches:
-            matched_key = matches[0]
-            entry = self.ontology_index.get(matched_key)
-            original = getattr(entry, "concept", matched_key)
-            return [original]
-        return []
+        cached = self._suggestion_cache.get(normalized)
+        if cached is None:
+            cached = []
+            matched_key = _closest_match(normalized, self._concept_keys)
+            # Desnormalizar: retornar a forma original do conceito, não a normalizada
+            if matched_key is not None:
+                entry = self.ontology_index.get(matched_key)
+                cached = [getattr(entry, "concept", matched_key)]
+            self._suggestion_cache[normalized] = cached
+        return list(cached)
 
     def validate_project(self, node: ProjectNode) -> ValidationResult:
         result = ValidationResult()
@@ -526,17 +582,38 @@ class SemanticValidator:
                         field_name=field_spec.name,
                     )
                 )
-            if normalize_code(code, self.norm_cache) not in self.ontology_index:
-                result.add(
-                    UndefinedCode(
-                        location=chain.location,
-                        code=code,
-                        context="CHAIN",
-                        suggestions=self._suggest_concept(code),
-                    )
-                )
+            self._check_code_defined(code, chain.location, "CHAIN", result)
 
         return result
+
+    def _check_code_defined(
+        self, code: str, location: SourceLocation, context: str, result: ValidationResult
+    ) -> None:
+        """E004 para codigo sem conceito; com check_codes desligado, so conta."""
+        normalized = normalize_code(code, self.norm_cache)
+        if normalized in self.ontology_index:
+            return
+        if not self.check_codes:
+            self.undefined_codes[normalized] = self.undefined_codes.get(normalized, 0) + 1
+            return
+        result.add(
+            UndefinedCode(
+                location=location,
+                code=code,
+                context=context,
+                suggestions=self._suggest_concept(code),
+            )
+        )
+
+    def undefined_codes_summary(self, location: SourceLocation) -> Optional[UndefinedCodesSummary]:
+        """E090 com os codigos contados enquanto check_codes estava desligado."""
+        if not self.undefined_codes:
+            return None
+        return UndefinedCodesSummary(
+            location=location,
+            code_count=len(self.undefined_codes),
+            occurrence_count=sum(self.undefined_codes.values()),
+        )
 
     def validate_bundle(
         self,
@@ -996,49 +1073,9 @@ class SemanticValidator:
     def _validate_codes_defined(self, node: ItemNode, result: ValidationResult) -> None:
         location = node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
         for code in self._collect_item_codes(node):
-            if normalize_code(code, self.norm_cache) not in self.ontology_index:
-                result.add(
-                    UndefinedCode(
-                        location=location,
-                        code=code,
-                        context="ITEM",
-                        suggestions=self._suggest_concept(code),
-                    )
-                )
-
-        # Para chains, precisa separar códigos de relações — iterar todos os campos CHAIN
-        field_values = self._collect_fields(node)
-        for field_name, field_spec in self._chain_field_specs:
-            has_relations = bool(field_spec.relations)
-            raw = field_values.get(field_name)
-            chain_nodes: list[ChainNode] = []
-            if isinstance(raw, ChainNode):
-                chain_nodes = [raw]
-            elif isinstance(raw, list):
-                chain_nodes = [v for v in raw if isinstance(v, ChainNode)]
-
-            for chain in chain_nodes:
-                elements = [elem.strip() for elem in chain.nodes if elem.strip()]
-                codes: list[str] = []
-
-                if has_relations:
-                    # Chain qualificada: códigos nas posições pares (0, 2, 4, ...)
-                    if len(elements) >= 3 and len(elements) % 2 == 1:
-                        codes = [elements[i] for i in range(0, len(elements), 2)]
-                else:
-                    # Chain simples: todos os elementos são códigos
-                    codes = elements
-
-                for code in codes:
-                    if normalize_code(code, self.norm_cache) not in self.ontology_index:
-                        result.add(
-                            UndefinedCode(
-                                location=location,
-                                code=code,
-                                context="CHAIN",
-                                suggestions=self._suggest_concept(code),
-                            )
-                        )
+            self._check_code_defined(code, location, "ITEM", result)
+        # Códigos de CHAIN são checados em validate_chain, com a linha da chain.
+        # Repeti-los aqui contava cada código de chain duas vezes.
 
     def _validate_chain_arity(
         self,

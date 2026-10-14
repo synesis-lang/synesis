@@ -174,6 +174,7 @@ def validate_single_file(
     source: str,
     file_uri: str,
     context: Optional[ValidationContext] = None,
+    check_codes: bool = False,
 ) -> ValidationResult:
     """
     Valida texto Synesis em memória sem persistência.
@@ -183,6 +184,9 @@ def validate_single_file(
         file_uri: URI do arquivo (para rastreabilidade de erros)
         context: Contexto opcional com template/bibliografia/ontologia
                  Se None, tenta descobrir automaticamente
+        check_codes: True emite E004 por código sem conceito na ontologia.
+                 False (padrão) não emite nada por arquivo: o resumo (E090)
+                 vem da compilação do projeto, uma vez só, no .synp.
 
     Returns:
         ValidationResult com erros, warnings (incluindo descoberta) e info
@@ -191,7 +195,7 @@ def validate_single_file(
         - Sempre valida sintaxe (parser Lark)
         - Valida semântica se context.template fornecido
         - Bibrefs validados se context.bibliography fornecido (WARNING se ausente)
-        - Códigos sempre geram WARNING se não em ontology_index
+        - Códigos fora de ontology_index geram WARNING só com check_codes
         - Warnings de descoberta (.synp ausente, template ausente) incluídos no resultado
     """
     result = ValidationResult()
@@ -216,7 +220,7 @@ def validate_single_file(
 
     # Etapa 2: Validação semântica (se contexto disponível)
     if context.template:
-        semantic_result = _validate_semantics(nodes, context)
+        semantic_result = _validate_semantics(nodes, context, check_codes=check_codes)
         result.errors.extend(semantic_result.errors)
         result.warnings.extend(semantic_result.warnings)
         result.info.extend(semantic_result.info)
@@ -257,7 +261,7 @@ def _parse_with_error_handling(
 
 
 def _validate_semantics(
-    nodes: List, context: ValidationContext
+    nodes: List, context: ValidationContext, check_codes: bool = False
 ) -> ValidationResult:
     """
     Executa validação semântica nos nós parseados.
@@ -313,6 +317,7 @@ def _validate_semantics(
         template=context.template,
         bibliography=bibliography,
         ontology_index=ontology_index,
+        check_codes=check_codes,
     )
 
     # Valida cada tipo de nó

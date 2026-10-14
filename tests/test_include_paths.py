@@ -365,6 +365,60 @@ def test_source_location_uses_real_disk_case(tmp_path, case_insensitive_fs):
     assert sources[0].location.file.name == "annotations.syn"
 
 
+def test_includes_are_expanded_once_per_compilation(tmp_path, monkeypatch):
+    """Estrutura (E061/E062) e leitura usam a mesma expansao: um expand por INCLUDE."""
+    import synesis.compiler as compiler_module
+
+    synp = _build_project(tmp_path, _project(annotations="*.syn"))
+    calls: list[str] = []
+    real_expand = compiler_module.expand_include
+
+    def counting(project_dir, raw, *args, **kwargs):
+        calls.append(raw)
+        return real_expand(project_dir, raw, *args, **kwargs)
+
+    monkeypatch.setattr(compiler_module, "expand_include", counting)
+    result = SynesisCompiler(synp).compile()
+
+    assert result.success
+    assert sorted(calls) == sorted(["references.bib", "*.syn", "ontology.syno"])
+
+
+def test_expansion_cache_follows_a_new_project_node(tmp_path):
+    """Outro ProjectNode no mesmo compilador nao recebe a expansao do anterior."""
+    synp = _build_project(tmp_path, _project())
+    compiler = SynesisCompiler(synp)
+    first, _ = compiler.parse_project()
+    compiler.parse_annotations(first)
+
+    (tmp_path / "extra.syn").write_text(ANNOTATIONS_VALID.replace("@", "@x"), encoding="utf-8")
+    synp.write_text(_project(annotations="*.syn"), encoding="utf-8")
+    second, _ = compiler.parse_project()
+    paths, _ = compiler._collect_include_paths(second, "ANNOTATIONS")
+    assert sorted(p.name for p in paths) == ["annotations.syn", "extra.syn"]
+
+
+def test_within_resolved_matches_is_within(tmp_path):
+    from synesis.parser.paths import _within_resolved, is_within
+
+    base = tmp_path.resolve()
+    (tmp_path / "sub").mkdir()
+    for candidate in (tmp_path / "sub", tmp_path / "sub" / ".." / "..", tmp_path.parent / "x"):
+        assert _within_resolved(candidate.resolve(), base) == is_within(candidate, tmp_path)
+
+
+def test_real_case_follows_rename_after_listing_is_cached(tmp_path, case_insensitive_fs):
+    """A listagem da pasta é guardada; renomear a caixa do arquivo a invalida."""
+    if not case_insensitive_fs:
+        pytest.skip("divergencia de caixa so e resolvivel em FS case-insensitive")
+
+    (tmp_path / "notes.syn").write_text("", encoding="utf-8")
+    assert canonical_path(tmp_path / "NOTES.SYN").name == "notes.syn"
+
+    (tmp_path / "notes.syn").rename(tmp_path / "Notes.syn")
+    assert canonical_path(tmp_path / "NOTES.SYN").name == "Notes.syn"
+
+
 # ---------------------------------------------------------------------------
 # Unidade: synesis.parser.paths
 # ---------------------------------------------------------------------------

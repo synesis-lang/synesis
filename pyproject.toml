@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synesis"
-version = "0.13.3"
+version = "0.13.4"
 description = "The confluence of information into intelligence - A DSL compiler that transforms qualitative research annotations into canonical knowledge structures"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,9 +43,11 @@ classifiers = [
 ]
 dependencies = [
     "lark >= 1.1",
-    # 1.x e 2.x (API diferente) são aceitas: parser/bib_loader.parse_bibtex isola
-    # a diferença. O teto em 3 protege de uma nova troca de API.
-    "bibtexparser >= 1.4, < 3",
+    # Piso 2.1: a 1.x (pyparsing) le um .bib ~10x mais devagar (3,9 MB = 3,6 s no
+    # face85). parser/bib_loader.parse_bibtex entrega o mesmo resultado nas duas
+    # APIs e mantem o caminho 1.x para ambiente que a fixe (o CI ainda o testa).
+    # O teto em 3 protege de uma nova troca de API.
+    "bibtexparser >= 2.1, < 3",
     "regex >= 2023.0.0",
     "click >= 8.0",
     "openpyxl >= 3.0",

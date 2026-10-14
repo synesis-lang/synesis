@@ -37,6 +37,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from difflib import get_close_matches
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, TypedDict, cast
 
@@ -103,7 +104,21 @@ def parse_bibtex(content: str) -> ParsedBibtex:
     Chave repetida no mesmo arquivo: a 2.x separa a repetição num bloco de erro;
     ela é devolvida como entrada, na posição em que aparece, para que a última
     ocorrência vença nas duas versões.
+
+    O parse é guardado por conteúdo: a compilação lê cada .bib duas vezes
+    (formato e união), e o pyparsing leva segundos num .bib de milhares de
+    entradas. Cada chamada recebe cópias das entradas, porque quem chama as
+    altera (`_original_key`, `_source_file`).
     """
+    cached = _parse_bibtex_cached(content)
+    return ParsedBibtex(
+        entries=[dict(entry) for entry in cached.entries],
+        comments=list(cached.comments),
+    )
+
+
+@lru_cache(maxsize=32)
+def _parse_bibtex_cached(content: str) -> ParsedBibtex:
     if _BIBTEXPARSER_V2:
         return _parse_bibtex_v2(content)
 
