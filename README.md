@@ -9,7 +9,8 @@ A Domain-Specific Language and toolchain for transforming qualitative research a
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3%20%2B%20exception-blue.svg)](https://github.com/synesis-lang/synesis/blob/main/LICENSE)
 
 > **Copyright (c) 2011–2026 Christian Maciel de Britto**
-> [`https://github.com/synesis-lang`](https://github.com/synesis-lang) · [`ORCID`](https://orcid.org/0000-0003-1431-3924)
+>
+> [`https://synesis-lang.org`](https://synesis-lang.org) · [`ORCID`](https://orcid.org/0000-0003-1431-3924)
 
 ---
 
