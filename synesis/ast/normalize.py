@@ -26,7 +26,13 @@ import unicodedata
 
 
 def normalize_code(code: str, cache: dict | None = None) -> str:
-    """Normaliza codigo: colapsa whitespace e converte para lowercase.
+    """Normaliza codigo: NFC, colapsa whitespace e converte para lowercase.
+
+    E o UNICO normalizador de identidade do ecossistema (Spec ROLE/EXPORT §4):
+    exportadores, coder, LSP e grafo delegam a ele. O NFC faz uma forma
+    composta e uma decomposta do mesmo nome (`ç` como um caractere ou como
+    `c` + cedilha combinante) serem o mesmo conceito. `_`, `-` e espaco NAO
+    sao equivalentes, e acentos distinguem identidades.
 
     Args:
         code: Codigo bruto (ex: "  FOO  BAR  " ou "A201")
@@ -37,7 +43,7 @@ def normalize_code(code: str, cache: dict | None = None) -> str:
     """
     if cache is not None and code in cache:
         return cache[code]
-    result = " ".join(code.strip().split()).lower()
+    result = " ".join(unicodedata.normalize("NFC", code).strip().split()).lower()
     if cache is not None:
         cache[code] = result
     return result

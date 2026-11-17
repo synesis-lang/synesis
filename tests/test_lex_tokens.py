@@ -155,7 +155,7 @@ def test_falha_e_registrada_em_debug(caplog):
     """Tolerancia nao pode virar failure masking silencioso."""
     with caplog.at_level(logging.DEBUG, logger="synesis.parser.lex_tokens"):
         lex_tokens("ITEM @x\n        a: 1\n    b: 2\nEND ITEM\n")
-    assert any("truncada" in r.getMessage() for r in caplog.records)
+    assert any("truncated" in r.getMessage() for r in caplog.records)
 
 
 # ----------------------------------------------------------- propagacao

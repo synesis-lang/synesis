@@ -389,7 +389,7 @@ END ITEM
         assert len(alpha_lines) == 1, f"Alpha deve aparecer 1 vez, achou: {alpha_lines}"
 
         # Deve indicar 2 ocorrencias de Alpha e 1 de Beta
-        assert "2 ocorrencia" in diag or "2 ocorrencias" in diag
+        assert "2 occurrence" in diag or "2 occurrences" in diag
         assert "Beta" in diag
 
     def test_compact_has_dica_when_undefined_codes(self):

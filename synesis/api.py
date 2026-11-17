@@ -188,12 +188,12 @@ class MemoryCompilationResult:
         try:
             import pandas as pd
         except ImportError:
-            raise ImportError("pandas nao encontrado. Instale com: pip install pandas")
+            raise ImportError("pandas not found. Install it with: pip install pandas")
 
         tables = self.to_csv_tables()
         if table_name not in tables:
             available = ", ".join(tables.keys())
-            raise KeyError(f"Tabela '{table_name}' nao encontrada. Disponiveis: {available}")
+            raise KeyError(f"Table '{table_name}' not found. Available: {available}")
 
         headers, rows = tables[table_name]
         return pd.DataFrame(rows, columns=headers)
@@ -255,7 +255,7 @@ class MemoryCompilationResult:
         try:
             import pandas as pd
         except ImportError:
-            raise ImportError("pandas nao encontrado. Instale com: pip install pandas")
+            raise ImportError("pandas not found. Install it with: pip install pandas")
 
         tables = self.to_csv_tables()
         return {
@@ -355,7 +355,7 @@ def load(
     # espelhando compiler.load_bibliography(). {} so ocorreria com .bib vazio explicito.
     if bibliography_content is not None and bibliography_contents is not None:
         raise ValueError(
-            "Use bibliography_content (um .bib) OU bibliography_contents (varios), nao os dois."
+            "Use bibliography_content (one .bib) OR bibliography_contents (several), not both."
         )
     bib_parts: Dict[str, str] = dict(bibliography_contents or {})
     if bibliography_content:
@@ -494,7 +494,7 @@ def _parse_project(content: str, filename: str) -> ProjectNode:
     for node in nodes:
         if isinstance(node, ProjectNode):
             return node
-    raise ValueError(f"Nenhum bloco PROJECT encontrado em {filename}")
+    raise ValueError(f"No PROJECT block found in {filename}")
 
 
 def _merge_validation(base: ValidationResult, other: ValidationResult) -> None:

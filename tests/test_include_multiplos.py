@@ -152,7 +152,7 @@ def test_pasta_sem_bib_e_e063_com_texto_proprio(tmp_path):
     errors = _errors(result, MissingBibliographyFile)
     assert len(errors) == 1
     assert errors[0].no_matches
-    assert "nenhum arquivo" in errors[0].to_diagnostic()
+    assert "did not\n  match any" in errors[0].to_diagnostic()
     # declarada mas vazia: bibliografia {} (bibrefs continuam validados)
     assert result.bibliography == {}
     assert _errors(result, UnregisteredSource)

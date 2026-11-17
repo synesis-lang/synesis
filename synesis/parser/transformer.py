@@ -26,6 +26,7 @@ Gerado conforme: Especificacao Synesis v1.1
 
 from __future__ import annotations
 
+import re
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,14 +36,19 @@ from lark import Token, Transformer, v_args
 
 from synesis.ast.nodes import (
     ChainNode,
+    ExportNode,
+    ExportProp,
     FieldEntry,
     FieldSpec,
     FieldType,
     IncludeNode,
     ItemNode,
+    MapNode,
     OntologyNode,
     OrderedValue,
+    PhaseNode,
     ProjectNode,
+    QuestionNode,
     Scope,
     SourceLocation,
     SourceNode,
@@ -52,6 +58,21 @@ from synesis.parser.lexer import SynesisSyntaxError
 
 def _source_location(file_path: Path, meta: Any) -> SourceLocation:
     return SourceLocation(file=file_path, line=meta.line, column=meta.column)
+
+
+# Identificador de questao: a mesma forma de IDENTIFIER na gramatica (letra ou _,
+# depois letras, digitos, _ e -).
+_QUESTION_ID = re.compile(r"[^\W\d][\w-]*")
+
+
+def _flatten(items: List[Any]) -> List[Any]:
+    flat: List[Any] = []
+    for item in items:
+        if isinstance(item, list):
+            flat.extend(_flatten(item))
+        else:
+            flat.append(item)
+    return flat
 
 
 def _strip_quotes(value: str) -> str:
@@ -162,6 +183,25 @@ class CodeListValue:
 class TextBlockValue:
     text: str
     lines: List[Any]
+
+
+@dataclass
+class ConvertedValue:
+    """Valor que o transformer converteu pelo CONTEUDO (cadeia ou lista), com as
+    linhas escritas. O bloco ONTOLOGY guarda as linhas na ocorrencia, para o
+    valor ser relido pelo TIPO declarado (um TEXT com `->` e texto). Os demais
+    blocos so desembrulham: guardar um token por cadeia em ITEM custaria caro em
+    projetos com milhoes de ocorrencias, e esses escopos ainda nao sao relidos.
+    """
+
+    value: Any
+    lines: List[Any]
+
+
+def _unwrap(value: Any) -> Tuple[Any, Optional[List[Any]]]:
+    if isinstance(value, ConvertedValue):
+        return value.value, value.lines
+    return value, None
 
 
 def _token_location(file_path: Path, token: Token, offset: int = 0) -> SourceLocation:
@@ -363,6 +403,9 @@ class SynesisTransformer(Transformer):
     def KW_FROM(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
 
+    def KW_ROLE(self, token: Token) -> str:  # noqa: N802
+        return str(token.value).upper()
+
     def KW_FIELDS(self, token: Token) -> str:  # noqa: N802
         return token.value.upper()
 
@@ -459,6 +502,9 @@ class SynesisTransformer(Transformer):
         include_nodes: List[IncludeNode] = []
         metadata: Dict[str, str] = {}
         description = None
+        questions: List[QuestionNode] = []
+        exports: List[ExportNode] = []
+        phases: List[PhaseNode] = []
 
         flattened: List[Any] = []
         for item in items[2:]:
@@ -473,6 +519,12 @@ class SynesisTransformer(Transformer):
         for item in flattened:
             if isinstance(item, tuple) and item[0] == "TEMPLATE":
                 template_path = Path(item[1])
+            elif isinstance(item, tuple) and item[0] == "QUESTIONS":
+                questions.extend(item[1])
+            elif isinstance(item, ExportNode):
+                exports.append(item)
+            elif isinstance(item, PhaseNode):
+                phases.append(item)
             elif isinstance(item, IncludeNode):
                 include_nodes.append(item)
             elif isinstance(item, dict):
@@ -494,6 +546,9 @@ class SynesisTransformer(Transformer):
             metadata=metadata,
             description=description,
             location=_source_location(self.file_path, meta),
+            questions=questions,
+            exports=exports,
+            phases=phases,
         )
 
     def project_body(self, items: List[Any]) -> List[Any]:
@@ -607,6 +662,113 @@ class SynesisTransformer(Transformer):
     def description_lines(self, items: List[Any]) -> List[Any]:
         return items
 
+    def questions(self, items: List[Any]) -> Tuple[str, List[QuestionNode]]:
+        """Grammar: questions: KW_QUESTIONS NEWLINE _INDENT question_lines _DEDENT KW_END KW_QUESTIONS
+
+        Cada TEXT_LINE vira uma QuestionNode. A forma `<id>: <texto>` e validada
+        depois (S5): aqui a linha fora da forma guarda id/texto vazios e o texto cru.
+        """
+        nodes: List[QuestionNode] = []
+        for item in _flatten(items):
+            # TEXT_LINE tambem casa uma linha `# ...`: comentario recuado nao e questao.
+            if isinstance(item, Token) and item.type == "TEXT_LINE" and not item.lstrip().startswith("#"):
+                nodes.append(self._question_node(item))
+        return ("QUESTIONS", nodes)
+
+    def question_lines(self, items: List[Any]) -> List[Any]:
+        return items
+
+    def _question_node(self, token: Token) -> QuestionNode:
+        raw = str(token).strip()
+        location = SourceLocation(file=self.file_path, line=token.line, column=token.column)
+        qid, sep, text = raw.partition(":")
+        qid = qid.strip()
+        if not sep or not _QUESTION_ID.fullmatch(qid):
+            return QuestionNode(id="", text="", raw=raw, location=location)
+        return QuestionNode(id=qid, text=text.strip(), raw=raw, location=location)
+
+    @v_args(tree=True)
+    def export_block(self, tree: Any) -> ExportNode:
+        """Grammar: export_block: KW_EXPORT IDENTIFIER IDENTIFIER? NEWLINE _INDENT (map_stmt | export_prop | NEWLINE)+ _DEDENT KW_END KW_EXPORT
+
+        children[0] e o KW_EXPORT; o formato e o nome opcional vem antes do
+        primeiro NEWLINE (IDENTIFIER chega como str simples, NEWLINE como Token).
+        """
+        children = tree.children
+        header: List[str] = []
+        for child in children[1:]:
+            if isinstance(child, Token):
+                break
+            if isinstance(child, str):
+                header.append(child)
+        props = [c for c in children if isinstance(c, ExportProp)]
+        maps = [c for c in children if isinstance(c, MapNode)]
+        return ExportNode(
+            format=header[0].upper() if header else "",
+            name=header[1] if len(header) > 1 else None,
+            props=props,
+            maps=maps,
+            location=_source_location(self.file_path, tree.meta),
+        )
+
+    @v_args(tree=True)
+    def phase_block(self, tree: Any) -> PhaseNode:
+        """Grammar: phase_block: KW_PHASE phase_scope IDENTIFIER NEWLINE _INDENT (export_prop | NEWLINE)+ _DEDENT KW_END KW_PHASE"""
+        children = tree.children
+        scope = str(children[1]).upper()
+        name = str(children[2])
+        return PhaseNode(
+            scope=scope,
+            name=name,
+            props=[c for c in children if isinstance(c, ExportProp)],
+            location=_source_location(self.file_path, tree.meta),
+        )
+
+    def phase_scope(self, items: List[Any]) -> str:
+        return str(items[0]).upper()
+
+    def KW_PHASE(self, token: Token) -> str:  # noqa: N802
+        return str(token.value).upper()
+
+    @v_args(tree=True)
+    def export_prop(self, tree: Any) -> ExportProp:
+        """Grammar: export_prop: (IDENTIFIER | KW_DESCRIPTION) TEXT_LINE NEWLINE"""
+        name, value = tree.children[0], tree.children[1]
+        return ExportProp(
+            name=str(name).upper(),
+            value=_strip_quotes(str(value).strip()),
+            location=_source_location(self.file_path, tree.meta),
+        )
+
+    @v_args(tree=True)
+    def map_stmt(self, tree: Any) -> MapNode:
+        """Grammar: map_stmt: KW_MAP KW_RELATIONS? field_names (KW_FROM IDENTIFIER)? KW_TO map_target NEWLINE"""
+        children = [c for c in tree.children if not (isinstance(c, Token) and c.type == "NEWLINE")]
+        kind = "relations" if "RELATIONS" in children[:2] else "fields"
+        names: List[str] = next(c for c in children if isinstance(c, list) and c[:1] == ["__NAMES__"])[1:]
+        if kind == "fields":
+            # Nomes de campo seguem a mesma normalizacao do template; nomes de
+            # relacao ficam como escritos (as RELATIONS distinguem caixa).
+            names = [_normalize_field_name(n) for n in names]
+        from_field: Optional[str] = None
+        if "FROM" in children:
+            from_field = str(children[children.index("FROM") + 1])
+        target_words = next(c for c in children if isinstance(c, list) and c[:1] == ["__TARGET__"])[1:]
+        return MapNode(
+            kind=kind,
+            names=list(names),
+            from_field=from_field,
+            target=" ".join(w.upper() for w in target_words),
+            location=_source_location(self.file_path, tree.meta),
+        )
+
+    def map_names(self, items: List[Any]) -> List[str]:
+        return ["__NAMES__", *[str(i) for i in items]]
+
+    def map_target(self, items: List[Any]) -> List[str]:
+        # Marcador para o map_stmt distinguir o alvo da lista de nomes (ambos listas).
+        return ["__TARGET__", *[str(i) for i in items]]
+
     def guideline_token(self, items: List[Any]) -> str:
         """Retorna o valor textual de um token dentro de uma linha de guidelines."""
         if not items:
@@ -690,6 +852,7 @@ class SynesisTransformer(Transformer):
             if not isinstance(entry, tuple):
                 continue
             name, value, location = entry
+            value, raw_lines = _unwrap(value)
             entries.append(_field_entry(name, value, location))
             if isinstance(value, TextBlockValue):
                 value = value.text
@@ -723,6 +886,7 @@ class SynesisTransformer(Transformer):
             if not isinstance(entry, tuple):
                 continue
             name, value, location = entry
+            value, raw_lines = _unwrap(value)
             if isinstance(value, TextBlockValue):
                 token_lines = list(value.lines)
                 entries.append(_field_entry(name, value, location, token_lines))
@@ -797,7 +961,8 @@ class SynesisTransformer(Transformer):
             if not isinstance(entry, tuple):
                 continue
             name, value, location = entry
-            entries.append(_field_entry(name, value, location))
+            value, raw_lines = _unwrap(value)
+            entries.append(_field_entry(name, value, location, raw_lines))
             if isinstance(value, TextBlockValue):
                 value = value.text
             field_names.append(name)
@@ -955,9 +1120,16 @@ class SynesisTransformer(Transformer):
         identifies = None
         refers_to = None
         context_from_dataset = None
+        role = None
+        role_repeats: List[str] = []
         for prop in props:
             key, value = prop
-            if key == "scope":
+            if key == "role":
+                if role is None:
+                    role = value
+                else:
+                    role_repeats.append(value)
+            elif key == "scope":
                 scope = value
             elif key == "format":
                 fmt = value
@@ -993,6 +1165,8 @@ class SynesisTransformer(Transformer):
             refers_to=refers_to,
             context_from_dataset=context_from_dataset,
             location=_source_location(self.file_path, meta),
+            role=role,
+            role_repeats=role_repeats or None,
         )
 
     def type_spec(self, items: List[Any]) -> FieldType:
@@ -1004,6 +1178,9 @@ class SynesisTransformer(Transformer):
     def field_props(self, items: List[Any]) -> Tuple[str, Any]:
         if items[0] == "SCOPE":
             return ("scope", _scope_from_kw(items[1]))
+        if items[0] == "ROLE":
+            # Forma canonica: palavras em maiusculas separadas por um espaco.
+            return ("role", " ".join(str(w).upper() for w in items[1:]))
         if items[0] == "FORMAT":
             return ("format", items[1])
         if items[0] == "DESCRIPTION":
@@ -1099,10 +1276,10 @@ class SynesisTransformer(Transformer):
             lines = cleaned[0]
             if _is_code_field_name(name):
                 value = _parse_code_lines(self.file_path, lines)
-                return (name, value, location)
+                return (name, ConvertedValue(value, lines), location)
             if _is_chain_field_name(name) or _lines_contain_chain(lines):
                 value = _parse_chain_lines(self.file_path, lines, location)
-                return (name, value, location)
+                return (name, ConvertedValue(value, lines), location)
             text = "\n".join(_line_texts(lines))
             text = _ensure_non_empty(_dedent_text(text), location, name)
             return (name, TextBlockValue(text=text, lines=lines), location)
@@ -1116,10 +1293,10 @@ class SynesisTransformer(Transformer):
             lines = [value] + cleaned[1]
             if _is_code_field_name(name):
                 value = _parse_code_lines(self.file_path, lines)
-                return (name, value, location)
+                return (name, ConvertedValue(value, lines), location)
             if _is_chain_field_name(name) or _lines_contain_chain(lines):
                 value = _parse_chain_lines(self.file_path, lines, location)
-                return (name, value, location)
+                return (name, ConvertedValue(value, lines), location)
             merged = "\n".join(_line_texts(lines))
             merged = _ensure_non_empty(_dedent_text(merged), location, name)
             return (name, TextBlockValue(text=merged, lines=lines), location)
@@ -1130,6 +1307,7 @@ class SynesisTransformer(Transformer):
         if isinstance(value, (str, Token)):
             token_value = value if isinstance(value, Token) else None
             value_str = _ensure_non_empty(str(value), location, name)
+            converted: Any
             lname = name.lower()
             if lname in {"code", "codes"}:
                 if isinstance(value, Token):
@@ -1142,12 +1320,13 @@ class SynesisTransformer(Transformer):
             elif "->" in value_str:
                 if isinstance(value, Token):
                     nodes, locations = _split_chain_from_line(self.file_path, value)
-                    value = ChainNode(
+                    converted = ConvertedValue(ChainNode(
                         nodes=nodes,
                         relations=[],
                         location=location,
                         node_locations=locations if locations else None,
-                    )
+                    ), [value])
+                    return (name, converted, location)
                 else:
                     elements = [part.strip() for part in value_str.split("->") if part.strip()]
                     value = ChainNode(nodes=elements, relations=[], location=location)

@@ -321,18 +321,18 @@ class SynesisErrorHandler:
             flags=re.IGNORECASE
         )
 
-        msg = f"""erro: {location}: Nome de campo desconhecido '{typo}'.
+        msg = f"""error: {location}: Unknown field name '{typo}'.
     {line.strip()}
 
-Voce quis dizer '{suggestion}'?
+Did you mean '{suggestion}'?
     {corrected_line.strip()}
 
-Campos comuns:
-    quote, quotation - Excerto textual
-    code, codes - Rótulos conceituais
-    chain, chains - Cadeias causais
-    note, notes, memo - Anotações analíticas
-    description - Descrição do conceito"""
+Common fields:
+    quote, quotation - Textual excerpt
+    code, codes - Conceptual codes
+    chain, chains - Relational chains
+    note, notes, memo - Analytical notes
+    description - Concept description"""
 
         return msg
 
@@ -358,14 +358,14 @@ Campos comuns:
         # Cria visualizacao do erro
         marker = " " * (column - 1) + "^" + "~" * 3
 
-        msg = f"""erro: {location}: Multiplos codigos devem ser separados por virgula.
+        msg = f"""error: {location}: Multiple codes must be separated by commas.
     {line}
-    {marker} falta virgula aqui
+    {marker} comma missing here
 
-Use virgula para separar codigos:
+Use commas to separate codes:
     code: {', '.join(value_part.split())}
 
-OU especifique cada codigo em linha separada:
+OR write each code on its own line:
     code: {value_part.split()[0]}
     code: {value_part.split()[1] if len(value_part.split()) > 1 else '...'}"""
 
@@ -397,14 +397,14 @@ OU especifique cada codigo em linha separada:
         # Cria visualizacao do erro
         marker = " " * (column - 1) + "^" + "~" * 10
 
-        msg = f"""erro: {location}: Cadeia causal exige operador '->' entre elementos.
+        msg = f"""error: {location}: A chain needs the '->' operator between elements.
     {line}
-    {marker} falta '->' aqui
+    {marker} '->' missing here
 
-Use '->' para conectar elementos:
+Use '->' to connect elements:
     chain: {suggestion}
 
-Exemplo completo:
+Full example:
     chain: Climate Belief -> INFLUENCES -> Support"""
 
         return msg
@@ -424,11 +424,11 @@ Exemplo completo:
         token_repr = repr(error.token) if error.token else "<EOF>"
 
         # Monta cabecalho
-        msg = f"erro: {location}: Token inesperado {token_repr}\n"
+        msg = f"error: {location}: Unexpected token {token_repr}\n"
 
         # Adiciona contexto (linhas antes e depois)
         if len(context_lines) >= 3:
-            msg += "\nContexto:\n"
+            msg += "\nContext:\n"
             for i, ctx_line in enumerate(context_lines):
                 prefix = "  " if i != 1 else ">>>"
                 msg += f"{prefix} {ctx_line}\n"
@@ -438,9 +438,9 @@ Exemplo completo:
         # Adiciona tokens esperados
         if error.expected:
             expected_friendly = self._humanize_expected_tokens(error.expected)
-            msg += f"\nEsperado: {', '.join(expected_friendly[:5])}"
+            msg += f"\nExpected: {', '.join(expected_friendly[:5])}"
             if len(expected_friendly) > 5:
-                msg += f" (e {len(expected_friendly) - 5} outros)"
+                msg += f" (and {len(expected_friendly) - 5} more)"
 
         return msg
 
@@ -453,15 +453,15 @@ Exemplo completo:
         """Formata mensagem generica para caractere inesperado."""
         char_repr = repr(error.char) if hasattr(error, 'char') else "<unknown>"
 
-        msg = f"erro: {location}: Caractere inesperado {char_repr}\n"
+        msg = f"error: {location}: Unexpected character {char_repr}\n"
         msg += f"    {current_line}\n"
-        msg += f"    {' ' * (error.column - 1)}^ aqui\n"
+        msg += f"    {' ' * (error.column - 1)}^ here\n"
 
         # Sugestoes gerais
-        msg += "\nVerifique:\n"
-        msg += "  - Aspas abertas mas nao fechadas\n"
-        msg += "  - Caracteres especiais invalidos\n"
-        msg += "  - Indentacao incorreta\n"
+        msg += "\nCheck for:\n"
+        msg += "  - Quotes opened but not closed\n"
+        msg += "  - Invalid special characters\n"
+        msg += "  - Incorrect indentation\n"
 
         return msg
 
@@ -471,7 +471,7 @@ Exemplo completo:
         line: str,
     ) -> str:
         """Fallback para mensagem generica simples."""
-        return f"erro: {location}: Erro de sintaxe\n    {line}\n"
+        return f"error: {location}: Syntax error\n    {line}\n"
 
     # =========================================================================
     # UTILITARIOS
@@ -514,16 +514,16 @@ Exemplo completo:
             ["NEWLINE", "IDENTIFIER"] -> ["nova linha", "identificador"]
         """
         friendly_names = {
-            "NEWLINE": "nova linha",
-            "IDENTIFIER": "identificador",
-            "FIELD_NAME": "nome de campo",
-            "STRING": "texto entre aspas",
-            "NUMBER": "numero",
-            "BIBREF": "referencia @...",
-            "CHAIN_ELEMENT": "elemento de cadeia",
-            "CODE_ELEMENT": "codigo",
-            "_INDENT": "indentacao",
-            "_DEDENT": "fim de indentacao",
+            "NEWLINE": "new line",
+            "IDENTIFIER": "identifier",
+            "FIELD_NAME": "field name",
+            "STRING": "quoted text",
+            "NUMBER": "number",
+            "BIBREF": "reference @...",
+            "CHAIN_ELEMENT": "chain element",
+            "CODE_ELEMENT": "code",
+            "_INDENT": "indentation",
+            "_DEDENT": "end of indentation",
         }
 
         result = []
@@ -570,4 +570,4 @@ def create_pedagogical_error(
         return handler.handle_unexpected_characters(exc, source, filename)
     else:
         # Fallback para outras excecoes
-        return f"erro: {filename}: {str(exc)}"
+        return f"error: {filename}: {str(exc)}"

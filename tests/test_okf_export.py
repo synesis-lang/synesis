@@ -140,7 +140,7 @@ def _segments(text: str) -> dict:
         if label:
             current = label.group(1).replace("\\", "")
             out.setdefault(current, []).append("")
-        elif line.startswith(("#", "*Origem:*", "<a id=")):
+        elif line.startswith(("#", "*Origin:*", "<a id=")):
             current = None
         elif current and line.strip():
             out[current][-1] += re.sub(r"\\(.)", r"\1", line) + "\n"  # desfaz md_literal
@@ -262,4 +262,4 @@ def test_cli_writes_bundle_and_refuses_non_empty_directory(tmp_path):
     assert first.exit_code == 0, first.output
     assert (bundle / "index.md").is_file() and (bundle / "sources" / "smith2024.md").is_file()
     again = runner.invoke(main, ["compile", str(tmp_path / "project.synp"), "--okf", str(bundle)])
-    assert again.exit_code == 1 and "não está vazia" in again.output
+    assert again.exit_code == 1 and "is not empty" in again.output

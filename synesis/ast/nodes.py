@@ -106,8 +106,20 @@ class FieldSpec:
     # contexto de geração deste campo (não são origem-de-valor).
     context_from_dataset: Optional[List[str]] = None
     location: Optional[SourceLocation] = None
+    # ROLE <FAMILIA> [<ESPECIE>]: funcao do campo, na forma canonica
+    # ("HIERARCHY KIND"). `role_repeats` guarda ROLE escrito de novo no mesmo
+    # FIELD, para o diagnostico (DuplicateRole); nao vai para o JSON.
+    role: Optional[str] = None
+    role_repeats: Optional[List[str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        data = self._base_dict()
+        # So com papel: o JSON de um template sem ROLE nao muda.
+        if self.role is not None:
+            data["role"] = self.role
+        return data
+
+    def _base_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
             "type": self.type.value,
@@ -188,6 +200,108 @@ class IncludeNode:
 
 
 @dataclass
+class QuestionNode:
+    """Uma questao de competencia do bloco QUESTIONS (`Q1: texto`).
+
+    `id` e `text` vazios guardam a linha que nao segue a forma `<id>: <texto>`;
+    o compilador a acusa (QuestionWithoutId / QuestionWithoutText). `raw` e a
+    linha como foi escrita, para a mensagem.
+    """
+
+    id: str
+    text: str
+    raw: str
+    location: SourceLocation
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"id": self.id, "text": self.text}
+
+
+@dataclass
+class ExportProp:
+    """Uma propriedade de um bloco EXPORT (`OUTPUT "saida.json"`), como escrita."""
+
+    name: str
+    value: str
+    location: SourceLocation
+
+
+@dataclass
+class MapNode:
+    """Uma linha MAP de um bloco EXPORT.
+
+    kind: "fields" (MAP campos TO alvo) ou "relations" (MAP RELATIONS ... TO alvo).
+    target: forma canonica, palavras em maiusculas separadas por um espaco.
+    """
+
+    kind: str
+    names: List[str]
+    from_field: Optional[str]
+    target: str
+    location: SourceLocation
+
+
+@dataclass
+class ExportNode:
+    """Bloco EXPORT <FORMATO> [nome] do .synp. Nao vai para o JSON."""
+
+    format: str
+    name: Optional[str]
+    props: List[ExportProp]
+    maps: List[MapNode]
+    location: SourceLocation
+
+    def prop(self, name: str) -> Optional[str]:
+        """Valor da primeira ocorrencia da propriedade (sem distincao de caixa)."""
+        key = name.upper()
+        for prop in self.props:
+            if prop.name.upper() == key:
+                return prop.value
+        return None
+
+    @property
+    def label(self) -> str:
+        """Como o bloco e citado em mensagens: `EXPORT JSON painel`."""
+        return f"EXPORT {self.format}" + (f" {self.name}" if self.name else "")
+
+
+PHASE_LIST_PROPS = ("FIELDS", "INPUT", "RULES")
+
+
+@dataclass
+class PhaseNode:
+    """Bloco PHASE <ANNOTATIONS|ONTOLOGY> <nome> do .synp. So validado pelo compilador."""
+
+    scope: str  # "ANNOTATIONS" | "ONTOLOGY"
+    name: str
+    props: List[ExportProp]
+    location: SourceLocation
+
+    @property
+    def label(self) -> str:
+        return f"PHASE {self.scope} {self.name}"
+
+    def prop(self, name: str) -> Optional[str]:
+        key = name.upper()
+        for prop in self.props:
+            if prop.name.upper() == key:
+                return prop.value
+        return None
+
+    def fields(self, name: str = "FIELDS") -> List[str]:
+        """Campos de FIELDS, INPUT ou RULES, na ordem escrita."""
+        value = self.prop(name)
+        if not value:
+            return []
+        return [part.strip() for part in value.split(",") if part.strip()]
+
+    @property
+    def env_key(self) -> str:
+        """Nome da fase na variavel de ambiente: SYNESIS_CODER_PHASE_<ENV_KEY>_MODEL."""
+        return "".join(ch if ch.isalnum() else "_" for ch in self.name).upper()
+
+
+@dataclass
 class ProjectNode:
     name: str
     template_path: Path
@@ -195,9 +309,13 @@ class ProjectNode:
     metadata: Dict[str, str]
     description: Optional[str]
     location: SourceLocation
+    questions: List[QuestionNode] = field(default_factory=list)
+    exports: List[ExportNode] = field(default_factory=list)
+    # Blocos PHASE, na ordem do arquivo. Nao vao para o JSON (plano de producao).
+    phases: List[PhaseNode] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "name": self.name,
             "template_path": str(self.template_path),
             "includes": [inc.to_dict() for inc in self.includes],
@@ -205,6 +323,11 @@ class ProjectNode:
             "description": self.description,
             "location": self.location.to_dict(),
         }
+        # Só com o bloco: o JSON de um projeto sem QUESTIONS nao muda.
+        # Os blocos EXPORT nao entram no JSON (configuram artefatos, nao dados).
+        if self.questions:
+            data["questions"] = [q.to_dict() for q in self.questions if q.id and q.text]
+        return data
 
 
 @dataclass(slots=True)

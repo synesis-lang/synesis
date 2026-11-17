@@ -139,7 +139,7 @@ def _codigos_citados_nos_testes() -> set[str]:
 
 # Divida conhecida: codigos sem teste no momento em que este inventario foi
 # criado. Reduzir este numero e trabalho desejavel; aumenta-lo e regressao.
-_LIMITE_SEM_COBERTURA = 15
+_LIMITE_SEM_COBERTURA = 14
 
 
 def test_catalogo_de_erros_nao_regride():

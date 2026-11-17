@@ -43,11 +43,14 @@ from synesis.ast.nodes import (
 )
 from synesis.ast.normalize import normalize_bibref, normalize_code
 from synesis.ast.results import (
+    DeprecatedNameBasedHierarchy,
     DuplicateOntologyConcept,
     DuplicateOntologyDescription,
     DuplicateSourceBibref,
+    IdentityCollision,
     OrphanItem,
     SourceWithoutItems,
+    UngroundedConcept,
     ValidationResult,
 )
 from synesis.semantic.occurrences import (
@@ -57,6 +60,7 @@ from synesis.semantic.occurrences import (
     item_chains,
     item_field_value,
 )
+from synesis.semantic.ontology_values import project_ontology
 
 
 def _merge_code_values(extra_fields: Dict[str, Any], field_name: str, values: List[str]) -> None:
@@ -93,6 +97,12 @@ class LinkedProject:
     all_triples: List[Tuple[str, str, str]]
     topic_index: Dict[str, List[str]]
     relation_index: Dict[Tuple[str, str, str], Dict[str, Any]] = field(default_factory=dict)
+    # Hierarquia adotada pelos papeis HIERARCHY (semantic.hierarchy.Hierarchy);
+    # None num template sem papeis. `hierarchy` acima e a rota antiga por nome.
+    role_hierarchy: Any = None
+    # Etapa U: preterido -> alvo (identidades). `code_usage` ja vem resolvido;
+    # a forma escrita (itens, triplas) nao muda.
+    aliases: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -149,7 +159,18 @@ class Linker:
         self._check_duplicate_ontology_concepts()
         self._check_duplicate_ontology_descriptions()
 
-        ontology_index = {normalize_code(o.concept, self.norm_cache): o for o in self.ontologies}
+        # Copias com o valor pelo TIPO declarado (ontology_values): exportadores,
+        # LSP e grafo leem o mesmo valor que o validador conferiu. O no parseado
+        # nao muda (parse_cache).
+        ontology_index = {
+            normalize_code(o.concept, self.norm_cache): project_ontology(o, self.template)
+            for o in self.ontologies
+        }
+        from synesis.semantic.aliases import build_aliases, resolve_usage
+
+        aliases, alias_errors = build_aliases(ontology_index, self.template)
+        for error in alias_errors:
+            self.validation_result.add(error)
         code_usage: Dict[str, List[ItemNode]] = {}
         all_triples: List[Tuple[str, str, str]] = []
         relation_index: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
@@ -189,6 +210,10 @@ class Linker:
             for topic in topics:
                 topic_index.setdefault(topic, []).append(ontology.concept)
 
+        # Projecao analitica: mencoes do preterido contam para o alvo.
+        code_usage = resolve_usage(code_usage, aliases)
+        role_hierarchy = self._link_roles(ontology_index, code_usage, all_triples, aliases)
+
         project = self.project or self._default_project()
         return LinkedProject(
             project=project,
@@ -199,7 +224,49 @@ class Linker:
             all_triples=all_triples,
             topic_index=topic_index,
             relation_index=relation_index,
+            role_hierarchy=role_hierarchy,
+            aliases=dict(aliases.target),
         )
+
+    def _link_roles(self, ontology_index, code_usage, all_triples, aliases=None):
+        """Hierarquia por papel, rotulos e fundamentacao (Spec §5.2, §6).
+
+        Le os valores ja interpretados pelo tipo (copias do ontology_index).
+        Com papel HIERARCHY, avisa os blocos sem mencao (CODE ou CHAIN) e sem
+        descendente mencionado. A rota por nome (`parent`/`is_a`) recebe aviso.
+        """
+        from synesis.semantic.hierarchy import Hierarchy, grounding, label_errors
+        from synesis.semantic.roles import fields_with_family, has_roles
+
+        for ontology in self.ontologies:
+            for name in ontology.field_names:
+                if name.lower() in {"parent", "parents", "is_a", "isa"}:
+                    self.validation_result.add(DeprecatedNameBasedHierarchy(
+                        location=ontology.location or SourceLocation(Path("<unknown>"), 1, 1),
+                        concept=ontology.concept,
+                        field_name=name,
+                    ))
+        if not has_roles(self.template):
+            return None
+        hierarchy = Hierarchy.build(ontology_index, self.template, aliases)
+        for error in hierarchy.errors + label_errors(ontology_index, self.template):
+            self.validation_result.add(error)
+        if fields_with_family(self.template, "HIERARCHY"):
+            resolve = aliases.resolve if aliases else (lambda k: k)
+            mentioned = {resolve(k) for k in code_usage}
+            for a, _rel, b in all_triples:
+                mentioned.add(resolve(normalize_code(a, self.norm_cache)))
+                mentioned.add(resolve(normalize_code(b, self.norm_cache)))
+            for key, grounded in grounding(hierarchy, ontology_index, mentioned).items():
+                if aliases and aliases.is_alias(key):
+                    continue  # o preterido nao e conceito: o alvo responde por ele
+                if not grounded:
+                    node = ontology_index[key]
+                    self.validation_result.add(UngroundedConcept(
+                        location=node.location or SourceLocation(Path("<unknown>"), 1, 1),
+                        concept=node.concept,
+                    ))
+        return hierarchy
 
     def _is_a_pairs(self, chain: ChainNode) -> List[Tuple[str, str]]:
         pairs: List[Tuple[str, str]] = []
@@ -484,6 +551,19 @@ class Linker:
                 location = ontology.location or SourceLocation(Path("<unknown>"), 1, 1)
                 file_a = str(seen[key].location.file) if seen[key].location else "<unknown>"
                 file_b = str(location.file)
+                first = seen[key].concept
+                # Nomes que so coincidem pela forma Unicode (NFC): o leitor ve dois
+                # nomes "iguais" e diferentes ao mesmo tempo; a mensagem explica.
+                if " ".join(first.split()).lower() != " ".join(ontology.concept.split()).lower():
+                    self.validation_result.add(
+                        IdentityCollision(
+                            location=location,
+                            first_name=first,
+                            second_name=ontology.concept,
+                            first_file=file_a,
+                        )
+                    )
+                    continue
                 self.validation_result.add(
                     DuplicateOntologyConcept(
                         location=location,

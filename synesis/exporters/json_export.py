@@ -50,6 +50,7 @@ from synesis.ast.nodes import (
     SourceNode,
     TemplateNode,
 )
+from synesis.ast.normalize import normalize_code
 from synesis.exporters._helpers import (
     _get_field_names_for_scope,
     _get_field_names_for_scope_and_types,
@@ -63,11 +64,15 @@ from synesis.semantic.occurrences import item_chains
 _ITEM_INDEX_WIDTH = 4
 
 
-def _build_export_metadata(linked: LinkedProject) -> Dict[str, Any]:
+def _build_export_metadata(
+    linked: LinkedProject, generated_at: Optional[str] = None
+) -> Dict[str, Any]:
     from datetime import datetime, timezone
 
+    # Com `generated_at` (GENERATED_AT de um bloco EXPORT), a data e fixa e a
+    # mesma entrada gera o mesmo JSON; sem ela, a hora da exportacao, como antes.
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": generated_at or datetime.now(timezone.utc).isoformat(),
         "compiler_version": "1.1",
         "export_mode": "universal",
         "chain_count": len(linked.all_triples),
@@ -193,6 +198,8 @@ def _build_chain_usage(
     Cadeias de todo campo CHAIN, pelo tipo, cada uma lida no modo do seu campo.
     """
     has_relations = _has_chain_relations(template)
+    # Etapa U: projecao resolvida (o preterido conta para o alvo).
+    aliases: Dict[str, str] = dict(getattr(linked, "aliases", None) or {})
     usage: Dict[str, List[ItemNode]] = {}
     for source in linked.sources.values():
         for item in source.items:
@@ -200,6 +207,7 @@ def _build_chain_usage(
                 for from_c, _rel, to_c in chain.to_triples(qualified):
                     for concept in (from_c, to_c):
                         key = _normalize_code(concept)
+                        key = aliases.get(key, key)
                         usage.setdefault(key, []).append(item)
     return usage
 
@@ -277,12 +285,66 @@ def _build_indices_section(
     template: Optional[TemplateNode],
     chain_usage: Dict[str, List[ItemNode]],
 ) -> Dict[str, Any]:
-    return {
+    indices = {
         "hierarchy": linked.hierarchy,
         "triples": _build_triples_index(linked, template),
         "topics": linked.topic_index,
         "code_frequency": _build_code_frequency_index(linked, chain_usage),
     }
+    indices.update(_build_role_indices(linked, template, chain_usage))
+    aliases = getattr(linked, "aliases", None) or {}
+    if aliases:
+        # Mapa de identidade (etapa U): nome do preterido -> nome do alvo.
+        names = {k: n.concept for k, n in linked.ontology_index.items()}
+        indices["aliases"] = {names.get(a, a): names.get(t, t) for a, t in sorted(aliases.items())}
+    return indices
+
+
+def _build_role_indices(
+    linked: LinkedProject,
+    template: Optional[TemplateNode],
+    chain_usage: Dict[str, List[ItemNode]],
+) -> Dict[str, Any]:
+    """indices.relations e indices.subtree (JSON 3.1), so com papel HIERARCHY.
+
+    relations: {"KIND": [[filho, pai], ...], "PART": [...], "INSTANCE": [...]},
+    pela visao canonica (.syno). subtree: por conceito, filhos, descendentes,
+    ITEMs proprios e da subarvore. `items_subtree` e a UNIAO dos ITEMs (CODE e
+    CHAIN) do conceito e dos descendentes: um ITEM que menciona dois deles, ou um
+    descendente alcancado por dois caminhos do DAG, conta uma vez.
+    """
+    from synesis.semantic.roles import fields_with_family
+
+    hierarchy = getattr(linked, "role_hierarchy", None)
+    if hierarchy is None or not fields_with_family(template, "HIERARCHY"):
+        return {}
+    names = {key: node.concept for key, node in linked.ontology_index.items()}
+    relations = {
+        species: [[names.get(c, c), names.get(p, p)] for c, p in pairs]
+        for species, pairs in hierarchy.relations.items()
+    }
+    own: Dict[str, set] = {}
+    aliases = getattr(linked, "aliases", None) or {}
+    for key in linked.ontology_index:
+        own[key] = {id(i) for i in linked.code_usage.get(key, [])} | {
+            id(i) for i in chain_usage.get(key, [])
+        }
+    subtree: Dict[str, Any] = {}
+    for key in sorted(linked.ontology_index):
+        if key in aliases:
+            continue  # o preterido nao e no da hierarquia
+        descendants = hierarchy.descendants(key)
+        union = set(own[key])
+        for child in descendants:
+            union.update(own.get(child, ()))
+        subtree[names[key]] = {
+            "children": len(hierarchy.children.get(key, ())),
+            "descendants": len(descendants),
+            "items": len(own[key]),
+            "items_subtree": len(union),
+            "grounded": bool(union),
+        }
+    return {"relations": relations, "subtree": subtree}
 
 
 def build_json_payload(
@@ -290,6 +352,8 @@ def build_json_payload(
     template: Optional[TemplateNode] = None,
     bibliography: Optional[Dict[str, BibEntry]] = None,
     dataset_index: Optional[Dict[str, Any]] = None,
+    *,
+    generated_at: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Constroi payload JSON v3.0 em memoria (sem I/O).
@@ -321,8 +385,8 @@ def build_json_payload(
     chain_usage = _build_chain_usage(linked, template)
 
     return {
-        "version": "3.0",
-        "export_metadata": _build_export_metadata(linked),
+        "version": "3.1",
+        "export_metadata": _build_export_metadata(linked, generated_at),
         "project": _build_project_section(linked),
         "template": _build_template_section(template),
         "bibliography": _build_bibliography_section(bibliography, linked, template),
@@ -339,6 +403,8 @@ def export_json(
     template: Optional[TemplateNode] = None,
     bibliography: Optional[Dict[str, BibEntry]] = None,
     dataset_index: Optional[Dict[str, Any]] = None,
+    *,
+    generated_at: Optional[str] = None,
 ) -> None:
     """
     Exporta o projeto Synesis em JSON analitico v3.0.
@@ -356,7 +422,9 @@ def export_json(
         path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    data = build_json_payload(linked, template, bibliography, dataset_index)
+    data = build_json_payload(
+        linked, template, bibliography, dataset_index, generated_at=generated_at
+    )
     payload = json.dumps(data, indent=2, ensure_ascii=False)
     path.write_text(payload, encoding="utf-8")
 
@@ -542,10 +610,21 @@ def _build_item_data(
     ontology_fields = _get_field_names_for_scope(template, Scope.ONTOLOGY)
     for name in ontology_fields:
         field_spec = template.field_specs.get(name)
-        data[name] = _clean_value(
-            _resolve_ontology_value(index_values, name, field_spec, linked)
-        )
+        value = _clean_value(_resolve_ontology_value(index_values, name, field_spec, linked))
+        # Campo ONTOLOGY que nenhum conceito mencionado preenche nao entra no
+        # ITEM: saia como null ou lista de nulls, repetido em cada trecho, sem
+        # informacao (teste real do Fraudes Digitais, 2026-11-17). Com algum
+        # valor, a lista fica inteira — alinhada aos codigos do trecho.
+        if _has_any_value(value):
+            data[name] = value
     return data
+
+
+def _has_any_value(value: Any) -> bool:
+    """Ha algum valor real (nao nulo, nao vazio) em `value` ou na sua lista?"""
+    if isinstance(value, list):
+        return any(_has_any_value(v) for v in value)
+    return value not in (None, "", {})
 
 
 def _serialize_chain_as_triples(
@@ -726,7 +805,8 @@ def _find_ontology(linked: LinkedProject, code: str) -> Optional[OntologyNode]:
 
 
 def _normalize_code(code: str) -> str:
-    return " ".join(code.strip().split()).lower()
+    # Mesma identidade do compilador (normalizador unico, com NFC).
+    return normalize_code(code)
 
 
 def _normalize_bibref(bibref: str) -> str:

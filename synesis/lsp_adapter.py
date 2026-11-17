@@ -385,13 +385,13 @@ def discover_context(file_uri: str) -> tuple[ValidationContext, List["Validation
             location=SourceLocation(file_path, 1, 1), workspace_root=str(workspace_root)
         )
         warnings.append(warning)
-        logger.warning("Nenhum .synp encontrado no workspace: %s", workspace_root)
+        logger.warning("No .synp found in the workspace: %s", workspace_root)
         return ValidationContext(), warnings
 
     # 4. CARREGAR CONTEXTO DO PROJETO
     project_path, project_node = project_result
     project_dir = project_path.parent
-    logger.info("Projeto Synesis carregado: %s", project_path)
+    logger.info("Synesis project loaded: %s", project_path)
     context, load_errors = _load_context_from_project(project_dir, project_node)
 
     # Erros de carregamento (template ausente, etc.) vão para warnings
@@ -566,8 +566,8 @@ def _find_project_in_workspace(workspace_root: Path) -> Optional[tuple[Path, "Pr
     # Log warning se múltiplos encontrados
     if len(synp_files) > 1:
         logger.warning(
-            f"Múltiplos arquivos .synp encontrados em {workspace_root}. "
-            f"Usando '{synp_path.name}' (primeiro alfabeticamente)."
+            f"Multiple .synp files found in {workspace_root}. "
+            f"Using '{synp_path.name}' (first alphabetically)."
         )
 
     # Tenta parsear o projeto
@@ -586,7 +586,7 @@ def _find_project_in_workspace(workspace_root: Path) -> Optional[tuple[Path, "Pr
 
     except Exception as e:
         # Parsing falhou - logar e retornar None
-        logger.error("Erro ao parsear %s: %s", synp_path, e)
+        logger.error("Error parsing %s: %s", synp_path, e)
         return None
 
 
@@ -627,7 +627,7 @@ def _load_context_from_project(
             project_file=f"{project_dir}/*.synp",
         )
         errors.append(error)
-        logger.warning("Template nao encontrado: %s", template_path)
+        logger.warning("Template not found: %s", template_path)
     else:
         try:
             template = load_template(template_path)
@@ -640,7 +640,7 @@ def _load_context_from_project(
                 parse_error=str(e),
             )
             errors.append(error)
-            logger.warning("Falha ao carregar template %s: %s", template_path, e)
+            logger.warning("Failed to load template %s: %s", template_path, e)
 
     # 2. CARREGAR BIBLIOGRAFIA (opcional)
     # Varias linhas INCLUDE BIBLIOGRAPHY, curingas e pastas se somam, pela mesma
@@ -653,15 +653,15 @@ def _load_context_from_project(
                 parts.append((str(bib_path), read_source_file(bib_path)))
             except (OSError, UnicodeDecodeError) as e:
                 # Bibliografia existe mas nao pode ser lida — nao e erro fatal
-                logger.warning("Erro ao carregar bibliografia %s: %s", bib_path, e)
+                logger.warning("Error loading bibliography %s: %s", bib_path, e)
         try:
             bibliography, _duplicates = merge_bibliographies(parts)
-            logger.info("Bibliografia carregada: %d arquivo(s)", len(parts))
+            logger.info("Bibliography loaded: %d file(s)", len(parts))
         except Exception as e:
-            logger.warning("Erro ao unir bibliografias: %s", e)
+            logger.warning("Error merging bibliographies: %s", e)
             bibliography = None
         if not bib_files:
-            logger.warning("Bibliografia declarada mas nenhum .bib encontrado")
+            logger.warning("Bibliography declared but no .bib found")
 
     # 3. CARREGAR ONTOLOGIAS (opcional)
     from synesis.ast.nodes import OntologyNode
@@ -675,7 +675,7 @@ def _load_context_from_project(
         expansion = expand_include(project_dir, include.path, INCLUDE_EXTENSIONS["ONTOLOGY"],
                                    shared=include.shared)
         if not expansion.files:
-            logger.warning("Ontologia nao encontrada: %s", expansion.path)
+            logger.warning("Organizing model file not found: %s", expansion.path)
         for ont_path in expansion.files:
             try:
                 tree = parse_file(ont_path)
@@ -685,9 +685,9 @@ def _load_context_from_project(
                 for node in nodes:
                     if isinstance(node, OntologyNode):
                         ontology_index[node.concept] = node
-                logger.info("Ontologia carregada: %s (%d conceitos)", ont_path, len(ontology_index))
+                logger.info("Organizing model loaded: %s (%d model entries)", ont_path, len(ontology_index))
             except Exception as e:
-                logger.warning("Erro ao carregar ontologia %s: %s", ont_path, e)
+                logger.warning("Error loading organizing model %s: %s", ont_path, e)
 
     # 4. RETORNAR CONTEXTO
     context = ValidationContext(
@@ -713,8 +713,8 @@ class SyntaxError(BaseValidationError):
     expected: Optional[List[str]] = None
 
     def to_diagnostic(self) -> str:
-        msg = f"Erro de sintaxe: {self.message}"
+        msg = f"Syntax error: {self.message}"
         if self.expected:
             expected_str = ", ".join(self.expected[:5])  # Limita a 5 tokens
-            msg += f"\n  Esperado: {expected_str}"
+            msg += f"\n  Expected: {expected_str}"
         return msg

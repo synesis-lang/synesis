@@ -642,6 +642,6 @@ def _validate_field_names(
         if name not in field_specs:
             location = SourceLocation(file_path, 1, 1)
             raise TemplateLoadError(
-                message=f"Campo '{name}' listado em {scope.value} FIELDS nao definido em FIELD",
+                message=f"Field '{name}' listed in {scope.value} FIELDS is not defined by a FIELD",
                 location=location,
             )

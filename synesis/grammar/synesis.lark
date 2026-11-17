@@ -74,6 +74,16 @@ KW_ENUMERATED.5: /enumerated(?![\p{L}\p{N}_-])/i
 KW_ORDERED.5: /ordered(?![\p{L}\p{N}_-])/i
 KW_TOPIC.5: /topic(?![\p{L}\p{N}_-])/i
 KW_GUIDELINES.5: /guidelines/i
+// EXPORT / MAP / QUESTIONS: blocos do .synp (artefatos e questoes de competencia).
+// Lookahead de fronteira como KW_TOPIC: nao casar como prefixo de um nome maior.
+KW_EXPORT.5: /export(?![\p{L}\p{N}_-])/i
+KW_MAP.5: /map(?![\p{L}\p{N}_-])/i
+KW_QUESTIONS.5: /questions(?![\p{L}\p{N}_-])/i
+// ROLE: funcao do campo no principio organizador (so SCOPE ONTOLOGY; validada
+// pelo compilador). O papel e palavra comum (IDENTIFIER), nao palavra-chave.
+KW_ROLE.5: /role(?![\p{L}\p{N}_-])/i
+// PHASE: plano de producao dos campos pelo synesis-coder (so no .synp).
+KW_PHASE.5: /phase(?![\p{L}\p{N}_-])/i
 // IDENTIFIES: modificador de FIELD (Etapa 1 — ligação multiprojeto).
 // Lookahead de fronteira como KW_TOPIC: nao casar como prefixo de um nome maior.
 KW_IDENTIFIES.5: /identifies(?![\p{L}\p{N}_-])/i
@@ -98,7 +108,21 @@ project_block: KW_PROJECT IDENTIFIER NEWLINE project_body KW_END KW_PROJECT
 project_body: _INDENT project_items _DEDENT
             | project_items
 
-project_items: (include_stmt | metadata | description | NEWLINE)+
+project_items: (include_stmt | metadata | description | questions | phase_block | export_block | NEWLINE)+
+
+// PHASE <ANNOTATIONS|ONTOLOGY> <nome>: FIELDS, INPUT, RULES e OUTPUT sao palavras
+// comuns validadas pelo compilador (mesma forma de propriedade do EXPORT).
+phase_block: KW_PHASE phase_scope IDENTIFIER NEWLINE _INDENT (export_prop | NEWLINE)+ _DEDENT KW_END KW_PHASE NEWLINE?
+phase_scope: KW_ANNOTATIONS | KW_ONTOLOGY
+
+// EXPORT <FORMATO> [nome]: um artefato do projeto. Propriedades sao palavras
+// comuns (OUTPUT, GENERATED_AT...), validadas pelo compilador, nao pela gramatica.
+export_block: KW_EXPORT IDENTIFIER IDENTIFIER? NEWLINE _INDENT (map_stmt | export_prop | NEWLINE)+ _DEDENT KW_END KW_EXPORT NEWLINE?
+export_prop: (IDENTIFIER | KW_DESCRIPTION) TEXT_LINE NEWLINE
+map_stmt: KW_MAP KW_RELATIONS? map_names (KW_FROM IDENTIFIER)? KW_TO map_target NEWLINE
+// Regra propria (e nao field_names): nomes de relacao preservam a caixa.
+map_names: field_key ("," field_key)*
+map_target: IDENTIFIER+
 
 include_stmt: KW_TEMPLATE STRING NEWLINE
             | KW_INCLUDE include_type STRING NEWLINE
@@ -108,6 +132,10 @@ metadata: KW_METADATA NEWLINE _INDENT (metadata_line | NEWLINE)+ _DEDENT KW_END 
 metadata_line: TEXT_LINE NEWLINE
 description: KW_DESCRIPTION NEWLINE description_lines KW_END KW_DESCRIPTION NEWLINE?
 description_lines: (TEXT_LINE NEWLINE | NEWLINE)+
+// QUESTIONS: questoes de competencia, uma por linha recuada (`Q1: texto`), no
+// molde de METADATA. A forma `<id>: <texto>` e validada pelo compilador (S5).
+questions: KW_QUESTIONS NEWLINE _INDENT question_lines _DEDENT KW_END KW_QUESTIONS NEWLINE?
+question_lines: (TEXT_LINE NEWLINE | NEWLINE)+
 
 guidelines_block: KW_GUIDELINES NEWLINE guidelines_lines KW_END KW_GUIDELINES
 guidelines_lines: (_INDENT | _DEDENT | guideline_line | NEWLINE)*
@@ -185,6 +213,7 @@ type_spec: simple_type | KW_CHAIN | KW_ENUMERATED | KW_ORDERED | KW_TOPIC
 simple_type: KW_QUOTATION | KW_MEMO | KW_CODE | KW_TEXT | KW_DATE | KW_SCALE
 
 field_props: KW_SCOPE scope_type
+           | KW_ROLE IDENTIFIER+
            | KW_FORMAT format_spec
            | KW_DESCRIPTION TEXT_LINE
            | KW_ARITY COMPARATOR NUMBER

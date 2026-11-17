@@ -63,6 +63,7 @@ from synesis.ast.results import (
     InvalidFieldType,
     InvalidIdentifierCharacter,
     InvalidOrderedValue,
+    InvalidValueForm,
     MalformedQualifiedChain,
     MissingBibliographyValue,
     MissingBundleField,
@@ -74,6 +75,7 @@ from synesis.ast.results import (
     ScaleOutOfRange,
     SimpleChainWithRelationsRequired,
     TopicWithSpaces,
+    UndeclaredConcept,
     UndefinedCode,
     UndefinedCodesSummary,
     UnknownFieldName,
@@ -202,6 +204,20 @@ class SemanticValidator:
                 result.add(OntologyWithoutTemplateFields(
                     location=node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
                 ))
+        # QUESTIONS (erros do nucleo) e EXPORT (avisos locais ao bloco). Aqui, e
+        # nao na estrutura do projeto, para valer tambem em `synesis.load`.
+        from synesis.semantic.project_blocks import validate_project_blocks
+
+        # Papeis (ROLE) do template: catalogo, tipo, escopo, unicidade (A2c).
+        if self.template is not None:
+            from synesis.semantic.roles import validate_template_roles
+
+            for error in validate_template_roles(self.template):
+                result.add(error)
+
+        blocks = validate_project_blocks(node, self.template)
+        for diagnostic in blocks.errors + blocks.warnings + blocks.info:
+            result.add(diagnostic)
         return result
 
     def validate_source(self, node: SourceNode) -> ValidationResult:
@@ -404,6 +420,7 @@ class SemanticValidator:
         result = ValidationResult()
         self._validate_declared_fields(node.field_names, Scope.ONTOLOGY, node.location, result)
         self._validate_fields(node, Scope.ONTOLOGY, result)
+        self._validate_ontology_code_lists(node, result)
         bundle_result = self.validate_bundle(node, Scope.ONTOLOGY)
         result.errors.extend(bundle_result.errors)
         result.warnings.extend(bundle_result.warnings)
@@ -600,14 +617,41 @@ class SemanticValidator:
         if not self.check_codes:
             self.undefined_codes[normalized] = self.undefined_codes.get(normalized, 0) + 1
             return
+        # Codigo igual a um rotulo (LABEL ALTERNATIVE/HIDDEN) de um conceito: a
+        # sugestao e esse conceito, antes da sugestao por semelhanca (Spec §5.3).
+        # O compilador nunca substitui o codigo, e a severidade nao muda.
+        by_label = self._label_owner().get(normalized)
+        suggestions = [by_label] if by_label else self._suggest_concept(code)
         result.add(
             UndefinedCode(
                 location=location,
                 code=code,
                 context=context,
-                suggestions=self._suggest_concept(code),
+                suggestions=suggestions,
             )
         )
+
+    def _label_owner(self) -> Dict[str, str]:
+        """{termo de LABEL ALTERNATIVE/HIDDEN normalizado: conceito}, calculado uma vez."""
+        cached: Optional[Dict[str, str]] = getattr(self, "_label_owner_cache", None)
+        if cached is not None:
+            return cached
+        owner: Dict[str, str] = {}
+        if self.template is not None:
+            from synesis.semantic.ontology_values import projected_fields
+
+            names = [
+                s.name for s in self.template.field_specs.values()
+                if getattr(s, "role", None) in ("LABEL ALTERNATIVE", "LABEL HIDDEN")
+            ]
+            if names:
+                for node in self.ontology_index.values():
+                    fields = projected_fields(node, self.template) or {}
+                    for name in names:
+                        for term in fields.get(name) or []:
+                            owner.setdefault(normalize_code(str(term), self.norm_cache), node.concept)
+        self._label_owner_cache = owner
+        return owner
 
     def undefined_codes_summary(self, location: SourceLocation) -> Optional[UndefinedCodesSummary]:
         """E090 com os codigos contados enquanto check_codes estava desligado."""
@@ -801,6 +845,15 @@ class SemanticValidator:
         field_values = self._collect_fields(node)
         location = node.location or SourceLocation(file=Path("<unknown>"), line=1, column=1)
 
+        if scope == Scope.ONTOLOGY:
+            # Etapa U: o bloco preterido (campo USE) so aponta para o alvo; os
+            # REQUIRED valem para o conceito que vale, nao para o preterido.
+            from synesis.semantic.aliases import use_field
+
+            alias_field = use_field(self.template)
+            if alias_field and self._has_value(field_values.get(alias_field)):
+                required = []
+
         for field_name in required:
             # Campos ON BIBLIOGRAPHY/ON DATASET tem valor na fonte externa (.bib
             # ou registro TOML), nao no bloco SOURCE — sua obrigatoriedade e
@@ -841,9 +894,19 @@ class SemanticValidator:
             fields.update(node.fields)
             return fields
         if isinstance(node, OntologyNode):
-            fields.update(node.fields)
-            if node.description:
-                fields.setdefault("description", node.description)
+            # Valor pelo TIPO declarado (projecao compartilhada com o linker), lido
+            # das ocorrencias e sem alterar o no: um TEXT com `->` e texto, um
+            # CODE e lista. Vale para os tres caminhos que validam ONTOLOGY.
+            from synesis.semantic.ontology_values import (
+                projected_description,
+                projected_fields,
+            )
+
+            projected = projected_fields(node, self.template)
+            fields.update(node.fields if projected is None else projected)
+            description = projected_description(node, self.template)
+            if description:
+                fields.setdefault("description", description)
             return fields
         if isinstance(node, ItemNode):
             # Estado do transformer, lido das ocorrências: o linker reinterpreta
@@ -1174,6 +1237,36 @@ class SemanticValidator:
             if raw is not None:
                 codes = self._extract_code_values(raw)
                 self._check_duplicate_codes_in_list(field_name, codes, location, result)
+
+    def _validate_ontology_code_lists(self, node: OntologyNode, result: ValidationResult) -> None:
+        """Campos CODE do ONTOLOGY: lista de conceitos declarados, com ou sem ROLE.
+
+        Le cada ocorrencia pelo tipo (ontology_values), sem alterar o no:
+        item vazio (E102), item repetido (W031) e conceito sem bloco (E101).
+        """
+        if not self.template:
+            return
+        from synesis.semantic.ontology_values import _raw_text, project_value
+
+        for entry in getattr(node, "entries", None) or []:
+            spec = self.template.field_specs.get(entry.name)
+            if spec is None or spec.type != FieldType.CODE or spec.scope != Scope.ONTOLOGY:
+                continue
+            raw = _raw_text(entry)
+            if raw is None and isinstance(entry.value, str):
+                raw = entry.value
+            if raw is not None and any(not part.strip() for part in raw.split(",")):
+                result.add(InvalidValueForm(location=entry.location, field_name=entry.name))
+            codes = [c for c in project_value(entry, FieldType.CODE) if str(c).strip()]
+            self._check_duplicate_codes_in_list(entry.name, codes, entry.location, result)
+            for code in codes:
+                if normalize_code(code, self.norm_cache) not in self.ontology_index:
+                    result.add(UndeclaredConcept(
+                        location=entry.location,
+                        field_name=entry.name,
+                        concept=code,
+                        suggestions=self._suggest_concept(code),
+                    ))
 
     def _check_duplicate_codes_in_list(
         self,

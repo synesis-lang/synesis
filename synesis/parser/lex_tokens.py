@@ -92,9 +92,9 @@ def lex_tokens(source: str) -> List[LexToken]:
         # Observabilidade: silencio total transformaria uma falha real em
         # "colorizacao some sem motivo". Nao propagar, mas nao esconder.
         last = tokens[-1] if tokens else None
-        position = f"linha {last.end_line}, coluna {last.end_column}" if last else "inicio"
+        position = f"line {last.end_line}, column {last.end_column}" if last else "start"
         logger.debug(
-            "lex_tokens: tokenizacao truncada em %s apos %d tokens (%s: %s)",
+            "lex_tokens: tokenization truncated at %s after %d tokens (%s: %s)",
             position,
             len(tokens),
             type(exc).__name__,

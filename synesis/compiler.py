@@ -268,7 +268,7 @@ class SynesisCompiler:
         project_nodes = [n for n in nodes if isinstance(n, ProjectNode)]
 
         if not project_nodes:
-            raise ValueError("Nenhum bloco PROJECT encontrado no .synp")
+            raise ValueError("No PROJECT block found in the .synp")
 
         # Erro 66: dois ou mais blocos PROJECT no mesmo .synp
         if len(project_nodes) > 1:
@@ -461,7 +461,7 @@ class SynesisCompiler:
                 result.add(UnreadableIncludedFile(
                     location=include.location,
                     filename=include.path,
-                    reason="arquivo de dataset declarado nao encontrado",
+                    reason="declared dataset file not found",
                 ))
                 continue
 
@@ -727,7 +727,7 @@ class SynesisCompiler:
             if content is None:
                 try:
                     read_source_file(path)
-                    reason = "arquivo ilegivel"
+                    reason = "unreadable file"
                 except (OSError, UnicodeDecodeError) as exc:
                     reason = str(exc)
                 result.add(UnreadableIncludedFile(

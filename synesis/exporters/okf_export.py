@@ -212,9 +212,9 @@ def _check_generated_at(generated_at: Optional[str]) -> None:
     try:
         parsed = datetime.fromisoformat(generated_at)
     except ValueError as exc:
-        raise ValueError(f"generated_at não é ISO 8601: {generated_at!r}") from exc
+        raise ValueError(f"generated_at is not ISO 8601: {generated_at!r}") from exc
     if parsed.tzinfo is None:
-        raise ValueError(f"generated_at precisa de fuso horário (OKF v0.2): {generated_at!r}")
+        raise ValueError(f"generated_at needs a time zone (OKF v0.2): {generated_at!r}")
 
 
 class _Builder:
@@ -245,10 +245,12 @@ class _Builder:
         # a evidência (`usage`) vem só dos ITEMs.
         self.mentioned: set = set()
         self.topic_values: Dict[Tuple[str, str], set] = {}
+        # Etapa U: o preterido nao tem pagina; mencoes e links vao para o alvo.
+        self.aliases: Dict[str, str] = dict(getattr(linked, "aliases", None) or {})
         self._collect()
 
         onto = linked.ontology_index
-        self.concept_slugs = _Slugs(sorted(onto))
+        self.concept_slugs = _Slugs(sorted(k for k in onto if k not in self.aliases))
         self.code_slugs = _Slugs(
             sorted(k for k in set(self.usage) | self.mentioned if k not in onto)
         )
@@ -314,6 +316,8 @@ class _Builder:
                         elif spec.type == FieldType.TOPIC:
                             self.topic_values.setdefault((name, str(value)), set())
         for key in sorted(self.linked.ontology_index):
+            if key in self.aliases:
+                continue
             ontology = self.linked.ontology_index[key]
             for name, spec in self._fields(Scope.ONTOLOGY):
                 for value in field_occurrences(ontology, name, self.t):
@@ -334,11 +338,13 @@ class _Builder:
             codes = [c for a, _r, b in self._triples(spec, value) for c in (a, b)]
         for code in codes:
             key = normalize_code(code)
+            key = self.aliases.get(key, key)
             self.code_label.setdefault(key, code)
             self.mentioned.add(key)
 
     def _use(self, code: str, bibref: str, item_id: str) -> None:
         key = normalize_code(str(code))
+        key = self.aliases.get(key, key)
         self.code_label.setdefault(key, str(code))
         self.mentioned.add(key)
         hits = self.usage.setdefault(key, [])
@@ -349,6 +355,7 @@ class _Builder:
 
     def _code_link(self, code: str) -> str:
         key = normalize_code(str(code))
+        key = self.aliases.get(key, key)
         if key in self.linked.ontology_index:
             return f"[{md_literal(code)}](/concepts/{self.concept_slugs[key]}.md)"
         return f"[{md_literal(code)}](/codes/{self.code_slugs[key]}.md)"
@@ -458,13 +465,13 @@ class _Builder:
         return entries
 
     def _evidence(self, hits: List[Tuple[str, str]]) -> List[str]:
-        lines = ["## Evidências", ""]
+        lines = ["## Evidence", ""]
         for bibref, item_id in hits[:_MAX_EVIDENCE]:
             lines.append(
                 f"- [{item_id}]({self._source_path(bibref)}#{item_id})[^{self._footnote_id(bibref)}]"
             )
         if len(hits) > _MAX_EVIDENCE:
-            lines.append(f"- … e mais {len(hits) - _MAX_EVIDENCE} ocorrência(s), nas fontes")
+            lines.append(f"- … and {len(hits) - _MAX_EVIDENCE} more occurrence(s), in the sources")
         lines.append("")
         for bibref in sorted({b for b, _ in hits}, key=normalize_bibref):
             title = _clean_bib(self._bib_entry(bibref).get("title") or bibref)
@@ -488,6 +495,8 @@ class _Builder:
             (n, s) for n, s in self._fields(Scope.ONTOLOGY) if s.type == FieldType.CHAIN
         ]
         for key in sorted(onto):
+            if key in self.aliases:
+                continue
             ontology = onto[key]
             body, ext = self._render_block(Scope.ONTOLOGY, ontology)
             description = next(
@@ -528,12 +537,15 @@ class _Builder:
             if hits:
                 front["sources"] = self._sources_entries(hits)
             synesis_ext: Dict[str, Any] = {"fields": ext, "frequency": self.frequency.get(key, 0)}
+            preteridos = sorted(onto[a].concept for a, t in self.aliases.items() if t == key)
+            if preteridos:
+                synesis_ext["aliases"] = preteridos
             if relations:
                 synesis_ext["relations"] = relations
             front["synesis"] = synesis_ext
             doc = [f"# {md_literal(ontology.concept)}", ""] + body
             if self.relations.get(key):
-                doc += ["## Relações", ""]
+                doc += ["## Relations", ""]
                 for rel_info in self.relations[key]:
                     rel = md_literal(rel_info["relation"]) if rel_info["relation"] else "→"
                     doc.append(
@@ -553,7 +565,7 @@ class _Builder:
             front: Dict[str, Any] = {
                 "type": "Code",
                 "title": label,
-                "description": f"Código sem conceito na ontologia ({len(hits)} ITEM(s)).",
+                "description": f"Code without a concept in the organizing model ({len(hits)} ITEM(s)).",
                 "status": "draft",
                 "generated": self.generated,
             }
@@ -590,7 +602,7 @@ class _Builder:
                 item_body, _ = self._render_block(Scope.ITEM, item)
                 origin = f"{item.location.file.name}:{item.location.line}" if item.location else "?"
                 doc += [f'<a id="{item_id}"></a>', f"## ITEM {index}", ""] + item_body
-                doc += [f"*Origem:* {md_literal(origin)}", ""]
+                doc += [f"*Origin:* {md_literal(origin)}", ""]
             self._write(f"sources/{self.source_slugs[normalize_bibref(bibref)]}.md", front, doc)
 
     def _topics(self) -> None:
@@ -600,7 +612,7 @@ class _Builder:
                 members = sorted(self.topic_values.get((field, value), set()))
                 body = [f"# {md_literal(value)}", ""]
                 if members:
-                    body += ["## Conceitos", ""] + [
+                    body += ["## Concepts", ""] + [
                         f"- {self._code_link(onto[m].concept)}" for m in members
                     ]
                 self._write(
@@ -617,18 +629,18 @@ class _Builder:
                 continue
             body += [f"## {scope.value}", ""]
             for name, spec in fields:
-                body += [f"### {md_literal(name)}", "", f"- tipo: {spec.type.value}"]
+                body += [f"### {md_literal(name)}", "", f"- type: {spec.type.value}"]
                 for attr in ("description", "format", "arity", "identifies", "refers_to"):
                     if getattr(spec, attr):
                         body.append(f"- {attr}: {md_literal(getattr(spec, attr))}")
                 if spec.value_origin != "document":
-                    body.append(f"- origem do valor: {spec.value_origin}")
+                    body.append(f"- value origin: {spec.value_origin}")
                 for option in spec.values or []:
                     body.append(
-                        f"- valor \\[{option.index}\\] {md_literal(option.label)}: {md_literal(option.description)}"
+                        f"- value \\[{option.index}\\] {md_literal(option.label)}: {md_literal(option.description)}"
                     )
                 for rel, meaning in (spec.relations or {}).items():
-                    body.append(f"- relação {md_literal(rel)}: {md_literal(meaning)}")
+                    body.append(f"- relation {md_literal(rel)}: {md_literal(meaning)}")
                 if spec.guidelines:
                     body += ["", md_literal(spec.guidelines)]
                 body.append("")
@@ -674,12 +686,12 @@ class _Builder:
         ]
         if project.description:
             root += [md_literal(project.description.strip()), ""]
-        root += ["- [Livro de códigos](/codebook.md)"] + [
+        root += ["- [Codebook](/codebook.md)"] + [
             f"- [{folder}](/{folder}/index.md)" for folder in folders
         ]
         root += [
             "",
-            "*Gerado pelo Synesis. Nenhum documento registra revisão humana (`verified`).*",
+            "*Generated by Synesis. No document records human review (`verified`).*",
         ]
         self.files["index.md"] = "\n".join(root) + "\n"
 
@@ -744,7 +756,7 @@ def export_okf(
     """
     path = Path(path)
     if path.exists() and (not path.is_dir() or any(path.iterdir())):
-        raise FileExistsError(f"pasta de destino não está vazia: {path}")
+        raise FileExistsError(f"destination folder is not empty: {path}")
     files = build_okf_bundle(linked, template, bibliography, dataset, generated_at=generated_at)
     for relative, text in files.items():
         target = path / relative

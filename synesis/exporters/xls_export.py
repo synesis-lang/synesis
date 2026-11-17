@@ -37,7 +37,7 @@ try:
     from openpyxl.utils import get_column_letter
 except ImportError:
     raise ImportError(
-        "openpyxl nao encontrado. Instale com: pip install openpyxl"
+        "openpyxl not found. Install it with: pip install openpyxl"
     )
 
 from synesis.ast.nodes import (

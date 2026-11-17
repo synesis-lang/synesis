@@ -341,13 +341,13 @@ _SNIPPET_BODIES: Dict[str, List[str]] = {
     # _SNIPPET_BODIES_BY_TYPE — o indice ali e obrigatorio (e o dado gravado).
     "VALUES": [
         "    VALUES",
-        "        ${N:primeiro_rotulo}: ${M:descricao}",
-        "        ${O:segundo_rotulo}: ${P:descricao}",
+        "        ${N:first_label}: ${M:description}",
+        "        ${O:second_label}: ${P:description}",
         "    END VALUES",
     ],
     "RELATIONS": [
         "    RELATIONS",
-        "        ${N:NOME_DA_RELACAO}: ${M:quando usar}",
+        "        ${N:RELATION_NAME}: ${M:when to use it}",
         "    END RELATIONS",
     ],
 }
@@ -358,8 +358,8 @@ _SNIPPET_BODIES_BY_TYPE: Dict[str, Dict[str, List[str]]] = {
     "ORDERED": {
         "VALUES": [
             "    VALUES",
-            "        [1] ${N:primeiro_rotulo}: ${M:descricao}",
-            "        [2] ${O:segundo_rotulo}: ${P:descricao}",
+            "        [1] ${N:first_label}: ${M:description}",
+            "        [2] ${O:second_label}: ${P:description}",
             "    END VALUES",
         ],
     },
@@ -372,7 +372,7 @@ _SUGGESTED_OPTIONAL = ("RELATIONS",)
 
 def _snippet_body(info: FieldTypeInfo) -> List[str]:
     """Monta o corpo do snippet de um tipo, numerando os tab-stops."""
-    lines = [f"FIELD $" + "{1:nome_do_campo}" + f" TYPE {info.name}",
+    lines = [f"FIELD $" + "{1:field_name}" + f" TYPE {info.name}",
              "    SCOPE ${2|SOURCE,ITEM,ONTOLOGY|}"]
 
     counter = 3
@@ -393,7 +393,7 @@ def _snippet_body(info: FieldTypeInfo) -> List[str]:
                     counter += 1
             lines.append(line)
 
-    lines.append("    DESCRIPTION ${%d:o que este campo registra}" % counter)
+    lines.append("    DESCRIPTION ${%d:what this field records}" % counter)
     lines.append("END FIELD")
     lines.append("$0")
     return lines
@@ -417,8 +417,8 @@ def build_editor_snippets() -> Dict[str, Dict[str, object]]:
             continue
         required = ", ".join(p.name for p in info.required)
         description = (
-            f"Campo TYPE {info.name}"
-            + (f" (exige {required})" if required else "")
+            f"Field TYPE {info.name}"
+            + (f" (requires {required})" if required else "")
         )
         snippets[f"FIELD {info.name}"] = {
             "prefix": f"field-{info.name.lower()}",

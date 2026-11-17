@@ -172,7 +172,7 @@ def test_cli_help_field_shows_requirements():
     result = CliRunner().invoke(main, ["help-field", "CHAIN"])
     assert result.exit_code == 0, result.output
     assert "TYPE CHAIN" in result.output
-    assert "OBRIGATORIAS" in result.output
+    assert "REQUIRED PROPERTIES" in result.output
     assert "ARITY" in result.output
     assert "RELATIONS" in result.output
     assert "FORMAT" in result.output  # listado como nao aplicavel
@@ -197,7 +197,7 @@ def test_cli_help_field_rejects_unknown_type():
 
     result = CliRunner().invoke(main, ["help-field", "NAO_EXISTE"])
     assert result.exit_code == 1
-    assert "desconhecido" in result.output
+    assert "unknown field type" in result.output
 
 
 def test_cli_help_field_contextualizes_error_codes():
@@ -209,8 +209,8 @@ def test_cli_help_field_contextualizes_error_codes():
 
     result = CliRunner().invoke(main, ["help-field", "CHAIN"])
     assert result.exit_code == 0, result.output
-    assert "(erro E047 se ausente)" in result.output
-    assert "(erro E054 se declarada)" in result.output
+    assert "(error E047 if missing)" in result.output
+    assert "(error E054 if declared)" in result.output
 
 
 def test_cli_help_field_has_no_trailing_padding():
@@ -353,7 +353,7 @@ def test_cli_export_snippets_writes_file(tmp_path):
     assert out.exists()
 
     content = out.read_text(encoding="utf-8")
-    assert "NAO EDITAR A MAO" in content
+    assert "DO NOT EDIT BY HAND" in content
     payload = json.loads(re.sub(r"^//.*$", "", content, flags=re.M))
     assert len(payload) == len(field_type_names())
 

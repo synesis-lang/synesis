@@ -6,7 +6,269 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [Unreleased]
+## [0.15.0] - 2026-11-17
+
+### Fixed — JSON: campo ONTOLOGY vazio repetido em cada ITEM (teste real, 2026-11-17)
+
+- O `data` de cada ITEM repete os campos SCOPE ONTOLOGY dos conceitos que o
+  trecho menciona. Campo que nenhum desses conceitos preenche saía como `null`
+  (ou lista de `null`) em todos os trechos — no Fraudes Digitais, quatro campos
+  em 1.182 trechos. Agora só entra quando há algum valor; havendo, a lista fica
+  inteira, alinhada aos códigos. Coerente com a seção `ontology`, que já omitia
+  campo vazio. Quem lia com `.get()` não percebe a diferença.
+
+### Fixed — publicação SKOS (revisão de 2026-11-17)
+
+- `--publish` com `REGISTRY` ilegível (pasta, falha de leitura) é erro
+  `SYNESIS_E152`: nada é gravado. No export local continua aviso.
+- `OUTPUT` e `REGISTRY` no mesmo arquivo (inclusive por grafia equivalente ou
+  link) são recusados antes de qualquer leitura ou escrita, com e sem
+  `--publish`: erro `SYNESIS_E157`; o arquivo existente fica intacto.
+- Mudar o `NAMESPACE` **não bloqueia** (decisão do usuário: o namespace é do
+  pesquisador). IRIs do registro fora do namespace atual saem como aviso
+  `SYNESIS_E156`, com quantos e exemplos, porque ficam fora da conferência.
+- Verificador do SKOS sem fechamento transitivo: ciclos por busca em
+  profundidade iterativa e S27 sob demanda, só para os pares `related`. Cadeia
+  de 2.000 conceitos: 1,9 s e 129 MiB → 0,15 s e 1,9 MiB.
+- Ciclo hierárquico passa a ser apresentado como **regra do Synesis**, não
+  condição do SKOS (que admite ciclos, §8.6.8): `Integrity: OK (SKOS S9, S13,
+  S14, S27, S37; Synesis rule: acyclic broader)`. A proibição continua.
+
+### Changed — relatório do `synesis export` e perfil sem "ontology"
+
+- Cada bloco EXPORT vira uma seção: `Exporting SKOS: <nome> (<arquivo>:<linha>)`,
+  `✔ Wrote <arquivo> (<n> triples)`, métricas do modelo, **tabela de
+  mapeamento** (`SOURCE TARGET PAIRS SUPPORTED ACCEPTED DROPPED`, com motivos
+  curtos: `below MIN_SOURCES`, `same hierarchy`…), validação e perfil.
+- Avisos do bloco agrupados por tipo, sem repetir caminho e linha
+  (`ExportBlockError.cli_group()`); avisos idênticos aos de um bloco anterior
+  viram uma linha de referência ("same 4 as in `corroborado`"). Avisos do
+  projeto continuam com arquivo:linha.
+- Cores por papel, a mesma paleta da ajuda (`_PALETTE` no `cli.py`), no `export`
+  e no resumo/perfil do `compile`: títulos de seção em amarelo negrito, nome do
+  bloco e OK em verde, totais em negrito, perfis e identificadores em ciano,
+  descartes e avisos em amarelo, violações em vermelho, caminhos e notas em
+  cinza. Sem terminal (redirecionado, CI), o texto sai puro.
+- Perfil conceitual: `Lightweight ontology` passa a **`Multi-relation
+  taxonomy`** (mais de uma espécie de hierarquia), no `compile` e no `export`.
+  SKOS é um sistema de organização do conhecimento, não uma ontologia OWL; o
+  termo fica reservado para uma exportação OWL. Os demais rótulos não mudam.
+
+### Added — verificação do SKOS antes de gravar (validação VocBench de 2026-11-17)
+
+- `synesis export` confere o grafo SKOS gerado antes de gravar
+  (`synesis/exporters/skos_check.py`, sem dependência nova). **Integridade**
+  (S9, S13, S14, S27, S37 e ciclo de `broader`): violação é erro `SYNESIS_E154`
+  e o arquivo não é gravado. **Qualidade editorial** (recurso sem `prefLabel`,
+  rótulo sem idioma, conceito sem esquema, conceito sem posição nem topo,
+  esquema sem topo — os grupos do ICV do VocBench): aviso agregado
+  `SYNESIS_E155`, arquivo gravado. O relatório do terminal mostra as duas linhas.
+- O esquema principal ganha `skos:prefLabel` no idioma do EXPORT (nome do
+  `title` do METADATA quando existe; senão, o do PROJECT), além do
+  `dcterms:title`.
+- Os valores de campos ENUMERATED/ORDERED são topos do seu esquema
+  (`topConceptOf`/`hasTopConcept`); a ordem do ORDERED fica em `skos:notation` e
+  não vira `broader`. No `ufg-fraudes` (Phishing): +33 triplas, nenhuma perdida;
+  os 16 conceitos sem posição, o esquema sem topo e o recurso sem rótulo que o
+  VocBench apontou deixam de existir.
+
+### Fixed — avaliação de 2026-11-17 (R5)
+
+- `synesis export --publish`: um IRI do `REGISTRY` sem bloco nem `USE` que o
+  substitua passa a ser **erro** (E153) — nem o artefato nem o registro são
+  gravados; a publicação promete que um IRI publicado nunca some. O export
+  local continua tolerante (E153 aviso, arquivo gravado).
+- Mensagens curtas que tinham ficado em português (ciclo de hierarquia E118,
+  duas espécies, formatos inválidos, colisão de fases, colapso por USE, abas
+  do workbook unificado) passam a inglês.
+
+### Changed — saída do compilador em inglês, com o vocabulário do modelo organizador
+
+- `synesis compile`: etapas `Reading project and template`, `Loading
+  organizing model`, `Parsing annotations`, `Validating`, `Linking`; tagline
+  "Compile your knowledge."; ajuda: "Declarative compiler for knowledge
+  models."
+- `--stats`: `Compilation Summary` com `Model entries` (blocos ONTOLOGY,
+  separados em conceitos e preteridos de USE) e `Active codes` (conceitos
+  citados nas anotações, CODE e CHAIN, pela identidade resolvida). A linha
+  `Codes` anterior repetia a contagem de blocos.
+- `Structural Profile` em inglês, alinhado, com a nota ao fim; o relatório do
+  `EXPORT SKOS` usa o mesmo vocabulário (`Terminological … | Conceptual …`).
+- O perfil diz de quem é: `Organizing model:` descreve o `.syno`, e cada
+  `EXPORT SKOS` ganha a sua linha com o perfil do artefato que gera (o `MAP
+  RELATIONS` pode torná-lo taxonomia, ontologia leve ou tesauro enquanto o
+  `.syno` é lista plana). Sem blocos ONTOLOGY: `Organizing model: none`;
+  códigos citados sem conceito entram na contagem ("N codes without concept").
+- Licença no banner corrigida: o pacote é AGPL-3.0-only WITH
+  Synesis-data-output-exception (o texto ainda dizia MIT).
+- Diagnósticos e mensagens de erro continuam em português.
+
+### Added — `ROLE USE`: consolidação de conceitos (etapa U)
+
+- Um campo `CODE` com `ROLE USE` (um por template, valor único) marca o bloco
+  **preterido**; o valor é o conceito que vale (Spec_USE_Etapa_U.md).
+- A forma escrita não muda (`.syn`, `corpus`, triplas com proveniência); a
+  **projeção analítica** é resolvida: `code_usage`, `frequency`,
+  `source_count`, `code_frequency` e `indices.subtree` contam o preterido no
+  alvo (um ITEM que cita os dois conta uma vez). Hierarquia e fundamentação
+  sobre identidades resolvidas. `LinkedProject.aliases`; no JSON,
+  `indices.aliases` (só quando há `USE`).
+- O bloco preterido dispensa os REQUIRED do ONTOLOGY e não entra no perfil
+  estrutural nem em `UngroundedConcept`.
+- SKOS: o preterido não é conceito; o nome vira rótulo do alvo
+  (`ALIAS_LABEL HIDDEN|ALTERNATIVE`, padrão HIDDEN). **C7** (política de
+  IRIs): o IRI vem do `NAMESPACE` do projeto; `REGISTRY "arquivo"` guarda os
+  IRIs publicados, e `synesis export --publish` os acrescenta. Um preterido
+  com IRI publicado sai como obsoleto (`owl:deprecated`,
+  `dcterms:isReplacedBy`). Pares de `MAP RELATIONS` resolvidos; o que colapsa
+  vai ao relatório ("colapsa após USE").
+- OKF: o preterido não tem página; links e menções vão ao alvo, que lista o
+  nome em `synesis.aliases`. ALPACA não gera registro para o preterido.
+- Diagnósticos: `E145` UseSelf, `E146` UseChain, `E147` UseMultipleTargets,
+  `E148` AliasWithContent, `E149` HierarchyCollapsedByUse; do EXPORT: `E150`
+  UnknownAliasLabel, `E151` AliasLabelCollision, `E152` RegistryNotFound,
+  `E153` PublishedIriWithoutBlock.
+- Tipos: os erros de mypy introduzidos nas etapas 1–8 foram corrigidos (261
+  contra 262 no `main`).
+
+### Added — bloco `PHASE` no `.synp` (etapa B1)
+
+- `PHASE ANNOTATIONS|ONTOLOGY <nome>` com `FIELDS`, `INPUT`, `RULES` e, só em
+  ONTOLOGY, `OUTPUT "<arquivo.syno>"`: o plano de produção dos campos pelo
+  synesis-coder. O compilador só valida o plano; nunca executa uma fase, e as
+  fases não entram no JSON.
+- Diagnósticos: `SYNESIS_E133` propriedade desconhecida (ou `OUTPUT` fora de
+  ONTOLOGY), `E134` propriedade repetida, `E135` lista vazia ou fase sem
+  `FIELDS`, `E136` campo fora do template, `E137` campo em duas fases, `E138`
+  escopo do campo diferente do da fase, `E139` (aviso) `INPUT` produzido só por
+  uma fase posterior (um campo que nenhuma fase produz vem dos dados
+  existentes), `E140` BUNDLE dividido entre fases, `E141` (aviso) campo
+  REQUIRED sem fase, só nos escopos que o plano cobre (sem `PHASE
+  ANNOTATIONS`, SOURCE e ITEM ficam de fora; os `ON BIBLIOGRAPHY`/`ON
+  DATASET` não contam), `E142`
+  destino ambíguo sem `OUTPUT`, `E143` `OUTPUT` que não é `.syno` local citado
+  como arquivo, `E144` nomes que viram a mesma variável de ambiente.
+- `PhaseNode.env_key`: o nome da fase na variável `SYNESIS_CODER_PHASE_<NOME>_*`.
+
+### Added — `EXPORT SKOS` e `MAP RELATIONS` (etapa A3)
+
+- **`EXPORT SKOS`** gera o princípio organizador como SKOS (Turtle) pelos papéis
+  do template: rótulos (`prefLabel`, `altLabel`, `hiddenLabel`; sem `LABEL
+  PREFERRED`, o nome do bloco com `_` trocado por espaço), notas
+  (`definition`, `scopeNote`, `example`, `syn:counterExample`), hierarquia
+  (`broader`/`narrower` mais a especialização ISO 25964 de cada espécie),
+  conceitos de topo, `TOPIC` como `skos:Collection` (nunca em `broader`) e
+  `ENUMERATED`/`ORDERED` como esquemas próprios. Propriedades: `OUTPUT`,
+  `NAMESPACE`, `LANGUAGE` (obrigatórias), `GENERATED_AT`, `MIN_SOURCES`.
+- **`MAP RELATIONS <relações> [FROM <campo>] TO HIERARCHY KIND|PART|INSTANCE|RELATED`**
+  lê relações da CHAIN como hierarquia ou associação SÓ neste arquivo (visão de
+  artefato): JSON, LSP, painéis e grafo continuam lendo só o `.syno`. Entra o par
+  afirmado por pelo menos `MIN_SOURCES` fontes distintas (recorrência, não
+  validade). O `.syno` prevalece, também na espécie: cai, e vai para o
+  relatório, o par mapeado sem bloco, reflexivo, já declarado, com outra espécie,
+  invertido, que formaria ciclo ou, em `RELATED`, na mesma linha hierárquica.
+- **Mesma entrada, mesmos bytes**: recursos ordenados por IRI, propriedades em
+  ordem fixa, sem data sem `GENERATED_AT`. Escrita direta, sem dependência nova.
+- Relatório no terminal: triplas, conceitos, topo, coleções, esquemas, relações
+  por espécie (do `.syno` e mapeadas), cada `MAP RELATIONS` com pares
+  encontrados, com suporte, aceitos e caídos por motivo, rótulos derivados,
+  campos não exportados e o perfil do artefato.
+- Diagnósticos novos: `SYNESIS_E122` relação desconhecida, `E123` relação em
+  vários campos CHAIN sem `FROM`, `E124` alvo não aceito, `E125` relação mapeada
+  duas vezes, `E126` `MIN_SOURCES`, `E127` `NAMESPACE`, `E128` `LANGUAGE`,
+  `E129` rótulo derivado igual ao de outro conceito, `E130` rótulo derivado
+  igual a um rótulo alternativo do mesmo conceito (SKOS S13), `E131` IRI
+  repetido, `E132` (aviso) grafias de `TOPIC` unidas numa coleção. Com erro, o
+  arquivo SKOS não é gravado.
+- Verificação: releitura com rdflib e as condições SKOS S9, S13, S14, S27 e
+  S37; no piloto do Phishing, `MIN_SOURCES 1` dá 55 pares hierárquicos (39
+  `TIPO_DE`, 16 `PARTE_DE`) e `MIN_SOURCES 2` dá 7.
+
+### Added — `ROLE`: função dos campos do ONTOLOGY (etapas A2a–A2c)
+
+Verificação: retrato dos 61 `.synp` dos estudos de caso antes e depois
+(diagnósticos completos e hash por seção do JSON): projetos sem `ROLE` saem
+idênticos, salvo `version` do JSON (3.1).
+
+- **`ROLE <FAMÍLIA> [<ESPÉCIE>]` no FIELD**, só em `SCOPE ONTOLOGY`. Catálogo:
+  `LABEL PREFERRED|ALTERNATIVE|HIDDEN` (TEXT), `NOTE DEFINITION|USAGE|EXAMPLE|
+  COUNTEREXAMPLE` (TEXT), `HIERARCHY KIND|PART|INSTANCE` (CODE). `USE` e
+  `DIVISION` são reservados. O papel vai para `template.field_specs.<campo>.role`
+  só quando declarado.
+- **Valor do ONTOLOGY lido pelo tipo declarado, com ou sem `ROLE`.** Um TEXT com
+  `->` é texto (antes, erro de compilação); um CODE é lista de conceitos
+  declarados; um campo `LABEL` é lista de termos. A leitura é uma projeção das
+  ocorrências, calculada antes da validação e usada pelos três caminhos que
+  validam ONTOLOGY (compilação em disco, `synesis.load`, adaptador do LSP), sem
+  alterar o nó parseado (resultado igual em compilações sucessivas).
+- **`NOTE DEFINITION` é a definição** (`description` do conceito no JSON, CSV,
+  XLS e OKF); a rota pelo nome `description` vale só em templates sem o papel.
+- **Hierarquia adotada pelo projeto**: relações por espécie, índice inverso
+  pai → filhos e fechamento sob demanda; as três espécies são hierarquia.
+- **JSON 3.1**: `indices.relations` (`{"KIND": [[filho, pai]], ...}`) e
+  `indices.subtree` (filhos, descendentes, ITEMs próprios e da subárvore por
+  UNIÃO, fundamentação), só em templates com papel `HIERARCHY`.
+- **Sugestão do E004 por rótulo**: um código igual a um termo `LABEL
+  ALTERNATIVE`/`HIDDEN` recebe como sugestão o conceito dono do rótulo.
+- **Perfil estrutural** na CLI, sempre que o template declara `ROLE` (e com
+  `--stats` em qualquer projeto).
+- **Identidade com NFC**: `normalize_code` aplica a normalização Unicode NFC e é
+  o único normalizador (o exportador JSON passa a delegar a ele).
+- Diagnósticos novos: `SYNESIS_E101` conceito sem bloco num CODE do ONTOLOGY,
+  `E102` item vazio, `E103` colisão de identidade (NFC), `E104`–`E112` papéis no
+  template (papel desconhecido, reservado, sem espécie, tipo incompatível, fora
+  do ONTOLOGY, repetido, único em dois campos, HIERARCHY obrigatório, nome de
+  campo reservado), `E113`–`E119` rótulos e hierarquia (dois rótulos
+  preferidos, termo em duas espécies, rótulo em dois conceitos, rótulo igual a
+  outro conceito, autorreferência, ciclo, par em duas espécies), `E120` (aviso)
+  conceito sem menção nem descendente mencionado, `E121` (aviso) hierarquia pela
+  rota de nome `parent`/`is_a`.
+
+### Changed
+
+- Um CODE do escopo ONTOLOGY passa de texto cru a lista validada em qualquer
+  template. Nenhum dos 60 templates dos estudos de caso tem um.
+
+Blocos `QUESTIONS` e `EXPORT` no `.synp` e o comando `synesis export`
+(etapas Q e A1 do plano ROLE/EXPORT). Verificação: os 61 `.synp` dos estudos de
+caso compilados com o `main` e com esta versão; diagnósticos e JSON (sem o
+`timestamp`) idênticos em todos.
+
+### Added
+
+- **`QUESTIONS` … `END QUESTIONS`: questões de competência do projeto.** Uma por
+  linha recuada, `Q1: texto`, no molde de `METADATA`. Vão para o JSON em
+  `project.questions` (`[{"id", "text"}]`), só quando o bloco existe; um projeto
+  sem o bloco gera o mesmo JSON. Comentário recuado (`# ...`) não é questão.
+  - Novos erros: `SYNESIS_E091` (linha sem identificador), `SYNESIS_E092`
+    (questão sem texto), `SYNESIS_E093` (identificador repetido, sem distinguir
+    caixa).
+- **`EXPORT <FORMATO> [nome]` … `END EXPORT`: artefatos declarados no projeto.**
+  Formatos: `JSON`, `CSV`, `XLS`, `ALPACA` e `OKF`; propriedades `OUTPUT`
+  (obrigatória) e `GENERATED_AT` (JSON e OKF). A linha `MAP … TO …` já é
+  reconhecida, mas nenhum formato desta versão a aceita.
+  - Erros locais ao bloco, que na compilação aparecem como avisos:
+    `SYNESIS_E094` (formato desconhecido ou ainda não disponível, como SKOS),
+    `SYNESIS_E095` (propriedade desconhecida), `SYNESIS_E096` (falta `OUTPUT`),
+    `SYNESIS_E097` (propriedade repetida), `SYNESIS_E098` (blocos do mesmo
+    formato sem nome, nome repetido ou igual a um formato), `SYNESIS_E099`
+    (`MAP` não aceito), `SYNESIS_E100` (`GENERATED_AT` sem fuso).
+- **`synesis export projeto.synp [formato|nome]`.** Compila uma vez e roda os
+  blocos `EXPORT`, todos ou só os escolhidos. Um erro do projeto impede todos os
+  blocos (salvo `--force`); um erro de um bloco impede só aquele. `OUTPUT`
+  relativo parte da pasta do `.synp`. O conteúdo é o mesmo das flags de
+  `synesis compile`.
+- **JSON: `generated_at`.** `build_json_payload` e `export_json` aceitam
+  `generated_at=`; com ele, `export_metadata.timestamp` é fixo e a mesma entrada
+  gera o mesmo arquivo.
+
+### Notes
+
+- Como os demais itens do `PROJECT`, os blocos novos seguem a indentação dos
+  vizinhos: o projeto todo na coluna 0 ou todo recuado. Misturar é erro de
+  sintaxe, como já acontecia com `DESCRIPTION`.
+- Um bloco `EXPORT` sintaticamente quebrado impede o parse do `.synp` inteiro;
+  só erros de validação de um bloco já lido são locais.
 
 
 ## [0.14.0] - 2026-11-16

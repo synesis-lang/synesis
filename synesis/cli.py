@@ -31,13 +31,13 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 try:
     import click
 except ImportError:
     raise ImportError(
-        "click nao encontrado. CLI requer instalacao com: pip install synesis[cli]"
+        "click not found. The CLI requires: pip install synesis[cli]"
     )
 
 from synesis import __version__ as VERSION
@@ -62,6 +62,29 @@ def _c(text: str, **kwargs) -> str:
     return click.style(text, **kwargs) if _tty() else text
 
 
+#: Paleta dos relatorios do CLI, por papel — a mesma da ajuda (`synesis --help`):
+#: amarelo nos titulos de secao, verde no que deu certo e nos nomes, ciano em
+#: identificadores e valores, cinza no secundario, vermelho no que falhou.
+_PALETTE: dict[str, dict[str, Any]] = {
+    "title": {"fg": "yellow", "bold": True},    # titulo de secao
+    "header": {"bold": True},                    # cabecalho de tabela
+    "name": {"fg": "green", "bold": True},       # nome de bloco/artefato
+    "label": {},                                 # rotulo de linha
+    "total": {"bold": True},                     # totalizacao
+    "ok": {"fg": "green", "bold": True},         # OK, aceitos
+    "bad": {"fg": "red", "bold": True},          # violacao, erro
+    "warn": {"fg": "yellow"},                    # descartes, avisos
+    "value": {"fg": "cyan"},                     # perfil, identificadores
+    "dim": {"fg": "bright_black"},               # caminho, separador, nota
+}
+
+
+def _paint(text: str, role: str) -> str:
+    """Aplica a paleta por papel; sem terminal, devolve o texto puro."""
+    style = _PALETTE.get(role)
+    return _c(text, **style) if style else text
+
+
 def _configure_logging(verbose: int, quiet: int) -> None:
     """Set root log level: -q → WARNING/ERROR, default → INFO, -v → DEBUG."""
     if quiet >= 2:
@@ -76,7 +99,7 @@ def _configure_logging(verbose: int, quiet: int) -> None:
 
 
 _COPYRIGHT = "Copyright (c) 2011-2026 Christian Maciel de Britto"
-_LICENSE   = "MIT (AGPL-3.0-only WITH Synesis-data-output-exception pending)"
+_LICENSE   = "AGPL-3.0-only WITH Synesis-data-output-exception"
 _URL       = "https://github.com/synesis-lang/synesis"
 
 _CREDITS_TEXT = f"""\
@@ -120,11 +143,15 @@ Full history:
 """
 
 
+# Tagline das saidas de compile/export (saida do compilador em ingles).
+_TAGLINE = "— Compile your knowledge."
+
+
 def _build_main_help() -> str:
     title = _c("SYNESIS COMPILER", fg="green", bold=True) + f" (v{VERSION})"
     copyright_line = _c(_COPYRIGHT, fg="bright_black")
     url_line       = _c(_URL, fg="bright_black")
-    desc = "Semantic compiler for knowledge engineering."
+    desc = "Declarative compiler for knowledge models."
     license_line = _c(f"Licensed under {_LICENSE}.", fg="bright_black")
     usage = _c("Usage:", fg="yellow", bold=True) + " synesis [COMMAND] [OPTIONS]"
 
@@ -134,6 +161,7 @@ def _build_main_help() -> str:
         ]),
         ("Compilation & Export", [
             ("compile",           "Compiles one project (or links several) and generates artifacts (JSON, CSV, XLS, Alpaca)"),
+            ("export",            "Runs the EXPORT blocks declared in a project (.synp)"),
         ]),
         ("Validation & Debugging", [
             ("check",             "Validates the syntax and integrity of a single file"),
@@ -219,7 +247,7 @@ def _ex(*lines: str) -> str:
                     result.append(_c(tok, fg="green", bold=True))
                 elif re.match(r"^--[\w-]+=?", tok):
                     result.append(_c(tok, fg="cyan"))
-                elif tok in ("compile", "check", "validate-template", "init"):
+                elif tok in ("compile", "export", "check", "validate-template", "init"):
                     result.append(_c(tok, fg="green"))
                 else:
                     result.append(tok)
@@ -446,7 +474,7 @@ def compile(projects: tuple[str, ...], json_path: str | None, csv_dir: str | Non
 
 def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False, *, okf_dir: str | None = None, okf_generated_at: str | None = None) -> None:
     """Compile a single Synesis project (unchanged legacy path)."""
-    click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + "  Compile seu pensamento.")
+    click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + f" {_TAGLINE}")
 
     spinner = _Spinner()
     project_path = Path(project)
@@ -459,7 +487,7 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
         compiler = SynesisCompiler(project_path, check_codes=check_codes)
 
         # Etapa 1: projeto + template + bibliografia
-        spinner.start("Lendo projeto e template")
+        spinner.start("Reading project and template")
         project_node, project_validation = compiler.parse_project()
         project_validation_structure = compiler.validate_project_structure(project_node)
         bib_validation = compiler._check_bibliography_file(project_node)
@@ -481,20 +509,17 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
         spinner.done()
 
         # Etapa 2: ontologia
-        spinner.start("Carregando ontologia")
+        spinner.start("Loading organizing model")
         ontologies, ontology_load_result = compiler.parse_ontologies(project_node)
-        spinner.done(f"{len(ontologies):,}".replace(",", ".") + " conceitos")
+        spinner.done(f"{len(ontologies):,} model entries")
 
         # Etapa 3: anotacoes (etapa mais lenta — paralela)
-        spinner.start("Lendo anotacoes")
+        spinner.start("Parsing annotations")
         sources, items, annotations_load_result = compiler.parse_annotations(project_node)
-        spinner.done(
-            f"{len(sources):,}".replace(",", ".") + " sources, "
-            f"{len(items):,}".replace(",", ".") + " items"
-        )
+        spinner.done(f"{len(sources):,} sources, {len(items):,} items")
 
         # Etapa 4: validacao semantica
-        spinner.start("Validando")
+        spinner.start("Validating")
         norm_cache: dict = {}
         malformed_keys = {
             e.entry_key.lower() for e in bib_format_validation.errors
@@ -522,14 +547,14 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
         n_errors = len(validation_result.errors)
         n_warnings = len(validation_result.warnings)
         if n_errors:
-            spinner.done(click.style(f"{n_errors} erro(s)", fg="red"))
+            spinner.done(click.style(f"{n_errors} error(s)", fg="red"))
         elif n_warnings:
-            spinner.done(click.style(f"{n_warnings} aviso(s)", fg="yellow"))
+            spinner.done(click.style(f"{n_warnings} warning(s)", fg="yellow"))
         else:
-            spinner.done("sem erros")
+            spinner.done("no errors")
 
         # Etapa 5: vinculacao
-        spinner.start("Vinculando")
+        spinner.start("Linking")
         linked_project = compiler.link_all(
             project=project_node,
             template=template,
@@ -550,7 +575,21 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
 
         if stats:
             click.echo("")
-            _print_stats(result_stats)
+            _print_stats(result_stats, linked_project)
+
+        # Perfil estrutural (Spec ROLE/EXPORT §7): sempre que o template declara
+        # ROLE; com --stats, em qualquer projeto.
+        from synesis.semantic.roles import has_roles
+
+        if linked_project is not None and (stats or has_roles(template)):
+            from synesis.semantic.hierarchy import structural_profile
+
+            click.echo("")
+            profile = structural_profile(linked_project, template, validation_result)
+            artifacts = _artifact_profiles(linked_project, template)
+            # Os artefatos entram antes da nota, logo abaixo do modelo organizador.
+            profile = profile[:-1] + artifacts + profile[-1:]
+            _print_profile(profile)
 
         has_errors = validation_result.has_errors()
         has_warnings = validation_result.has_warnings()
@@ -578,10 +617,180 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
         raise SystemExit(1)
     except Exception as exc:
         spinner.fail()
-        click.echo(click.style(f"erro: Falha inesperada durante compilacao: {exc}", fg="red"), err=True)
+        click.echo(click.style(f"error: unexpected failure during compilation: {exc}", fg="red"), err=True)
         if click.get_current_context().obj and click.get_current_context().obj.get("debug"):
             raise
         raise SystemExit(1)
+
+
+@main.command("export", cls=_SynesisCommand)
+@click.argument("project", type=click.Path(exists=True))
+@click.argument("selector", required=False)
+@click.option("--check-codes", is_flag=True,
+              help="Check every code occurrence against the ontology (as in compile)")
+@click.option("--force", is_flag=True,
+              help="Run the EXPORT blocks even if the project has errors")
+@click.option("--publish", is_flag=True,
+              help="SKOS: add the exported concept IRIs to the block's REGISTRY (published IRIs never vanish)")
+def export(project: str, selector: str | None, check_codes: bool, force: bool, publish: bool = False) -> None:
+    """Run the EXPORT blocks of a project (.synp).
+
+    \b
+    Without SELECTOR, every block runs, in file order. SELECTOR is a block name
+    (EXPORT JSON painel -> painel) or a format (json, csv, xls, alpaca, okf).
+    The project is compiled once. A project error stops every block; an error in
+    one block stops only that block. Relative OUTPUT paths are resolved from the
+    folder of the .synp.
+    """
+    from synesis.ast.results import ExportBlockError
+    from synesis.semantic.project_blocks import export_block_errors, select_exports
+
+    click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + f" {_TAGLINE}")
+    project_path = Path(project)
+    project_dir = project_path.parent
+    compiler = SynesisCompiler(project_path, check_codes=check_codes)
+
+    try:
+        project_node, _ = compiler.parse_project()
+    except SynesisSyntaxError as exc:
+        click.echo(click.style(str(exc), fg="red"), err=True)
+        raise SystemExit(1)
+
+    if not project_node.exports:
+        click.echo(f"{project_path.name}: no EXPORT block; nothing to export.")
+        raise SystemExit(0)
+    blocks = select_exports(project_node, selector)
+    if not blocks:
+        click.echo(click.style(
+            f"error: no EXPORT block with name or format `{selector}` in {project_path.name}",
+            fg="red"), err=True)
+        raise SystemExit(1)
+
+    result = compiler.compile()
+    core_errors = [e for e in result.validation_result.errors if not isinstance(e, ExportBlockError)]
+    _print_diagnostics(core_errors, "ERROR", project_dir)
+    _print_diagnostics(
+        [w for w in result.validation_result.warnings if not isinstance(w, ExportBlockError)],
+        "WARNING", project_dir,
+    )
+    if result.linked_project is None or (core_errors and not force):
+        click.echo(click.style("error: the project has errors; no EXPORT block ran "
+                               "(use --force to export anyway)", fg="red"), err=True)
+        raise SystemExit(1)
+
+    # Erros locais: os de forma do proprio bloco e os de nome entre blocos.
+    local = [w for w in result.validation_result.warnings if isinstance(w, ExportBlockError)]
+    exit_code = 0
+    seen_warnings: dict = {}  # (titulo, item) -> nome do primeiro bloco que o mostrou
+    for position, block in enumerate(blocks):
+        if position:
+            click.echo()
+            click.echo(_paint("-" * 72, "dim"))
+        name = block.name or "(unnamed)"
+        click.echo()
+        click.echo(_paint(f"Exporting {block.format}:", "title") + " " + _paint(name, "name")
+                   + _paint(f" ({project_path.name}:{block.location.line})", "dim"))
+        errors: list = [e for e in local if e.block == block.label]
+        errors += [e for e in export_block_errors(block, result.template) if e not in errors]
+        if errors:
+            _print_diagnostics(errors, "ERROR", project_dir)
+            click.echo(_c(f"  ✖ {block.label}: not exported", fg="red"), err=True)
+            exit_code = 1
+            continue
+        try:
+            written, details = _run_export_block(block, result, project_dir, publish=publish)
+        except (OSError, FileExistsError, ValueError) as exc:
+            click.echo(_c(f"  ✖ {block.label}: {exc}", fg="red"), err=True)
+            exit_code = 1
+            continue
+        extra = (f"  ({_paint(f'{details.triple_count:,}', 'total')} triples)"
+                 if details is not None else "")
+        click.echo(f"  {_paint('✔', 'ok')} Wrote {_paint(str(written), 'value')}{extra}")
+        if details is not None:
+            from synesis.exporters.skos_export import report_lines
+
+            click.echo()
+            for line in report_lines(details, written, style=_paint):
+                click.echo(f"  {line}" if line else "")
+            _print_grouped_warnings(details.warnings, seen_warnings, name)
+    raise SystemExit(exit_code)
+
+
+def _print_grouped_warnings(warnings: list, seen: dict, block_name: str) -> None:
+    """Avisos de um bloco EXPORT agrupados por tipo, sem caminho nem linha.
+
+    O bloco ja esta no cabecalho da secao. Um aviso identico ao de um bloco
+    anterior (TOPIC unidos valem para o projeto inteiro) nao e repetido: o
+    grupo vira uma linha de referencia ao primeiro bloco que o mostrou.
+    """
+    if not warnings:
+        return
+    groups: dict = {}
+    for warning in warnings:
+        title, item = warning.cli_group()
+        groups.setdefault(title, []).append(item)
+    click.echo()
+    click.echo("  " + _paint(f"⚠ Warnings ({len(warnings)}):", "title"))
+    for title, items in groups.items():
+        keys = [(title, item) for item in items]
+        earlier = {seen[k] for k in keys if k in seen}
+        if len(earlier) == 1 and all(k in seen for k in keys):
+            click.echo(f"    {_paint(title, 'warn')}: "
+                       + _paint(f"same {len(items)} as in `{earlier.pop()}`", "dim"))
+            continue
+        for key in keys:
+            seen.setdefault(key, block_name)
+        if len(items) == 1 and not items[0]:
+            click.echo(f"    {_paint(title, 'warn')}")
+            continue
+        click.echo(f"    {_paint(title, 'warn')}:")
+        for item in items:
+            click.echo(f"      • {item}")
+
+
+def _run_export_block(block, result, project_dir: Path, publish: bool = False):
+    """Executa um bloco EXPORT ja validado: (caminho escrito, SkosResult ou None)."""
+    output = Path(block.prop("OUTPUT") or "")
+    if not output.is_absolute():
+        output = project_dir / output
+    generated_at = block.prop("GENERATED_AT")
+    linked, template = result.linked_project, result.template
+    bib, dataset = result.bibliography, result.dataset
+
+    details = None
+    if block.format == "SKOS":
+        from synesis.exporters.skos_export import export_skos
+
+        registry = None
+        if block.prop("REGISTRY"):
+            registry = Path(block.prop("REGISTRY").strip().strip('"'))
+            if not registry.is_absolute():
+                registry = project_dir / registry
+        elif publish:
+            raise ValueError("--publish needs REGISTRY in the EXPORT SKOS block (the file of published IRIs)")
+        skos = export_skos(linked, template, block, output, registry=registry, publish=publish)
+        if skos.errors:
+            _print_diagnostics(skos.errors, "ERROR", project_dir)
+            _print_diagnostics(skos.warnings, "WARNING", project_dir)
+            raise ValueError("SKOS file not written (errors above)")
+        details = skos
+    elif block.format == "CSV":
+        output.mkdir(parents=True, exist_ok=True)
+        export_csv(linked, template, output, bib, dataset)
+    elif block.format == "OKF":
+        output.parent.mkdir(parents=True, exist_ok=True)
+        export_okf(linked, output, template, bib, dataset, generated_at=generated_at)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if block.format == "JSON":
+            export_json(linked, output, template, bib, dataset, generated_at=generated_at)
+        elif block.format == "XLS":
+            export_xls(linked, template, output, bib, dataset)
+        elif block.format == "ALPACA":
+            export_alpaca(linked, output, template, bib)
+        else:  # pragma: no cover - formatos validados antes
+            raise ValueError(f"format without an exporter: {block.format}")
+    return output, details
 
 
 def _export_okf_cli(linked_project, path: Path, template, bibliography, dataset, generated_at: str | None) -> None:
@@ -589,9 +798,9 @@ def _export_okf_cli(linked_project, path: Path, template, bibliography, dataset,
     try:
         count = export_okf(linked_project, path, template, bibliography, dataset, generated_at=generated_at)
     except (FileExistsError, ValueError) as exc:
-        click.echo(click.style(f"erro: --okf: {exc}", fg="red"), err=True)
+        click.echo(click.style(f"error: --okf: {exc}", fg="red"), err=True)
         raise SystemExit(1)
-    click.echo(f"OKF: {count} arquivo(s) em {path} (experimental, OKF v0.2)")
+    click.echo(f"OKF: {count} file(s) in {path} (experimental, OKF v0.2)")
 
 
 def _member_label_field(template) -> str | None:
@@ -808,7 +1017,7 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
 
     from synesis.semantic.link_step import Member, link_members
 
-    click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + "  Linkando projetos.")
+    click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + " — Linking projects.")
 
     members: list[Member] = []
     member_stats: list[tuple[str, CompilationStats, set]] = []
@@ -817,7 +1026,7 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
     for proj in projects:
         proj_path = Path(proj)
         alias = proj_path.stem
-        click.echo(f"  compilando {click.style(alias, bold=True)} …")
+        click.echo(f"  compiling {click.style(alias, bold=True)} …")
         result = SynesisCompiler(proj_path, check_codes=check_codes).compile()
         if result.has_errors():
             member_errors = True
@@ -825,7 +1034,7 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
             continue
         if result.linked_project is None or result.template is None:
             member_errors = True
-            click.echo(click.style(f"erro: `{alias}` nao produziu artefato linkavel.", fg="red"), err=True)
+            click.echo(click.style(f"error: `{alias}` did not produce a linkable artifact.", fg="red"), err=True)
             continue
         members.append(Member(
             alias=alias,
@@ -843,7 +1052,7 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
         member_results[alias] = result
 
     if member_errors:
-        click.echo(click.style("erro: ao menos um membro falhou na compilacao — link abortado.", fg="red"), err=True)
+        click.echo(click.style("error: at least one member failed to compile — linking aborted.", fg="red"), err=True)
         raise SystemExit(1)
 
     # --alpaca ainda nao tem exportador por membro no link step. Avisar em vez
@@ -851,15 +1060,15 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
     # que um erro claro. (--xls e exportado por membro mais abaixo, §6.)
     if alpaca_path:
         click.echo(click.style(
-            "aviso: --alpaca ainda nao e suportado no passo de linkagem (multiplos projetos) "
-            "— nenhum dataset foi gerado. Exporte cada projeto separadamente.",
+            "warning: --alpaca is not yet supported in the linking step (multiple projects) "
+            "— no dataset was generated. Export each project separately.",
             fg="yellow",
         ), err=True)
 
     if okf_dir:
         click.echo(click.style(
-            "aviso: --okf ainda nao e suportado no passo de linkagem (multiplos projetos) "
-            "— nenhum bundle foi gerado. Exporte cada projeto separadamente.",
+            "warning: --okf is not yet supported in the linking step (multiple projects) "
+            "— no bundle was generated. Export each project separately.",
             fg="yellow",
         ), err=True)
 
@@ -874,12 +1083,12 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
     n_orphans = len(link_result.orphans)
     if not vr.has_errors():
         entities = sorted({e.entity for e in link_result.edges})
-        ent_part = ", ".join(f"'{e}'" for e in entities) if entities else "nenhuma"
+        ent_part = ", ".join(f"'{e}'" for e in entities) if entities else "none"
         click.echo("")
-        click.echo(click.style(f"✓ {len(members)} projetos linkados.", fg="green") +
-                   f" {n_edges} aresta(s) resolvida(s) [{ent_part}].")
+        click.echo(click.style(f"✓ {len(members)} projects linked.", fg="green") +
+                   f" {n_edges} edge(s) resolved [{ent_part}].")
         if n_orphans:
-            click.echo(click.style(f"⚠ {n_orphans} REFERS TO orfao(s) (valor sem IDENTIFIES correspondente).", fg="yellow"))
+            click.echo(click.style(f"⚠ {n_orphans} orphan REFERS TO value(s) (no matching IDENTIFIES).", fg="yellow"))
 
         # Rotulos declarados que nao produziram nenhuma aresta. Sem isto o `✓`
         # acima le como sucesso pleno mesmo quando a maior parte da ligacao
@@ -891,7 +1100,7 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
             if unresolved:
                 labels = ", ".join(f"'{e}'" for e in unresolved)
                 click.echo(click.style(
-                    f"⚠ {len(unresolved)} de {len(declared_entities)} rotulos sem nenhuma aresta: {labels}.",
+                    f"⚠ {len(unresolved)} of {len(declared_entities)} labels without any edge: {labels}.",
                     fg="yellow",
                 ))
 
@@ -932,7 +1141,7 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
                 },
             }
             Path(json_path).write_text(_json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-            click.echo(f"  JSON v3.1 agregado -> {json_path}")
+            click.echo(f"  aggregate JSON v3.1 -> {json_path}")
 
         if csv_dir:
             out_dir = Path(csv_dir)
@@ -963,10 +1172,10 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
                 collapsed = _export_unified_workbook(
                     link_result, members, member_results, target
                 )
-                click.echo(f"  workbook unificado -> {target}")
+                click.echo(f"  unified workbook -> {target}")
                 if collapsed:
                     click.echo(
-                        "    abas compartilhadas (identicas em todos os membros): "
+                        "    shared sheets (identical in every member): "
                         + ", ".join(collapsed)
                     )
             else:
@@ -1027,13 +1236,13 @@ def help_field(field_type: str | None) -> None:
 
     if not field_type:
         click.echo("")
-        click.echo(click.style("Tipos de campo disponiveis:", bold=True))
+        click.echo(click.style("Available field types:", bold=True))
         click.echo("")
         for name in field_type_names():
             click.echo("  " + click.style(name, fg="green"))
         click.echo("")
         click.echo(click.style(
-            "Use 'synesis help-field <TIPO>' para ver o que cada um exige e aceita.",
+            "Use 'synesis help-field <TYPE>' to see what each one requires and accepts.",
             fg="bright_black",
         ))
         click.echo("")
@@ -1042,8 +1251,8 @@ def help_field(field_type: str | None) -> None:
     info = get_field_type_info(field_type)
     if info is None:
         click.echo(click.style(
-            f"erro: tipo de campo desconhecido: `{field_type}`", fg="red"), err=True)
-        click.echo("Tipos validos: " + ", ".join(field_type_names()), err=True)
+            f"error: unknown field type: `{field_type}`", fg="red"), err=True)
+        click.echo("Valid types: " + ", ".join(field_type_names()), err=True)
         raise SystemExit(1)
 
     _print_field_type_help(info, get_linkage_info())
@@ -1063,10 +1272,10 @@ def export_snippets(output: str | None) -> None:
     # Cabecalho para que ninguem edite o arquivo a mao: o conteudo e derivado
     # do compilador e qualquer ajuste local se perde na proxima geracao.
     header = (
-        "// GERADO por `synesis export-snippets` — NAO EDITAR A MAO.\n"
-        f"// Fonte: synesis {VERSION}, modulo language_info.\n"
-        "// Quais propriedades entram em cada snippet derivam do validador;\n"
-        "// para regenerar apos mudanca na linguagem, rode o comando de novo.\n"
+        "// GENERATED by `synesis export-snippets` — DO NOT EDIT BY HAND.\n"
+        f"// Source: synesis {VERSION}, module language_info.\n"
+        "// The properties in each snippet are derived from the validator;\n"
+        "// to regenerate after a language change, run the command again.\n"
     )
     content = header + payload + "\n"
 
@@ -1075,7 +1284,7 @@ def export_snippets(output: str | None) -> None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(content, encoding="utf-8")
         n = len(build_editor_snippets())
-        click.echo(click.style(f"{n} snippets escritos em {out_path}", fg="green"))
+        click.echo(click.style(f"{n} snippets written to {out_path}", fg="green"))
     else:
         click.echo(content, nl=False)
 
@@ -1314,25 +1523,78 @@ def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | N
         remaining = len(locations) - len(shown)
         sample = ", ".join(shown)
         if remaining:
-            sample += f", ... e mais {remaining}"
-        click.echo(click.style(f"{indent}em {sample}", fg="cyan"), err=True)
+            sample += f", ... and {remaining} more"
+        click.echo(click.style(f"{indent}at {sample}", fg="cyan"), err=True)
 
 
-def _print_stats(stats) -> None:
+def _active_codes(linked) -> int:
+    """Conceitos citados nas anotacoes (CODE e CHAIN), pela identidade resolvida (USE)."""
+    from synesis.semantic.hierarchy import used_concept_keys
+
+    return len(used_concept_keys(linked))
+
+
+def _artifact_profiles(linked, template) -> list:
+    """Perfil de cada artefato EXPORT SKOS do projeto, como `synesis export` o gera."""
+    from synesis.exporters.skos_export import build_skos
+    from synesis.semantic.project_blocks import export_block_errors
+
+    out = []
+    for block in getattr(linked.project, "exports", None) or []:
+        if block.format != "SKOS":
+            continue
+        if export_block_errors(block, template):
+            out.append(f"{block.label}: not generated (block errors; see synesis export)")
+            continue
+        result = build_skos(linked, template, block)
+        if result.errors:
+            out.append(f"{block.label}: not generated ({len(result.errors)} error(s); see synesis export)")
+        else:
+            out.append(f"{block.label}: {result.report['profile']}")
+    return out
+
+
+def _print_stats(stats, linked=None) -> None:
+    """Compilation Summary: entradas do modelo organizador (blocos ONTOLOGY)
+    separadas em conceitos e preteridos (USE); codigos ativos = citados."""
+    aliases = len(getattr(linked, "aliases", None) or {}) if linked is not None else 0
+    concepts = stats.ontology_count - aliases
+    detail = f"({concepts:,} concept{'s' if concepts != 1 else ''}"
+    detail += f", {aliases:,} alias{'es' if aliases != 1 else ''})" if aliases else ")"
     rows = [
-        ("Sources",    stats.source_count),
-        ("Items",      stats.item_count),
-        ("Ontologies", stats.ontology_count),
-        ("Codes",      stats.code_count),
-        ("Chains",     stats.chain_count),
+        ("Sources",       stats.source_count, ""),
+        ("Items",         stats.item_count, ""),
+        ("Model entries", stats.ontology_count, detail),
     ]
-    label_width = max(len(label) for label, _ in rows)
-    num_width   = max(len(f"{n:,}".replace(",", ".")) for _, n in rows)
+    if linked is not None:
+        rows.append(("Active codes", _active_codes(linked), ""))
+    rows.append(("Chains", stats.chain_count, ""))
+    label_width = max(len(label) for label, _, _ in rows)
+    num_width = max(len(f"{n:,}") for _, n, _ in rows)
 
-    click.echo(click.style("Estatisticas da Compilacao:", bold=True))
-    for label, n in rows:
-        formatted_n = f"{n:,}".replace(",", ".")
-        click.echo(f"  {label:<{label_width}}  {formatted_n:>{num_width}}")
+    click.echo(_paint("Compilation Summary:", "title"))
+    for label, n, extra in rows:
+        line = f"  {label:<{label_width}}  " + _paint(f"{n:>{num_width},}", "total")
+        click.echo(line + (f"  {_paint(extra, 'dim')}" if extra else ""))
+
+
+def _print_profile(lines) -> None:
+    """Structural Profile: linhas `Rotulo: valor` alinhadas; a nota no fim, quebrada."""
+    import textwrap
+
+    note = [line for line in lines if line.startswith("Note:")]
+    rows = [line.split(": ", 1) for line in lines if not line.startswith("Note:")]
+    width = max((len(label) for label, _ in rows), default=0) + 1
+    click.echo(_paint("Structural Profile:", "title"))
+    for label, value in rows:
+        # Perfis (modelo organizador, artefatos) em ciano; contagens em negrito.
+        role = ("ok" if "✓" in value else "value"
+                if ("Terminological:" in value or value.startswith("none")) else "total")
+        click.echo(f"  {(label + ':'):<{width}}  {_paint(value, role)}")
+    for text in note:
+        click.echo("")
+        for wrapped in textwrap.wrap(text, width=76):
+            click.echo(f"  {_paint(wrapped, 'dim')}")
 
 
 #: Ordem de exibicao das propriedades — as especificas de tipo primeiro, as
@@ -1362,7 +1624,7 @@ def _print_field_type_help(info, linkage_by_scope) -> None:
     click.echo("")
     click.echo(
         _safe_glyph("\U0001f4e6 ", "")
-        + click.style(f"CAMPO TYPE {info.name}", fg="green", bold=True)
+        + click.style(f"FIELD TYPE {info.name}", fg="green", bold=True)
     )
 
     def _section(icon: str, title: str, items, color: str,
@@ -1378,19 +1640,19 @@ def _print_field_type_help(info, linkage_by_scope) -> None:
         for prop in ordered:
             if prop.error_code:
                 short = prop.error_code.replace("SYNESIS_", "")
-                tail = click.style(f"   (erro {short} {condition})", fg="bright_black")
+                tail = click.style(f"   (error {short} {condition})", fg="bright_black")
                 name = prop.name.ljust(width)
             else:
                 tail = ""
                 name = prop.name
             click.echo(f"    {click.style(marker, fg=color)} {name}{tail}")
 
-    _section("\U0001f4cc", "PROPRIEDADES OBRIGATORIAS",
-             info.required, "yellow", "*", "se ausente")
-    _section("✨", "PROPRIEDADES OPCIONAIS",
+    _section("\U0001f4cc", "REQUIRED PROPERTIES",
+             info.required, "yellow", "*", "if missing")
+    _section("✨", "OPTIONAL PROPERTIES",
              info.allowed, "green", "+", "")
-    _section("\U0001f6ab", "NAO SE APLICAM A ESTE TIPO",
-             info.forbidden, "red", "-", "se declarada")
+    _section("\U0001f6ab", "NOT APPLICABLE TO THIS TYPE",
+             info.forbidden, "red", "-", "if declared")
 
     # Texto didatico do proprio compilador — a mesma prosa que o pesquisador
     # veria ao errar. Reaproveitar garante que ajuda e diagnostico nunca
@@ -1401,7 +1663,7 @@ def _print_field_type_help(info, linkage_by_scope) -> None:
         click.echo("")
         click.echo(
             "  " + _safe_glyph("\U0001f4a1 ", "")
-            + click.style(f"POR QUE {prop.name} E NECESSARIA?", bold=True)
+            + click.style(f"WHY IS {prop.name} REQUIRED?", bold=True)
         )
         for line in prop.explanation.splitlines():
             click.echo("    " + click.style(line.strip(), fg="bright_black"))
@@ -1414,11 +1676,11 @@ def _print_field_type_help(info, linkage_by_scope) -> None:
         click.echo("")
         click.echo(
             "  " + _safe_glyph("\U0001f517 ", "")
-            + click.style("LIGACAO ENTRE PROJETOS", bold=True)
+            + click.style("LINKING BETWEEN PROJECTS", bold=True)
         )
         click.echo(
             "    " + click.style(
-                "IDENTIFIES / REFERS TO: apenas em SCOPE "
+                "IDENTIFIES / REFERS TO: only in SCOPE "
                 + ", ".join(scopes_allowing_linkage),
                 fg="bright_black",
             )
@@ -1486,7 +1748,7 @@ def _print_link_topology(members) -> None:
     # Placeholders de entidade sem IDENTIFIES entram no calculo de largura:
     # '(nenhum)' e mais longo que muitos nomes de projeto e desalinharia a
     # tabela se so os valores reais fossem medidos.
-    no_owner, no_field = "(nenhum)", "-"
+    no_owner, no_field = "(none)", "-"
     display = [
         (
             entity,
@@ -1498,13 +1760,13 @@ def _print_link_topology(members) -> None:
         for entity, owner_alias, owner_field, ref_alias, ref_field in rows
     ]
 
-    headers = ("ENTITY", "PROJETO", "CAMPO", "PROJETO", "CAMPO")
+    headers = ("ENTITY", "PROJECT", "FIELD", "PROJECT", "FIELD")
     widths = [
         max(len(headers[i]), max(len(r[i]) for r in display))
         for i in range(5)
     ]
 
-    click.echo(click.style("Ligacao entre projetos:", bold=True))
+    click.echo(click.style("Links between projects:", bold=True))
     click.echo("")
 
     # Cabecalho de grupo: a regua tambem separa cabecalho de dados, dispensando
@@ -1568,25 +1830,25 @@ def _print_link_resolution(members, link_result) -> None:
     w_origin = max(len(o) for o in origins)
     w_entity = max(len(e) for e in entities)
 
-    click.echo(click.style("Resolucao das ligacoes:", bold=True))
+    click.echo(click.style("Link resolution:", bold=True))
     click.echo("")
     for (entity, _oa, _of, ref_alias, ref_field), origin in zip(rows, origins):
         n_edges = edges.get((entity, ref_alias), 0)
         n_orphans = orphans.get((entity, ref_alias), 0)
         if n_edges or n_orphans:
-            status = click.style(f"{n_edges:>3d} resolvidas", fg="green")
+            status = click.style(f"{n_edges:>3d} resolved", fg="green")
             if n_orphans:
                 total = n_edges + n_orphans
                 status += (
-                    click.style(f"   {n_orphans:>2d} orfaos", fg="yellow")
+                    click.style(f"   {n_orphans:>2d} orphans", fg="yellow")
                     + f"  ({100 * n_edges / total:.0f}%)"
                 )
         elif ref_alias in empty_projects:
             # Distingue "ainda nao coletou" de "coletou e nada casou": um zero
             # cru trataria as duas como falha.
-            status = "aguardando coleta"
+            status = "awaiting collection"
         else:
-            status = f"{0:>3d} resolvidas"
+            status = f"{0:>3d} resolved"
         # Padding calculado sobre o texto sem cor: click.style acrescenta
         # escapes ANSI que quebrariam um ljust() aplicado depois.
         padding = " " * (w_origin - len(f"{ref_alias} ({ref_field})"))
@@ -1599,9 +1861,9 @@ def _print_link_resolution(members, link_result) -> None:
     if empty_projects:
         click.echo("")
         click.echo(
-            "  Projetos sem SOURCEs: "
+            "  Projects without SOURCEs: "
             + click.style(", ".join(empty_projects), fg="red")
-            + "  (nenhuma aresta pode resolver)"
+            + "  (no edge can resolve)"
         )
 
 
@@ -1623,13 +1885,13 @@ def _print_link_stats(
     ]
 
     # --- Tabela por membro: colunas alinhadas a direita (numeros comparaveis) ---
-    headers = ("PROJETO", *(label for label, _ in own_fields))
+    headers = ("PROJECT", *(label for label, _ in own_fields))
     body = [
-        (alias, *(f"{getattr(s, attr):,}".replace(",", ".") for _label, attr in own_fields))
+        (alias, *(f"{getattr(s, attr):,}" for _label, attr in own_fields))
         for alias, s, _keys in member_stats
     ]
     totals = tuple(
-        f"{sum(getattr(s, attr) for _a, s, _k in member_stats):,}".replace(",", ".")
+        f"{sum(getattr(s, attr) for _a, s, _k in member_stats):,}"
         for _label, attr in own_fields
     )
     widths = [
@@ -1638,7 +1900,7 @@ def _print_link_stats(
         for i in range(len(headers))
     ]
 
-    click.echo(click.style("Estatisticas por membro:", bold=True))
+    click.echo(click.style("Per-member statistics:", bold=True))
     click.echo("")
     click.echo(
         "  " + click.style(headers[0].ljust(widths[0]), bold=True) + "  "
@@ -1680,38 +1942,38 @@ def _print_link_stats(
     if unique_ontology or summed_ontology:
         click.echo("")
         click.echo(click.style(
-            "Ontologia compartilhada:" if shared else "Ontologia:", bold=True))
+            "Shared organizing model:" if shared else "Organizing model:", bold=True))
         click.echo("")
         n_members = len(member_stats)
         if shared:
-            detail = f"identica nos {n_members} projetos"
+            detail = f"identical in the {n_members} projects"
             suffix = click.style("  (INCLUDE SHARED ONTOLOGY)", fg="bright_black")
         else:
-            detail = f"em {n_members} projeto(s)"
+            detail = f"in {n_members} project(s)"
             suffix = ""
         # Nao ha caso a reportar de blocos != conceitos: conceito duplicado
         # (mesmo diferindo so em caixa) e erro duro E068, detectado inclusive
         # entre arquivos, e aborta a compilacao antes de chegar aqui.
         click.echo(
-            f"  {unique_ontology:,}".replace(",", ".")
-            + f" conceitos, {detail}" + suffix
+            f"  {unique_ontology:,}"
+            + f" concepts, {detail}" + suffix
         )
 
     rows: list[tuple[str, int]] = [
         (label.capitalize(), sum(getattr(s, attr) for _a, s, _k in member_stats))
         for label, attr in own_fields
     ]
-    rows.append(("Shared ontology" if shared else "Ontology", unique_ontology))
+    rows.append(("Shared organizing model" if shared else "Organizing model", unique_ontology))
     rows.append(("Edges", n_edges))
     rows.append(("Orphans", n_orphans))
 
     label_width = max(len(label) for label, _ in rows)
-    num_width = max(len(f"{n:,}".replace(",", ".")) for _, n in rows)
+    num_width = max(len(f"{n:,}") for _, n in rows)
 
     click.echo("")
-    click.echo(click.style("Estatisticas agregadas (link step):", bold=True))
+    click.echo(click.style("Aggregate statistics (link step):", bold=True))
     for label, n in rows:
-        formatted_n = f"{n:,}".replace(",", ".")
+        formatted_n = f"{n:,}"
         click.echo(f"  {label:<{label_width}}  {formatted_n:>{num_width}}")
 
 

@@ -280,7 +280,7 @@ def test_read_source_file_enforces_limit(tmp_path, monkeypatch):
     big = tmp_path / "big.syn"
     big.write_text("x" * 64, encoding="utf-8")
 
-    with pytest.raises(OSError, match="acima do limite"):
+    with pytest.raises(OSError, match="above the limit"):
         lexer.read_source_file(big)
 
 

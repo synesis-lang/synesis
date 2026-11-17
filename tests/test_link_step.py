@@ -155,7 +155,7 @@ def test_near_match_is_warning_not_edge():
     assert lr.edges == []
     warn = next(w for w in lr.validation.warnings if w.CODE == "SYNESIS_W083")
     assert warn.near_match == "@thiagonogueira"
-    assert "caixa" in warn.to_cli_line().lower()
+    assert "differs only in case" in warn.to_cli_line().lower()
 
 
 # --------------------------------------------------------------------------
@@ -200,10 +200,10 @@ def test_cli_link_stats_shows_per_member_and_aggregate():
         "--stats",
     ])
     assert result.exit_code == 0, result.output
-    assert "Estatisticas por membro" in result.output
+    assert "Per-member statistics" in result.output
     assert "lattes" in result.output
     assert "abstracts" in result.output
-    assert "Estatisticas agregadas" in result.output
+    assert "Aggregate statistics" in result.output
     assert "Edges" in result.output
     assert "Orphans" in result.output
 
@@ -349,7 +349,7 @@ def test_cli_link_alpaca_warns_instead_of_silently_ignoring(tmp_path):
         "--alpaca", str(out_alpaca),
     ])
     assert result.exit_code == 0, result.output
-    assert "aviso" in result.output.lower()
+    assert "warning" in result.output.lower()
     assert "--alpaca" in result.output
     assert not out_alpaca.exists()
 
@@ -385,13 +385,13 @@ def test_shared_ontology_stats_are_deduplicated():
     out = _capture_link_stats(member_stats, n_edges=7, n_orphans=0)
     import re
     # rotulo indica compartilhamento
-    assert "Ontologia compartilhada" in out
-    assert "Shared ontology" in out  # agregado
+    assert "Shared organizing model" in out
+    assert "Shared organizing model" in out  # agregado
     # A ontologia sai da tabela por membro: repetir a mesma contagem em cada
     # linha seria ruido (o valor e identico para todos os membros).
     assert "Codes" not in out
     # valor deduplicado (74), nunca a soma (148)
-    assert re.search(r"Shared ontology\s+74\b", out)
+    assert re.search(r"Shared organizing model\s+74\b", out)
     assert "148" not in out
     # campos proprios continuam somando (Sources 1+7=8)
     assert re.search(r"Sources\s+8\b", out)
@@ -406,8 +406,8 @@ def test_partial_overlap_dedup_counts_union():
     out = _capture_link_stats(member_stats, n_edges=0, n_orphans=0)
     # uniao = {x,y,z,w} = 4 (soma seria 5, interseccao seria 1)
     import re
-    assert re.search(r"Shared ontology\s+4\b", out)
-    assert "Shared ontology" in out  # ha sobreposicao (z), entao rotulo Shared
+    assert re.search(r"Shared organizing model\s+4\b", out)
+    assert "Shared organizing model" in out  # ha sobreposicao (z), entao rotulo Shared
 
 
 def test_no_overlap_uses_plain_labels():
@@ -417,7 +417,7 @@ def test_no_overlap_uses_plain_labels():
         ("b", _stats(ontology_count=2, code_count=2), {"w", "z"}),
     ]
     out = _capture_link_stats(member_stats, n_edges=0, n_orphans=0)
-    assert "Ontologia:" in out       # sem "compartilhada"
+    assert "Organizing model:" in out       # sem "compartilhada"
     assert "Shared" not in out
     assert "conceitos unicos" not in out
 
@@ -433,7 +433,7 @@ def test_no_ontology_at_all_omits_ontology_block():
     assert "Shared" not in out
     assert "Ontologia" not in out
     # a tabela por membro e o agregado continuam saindo
-    assert "PROJETO" in out
+    assert "PROJECT" in out
     assert "Sources" in out
 
 
@@ -520,7 +520,7 @@ def test_topology_groups_keywords_over_project_and_field():
     assert "IDENTIFIES" in out
     assert "REFERS TO" in out
     header = next(line for line in out.splitlines() if "ENTITY" in line)
-    assert header.split() == ["ENTITY", "PROJETO", "CAMPO", "PROJETO", "CAMPO"]
+    assert header.split() == ["ENTITY", "PROJECT", "FIELD", "PROJECT", "FIELD"]
 
 
 def test_topology_columns_stay_aligned_with_no_owner_placeholder():
@@ -531,9 +531,9 @@ def test_topology_columns_stay_aligned_with_no_owner_placeholder():
     lines = [ln for ln in out.splitlines() if ln.startswith("  ") and "ENTITY" not in ln]
     data = [ln for ln in lines if "person" in ln]
     assert data, out
-    assert "(nenhum)" in data[0]
+    assert "(none)" in data[0]
     # A coluna seguinte comeca depois do placeholder, sem colidir com ele.
-    assert data[0].index("(nenhum)") < data[0].index("r ") or " r" in data[0]
+    assert data[0].index("(none)") < data[0].index("r ") or " r" in data[0]
 
 
 def test_cli_link_prints_both_sections_by_default():
@@ -550,9 +550,9 @@ def test_cli_link_prints_both_sections_by_default():
         str(FIXTURES / "T22-Link-Ok" / "abstracts" / "abstracts.synp"),
     ])
     assert result.exit_code == 0, result.output
-    assert "Ligacao entre projetos:" in result.output
-    assert "Resolucao das ligacoes:" in result.output
-    assert "Estatisticas por membro" not in result.output
+    assert "Links between projects:" in result.output
+    assert "Link resolution:" in result.output
+    assert "Per-member statistics" not in result.output
 
 
 def test_cli_link_warns_about_labels_without_edges():
@@ -570,7 +570,7 @@ def test_cli_link_warns_about_labels_without_edges():
     ])
     assert result.exit_code == 0, result.output
     # Fixture resolve 'researcher'; nenhum rotulo deve ser reportado como orfao.
-    assert "rotulos sem nenhuma aresta" not in result.output
+    assert "labels without any edge" not in result.output
 
 
 def test_per_member_table_has_aligned_columns_and_total():
@@ -581,8 +581,8 @@ def test_per_member_table_has_aligned_columns_and_total():
         ("abstracts", _stats(source_count=7, item_count=32, chain_count=46), {"x"}),
     ]
     out = _capture_link_stats(member_stats, n_edges=7, n_orphans=0)
-    header = next(line for line in out.splitlines() if "PROJETO" in line)
-    assert header.split() == ["PROJETO", "SOURCES", "ITEMS", "CHAINS"]
+    header = next(line for line in out.splitlines() if "PROJECT" in line)
+    assert header.split() == ["PROJECT", "SOURCES", "ITEMS", "CHAINS"]
     assert "Sources=46" not in out  # formato antigo k=v
     total = next(line for line in out.splitlines() if line.strip().startswith("TOTAL"))
     assert total.split()[1:] == ["53", "435", "81"]
@@ -596,7 +596,7 @@ def test_per_member_table_omits_ontology_columns():
         ("b", _stats(source_count=2, ontology_count=144), {f"c{i}" for i in range(144)}),
     ]
     out = _capture_link_stats(member_stats, n_edges=0, n_orphans=0)
-    header = next(line for line in out.splitlines() if "PROJETO" in line)
+    header = next(line for line in out.splitlines() if "PROJECT" in line)
     assert "ONTOLOG" not in header.upper()
     assert "CODES" not in header.upper()
     # ...e aparece uma unica vez, no bloco proprio

@@ -161,14 +161,14 @@ def _index_records(
             raise DatasetKeyError(
                 origin=record.get(SOURCE_FILE_KEY, origin),
                 key_path=key_path,
-                reason="ausente ou nao-escalar",
+                reason="missing or not a scalar",
             )
         norm = str(raw_key).strip().lower()
         if norm in index:
             raise DatasetKeyError(
                 origin=record.get(SOURCE_FILE_KEY, origin),
                 key_path=key_path,
-                reason=f"chave duplicada '{raw_key}' (ja definida por "
+                reason=f"duplicate key '{raw_key}' (already defined by "
                 f"{index[norm].get(SOURCE_FILE_KEY)})",
             )
         index[norm] = record
@@ -317,7 +317,7 @@ class DatasetParseError(DatasetError):
     def __init__(self, path: str, detail: str) -> None:
         self.path = path
         self.detail = detail
-        super().__init__(f"Arquivo TOML invalido '{path}': {detail}")
+        super().__init__(f"Invalid TOML file '{path}': {detail}")
 
 
 class DatasetKeyError(DatasetError):
@@ -328,5 +328,5 @@ class DatasetKeyError(DatasetError):
         self.key_path = key_path
         self.reason = reason
         super().__init__(
-            f"Registro em '{origin}': chave '{key_path}' {reason}."
+            f"Record in '{origin}': key '{key_path}' {reason}."
         )

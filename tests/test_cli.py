@@ -61,18 +61,18 @@ class TestCheckCodes:
 
     def test_default_prints_only_summary(self):
         out = self._compile()
-        assert "use --check-codes para listar" in out
-        assert "nao definido na ontologia" not in out
+        assert "use --check-codes to list them" in out
+        assert "is not defined in the organizing model" not in out
 
     def test_check_codes_lists_each_code(self):
         out = self._compile("--check-codes")
-        assert "nao definido na ontologia" in out
-        assert "use --check-codes para listar" not in out
+        assert "is not defined in the organizing model" in out
+        assert "use --check-codes to list them" not in out
 
     def test_strict_implies_check_codes(self):
         out = self._compile("--strict")
-        assert "nao definido na ontologia" in out
-        assert "use --check-codes para listar" not in out
+        assert "is not defined in the organizing model" in out
+        assert "use --check-codes to list them" not in out
 
     def test_help_mentions_check_codes(self):
         assert "--check-codes" in _run("compile", "--help").output
@@ -138,7 +138,7 @@ class TestRepeatedDiagnosticCollapse:
         errors = [self._err("a.syno", n, "msg") for n in range(1, 11)]
         out = self._capture(errors)
         assert "a.syno:1:1" in out
-        assert "e mais 7" in out  # 10 - 3 exibidos
+        assert "and 7 more" in out  # 10 - 3 exibidos
 
     def test_distinct_messages_are_not_merged(self):
         errors = [self._err("a.syno", n, f"msg {n % 2}") for n in range(1, 21)]

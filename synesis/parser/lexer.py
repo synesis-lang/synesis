@@ -63,7 +63,7 @@ def read_source_file(path: Path | str) -> str:
     size = file_path.stat().st_size  # levanta FileNotFoundError se ausente
     if size > MAX_SOURCE_BYTES:
         raise SourceFileTooLarge(
-            f"arquivo tem {size / 1024 / 1024:.1f} MB, acima do limite de "
+            f"file has {size / 1024 / 1024:.1f} MB, above the limit of "
             f"{MAX_SOURCE_BYTES // 1024 // 1024} MB"
         )
     return file_path.read_text(encoding="utf-8")
@@ -227,18 +227,18 @@ def _dedent_error_message(exc: Exception, content: str, line: int) -> str:
     coluna_atual = len(trecho) - len(trecho.lstrip()) + 1 if trecho.strip() else 1
 
     return (
-        f"Indentacao inconsistente na linha {line}.\n"
+        f"Inconsistent indentation on line {line}.\n"
         f"\n"
         f"  {line} | {trecho}\n"
         f"\n"
-        f"Esta linha esta indentada na coluna {coluna_atual}, que nao alinha com\n"
-        f"nenhum bloco aberto. Cada nivel deve fechar na mesma coluna em que abriu.\n"
+        f"This line is indented at column {coluna_atual}, which does not align with\n"
+        f"any open block. Each level must close at the same column where it opened.\n"
         f"\n"
-        f"Verifique se:\n"
-        f"  - a linha nao mistura TABs e espacos com outras do mesmo bloco;\n"
-        f"  - o recuo corresponde a um nivel realmente aberto acima.\n"
+        f"Check that:\n"
+        f"  - the line does not mix TABs and spaces with other lines of the same block;\n"
+        f"  - the indentation matches a level actually opened above.\n"
         f"\n"
-        f"(detalhe do parser: {exc})"
+        f"(parser detail: {exc})"
     )
 
 
