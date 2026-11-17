@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.15.0] - 2026-11-17
 
+### Fixed — `GENERATED_AT` com `Z` no Python 3.10
+
+- `datetime.fromisoformat` só aceita o sufixo `Z` a partir do 3.11: no 3.10,
+  `GENERATED_AT 2026-11-16T00:00:00Z` virava erro de bloco EXPORT, e o OKF
+  recusava o mesmo valor. O `Z` passa a valer como `+00:00` em toda versão.
+
 ### Fixed — JSON: campo ONTOLOGY vazio repetido em cada ITEM (teste real, 2026-11-17)
 
 - O `data` de cada ITEM repete os campos SCOPE ONTOLOGY dos conceitos que o

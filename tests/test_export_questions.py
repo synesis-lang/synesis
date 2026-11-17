@@ -248,3 +248,19 @@ class TestExportCommand:
         result = CliRunner().invoke(main, ["export", str(synp)])
         assert result.exit_code == 0
         assert "no EXPORT block" in result.output
+
+
+def test_generated_at_accepts_z_suffix_on_every_python():
+    """Python 3.10: `fromisoformat` nao aceita "Z"; a validacao normaliza.
+
+    So o CI do 3.10 pegava: `GENERATED_AT 2026-11-16T00:00:00Z` virava erro
+    de bloco ali e passava no 3.11+ (release 0.15.0, 2026-11-17).
+    """
+    from synesis.exporters.okf_export import _check_generated_at
+    from synesis.semantic.project_blocks import _is_iso_with_tz
+
+    assert _is_iso_with_tz("2026-11-16T00:00:00Z")
+    assert _is_iso_with_tz("2026-11-16T00:00:00z")
+    assert _is_iso_with_tz("2026-11-16T00:00:00+00:00")
+    assert not _is_iso_with_tz("2026-11-16T00:00:00")
+    _check_generated_at("2026-11-16T00:00:00Z")  # nao levanta

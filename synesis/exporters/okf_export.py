@@ -209,8 +209,10 @@ def _clean_bib(value: Any) -> Any:
 def _check_generated_at(generated_at: Optional[str]) -> None:
     if generated_at is None:
         return
+    # Python 3.10: fromisoformat nao aceita o sufixo "Z" (o 3.11+ aceita).
+    value = generated_at[:-1] + "+00:00" if generated_at[-1:] in ("Z", "z") else generated_at
     try:
-        parsed = datetime.fromisoformat(generated_at)
+        parsed = datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValueError(f"generated_at is not ISO 8601: {generated_at!r}") from exc
     if parsed.tzinfo is None:

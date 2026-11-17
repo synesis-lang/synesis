@@ -392,6 +392,10 @@ def _export_name_errors(exports: Sequence[ExportNode]) -> List[ValidationError]:
 
 
 def _is_iso_with_tz(value: str) -> bool:
+    # O fromisoformat do Python 3.10 nao aceita o sufixo "Z" (o 3.11+ aceita):
+    # sem esta troca, `2026-11-16T00:00:00Z` era erro so no 3.10.
+    if value[-1:] in ("Z", "z"):
+        value = value[:-1] + "+00:00"
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
