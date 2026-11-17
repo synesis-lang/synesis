@@ -82,6 +82,7 @@ from synesis.ast.results import (
     ValidationResult,
 )
 from synesis.parser.bib_loader import find_bibref, suggest_bibref
+from synesis.semantic.occurrences import raw_item_fields
 
 _SUGGESTION_CUTOFF = 0.6
 
@@ -140,6 +141,9 @@ class SemanticValidator:
     check_codes: bool = True
 
     def __post_init__(self) -> None:
+        # (ITEM, campos lidos das ocorrências) do último ITEM: validate_item
+        # consulta os campos do mesmo nó em ~7 verificações seguidas.
+        self._item_fields_memo: Tuple[Optional[ItemNode], Optional[Dict[str, Any]]] = (None, None)
         self.undefined_codes: Dict[str, int] = {}
         self.ontology_index = {normalize_code(key, self.norm_cache): value for key, value in self.ontology_index.items()}
         self._concept_keys: list[str] = list(self.ontology_index.keys())
@@ -842,7 +846,17 @@ class SemanticValidator:
                 fields.setdefault("description", node.description)
             return fields
         if isinstance(node, ItemNode):
-            fields.update(node.extra_fields)
+            # Estado do transformer, lido das ocorrências: o linker reinterpreta
+            # CODE/CHAIN em `extra_fields`, e o parse_cache devolve o mesmo nó na
+            # próxima compilação — validar `extra_fields` faria o resultado
+            # depender de quantas vezes o projeto já foi compilado. Nomes
+            # roteados (note, memo...) valem pelo nome exato; o atributo fundido
+            # só responde, abaixo, pelo nome que não foi escrito.
+            memo_node, raw = self._item_fields_memo
+            if memo_node is not node:
+                raw = raw_item_fields(node)
+                self._item_fields_memo = (node, raw)
+            fields.update(node.extra_fields if raw is None else raw)
             if node.quote:
                 fields.setdefault("quote", node.quote)
                 fields.setdefault("quotation", node.quote)

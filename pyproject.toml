@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synesis"
-version = "0.13.4"
+version = "0.14.0"
 description = "The confluence of information into intelligence - A DSL compiler that transforms qualitative research annotations into canonical knowledge structures"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -64,6 +64,10 @@ dev = [
     "twine >= 4.0",
     "ruff == 0.16.1",
     "mypy == 2.3.0",
+    # Testes do exportador OKF: ler o frontmatter (YAML) e conferir que nenhum
+    # valor vira estrutura Markdown (CommonMark). Nao sao dependencias de execucao.
+    "pyyaml >= 6.0",
+    "markdown-it-py >= 3.0",
 ]
 
 [project.urls]

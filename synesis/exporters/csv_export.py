@@ -48,6 +48,7 @@ from synesis.exporters._helpers import (
     _get_source_field_value,
 )
 from synesis.semantic.linker import LinkedProject
+from synesis.semantic.occurrences import item_chains
 
 CsvTable = tuple[List[str], List[Dict[str, Any]]]
 
@@ -122,9 +123,9 @@ def build_csv_tables(
         tables["ontologies"] = _build_ontologies_table(linked, None)
 
     # Chains
-    if _has_chain_data(linked):
+    if _has_chain_data(linked, template):
         has_relations = _detect_chain_relations(linked)
-        tables["chains"] = _build_chains_table(linked, has_relations)
+        tables["chains"] = _build_chains_table(linked, has_relations, template)
 
     # Codes (modo legado)
     if not template and linked.code_usage:
@@ -170,11 +171,11 @@ def _has_fields_for_scope(template: TemplateNode, scope: Scope) -> bool:
     return False
 
 
-def _has_chain_data(linked: LinkedProject) -> bool:
-    """Verifica se projeto tem chains."""
+def _has_chain_data(linked: LinkedProject, template: Optional[TemplateNode] = None) -> bool:
+    """Verifica se projeto tem chains (de todo campo CHAIN do template, pelo tipo)."""
     for source in linked.sources.values():
         for item in source.items:
-            if item.chains:
+            if item_chains(item, template, False):
                 return True
     return False
 
@@ -413,8 +414,17 @@ def _write_ontologies_csv(linked: LinkedProject, template: Optional[TemplateNode
             writer.writerow(_sanitize_row(row))
 
 
-def _build_chains_table(linked: LinkedProject, has_relations: bool = False) -> CsvTable:
-    """Constroi tabela de chains em memoria."""
+def _build_chains_table(
+    linked: LinkedProject,
+    has_relations: bool = False,
+    template: Optional[TemplateNode] = None,
+) -> CsvTable:
+    """Constroi tabela de chains em memoria.
+
+    Com template, cada cadeia vem de todo campo CHAIN (pelo tipo) e e lida no
+    modo do SEU campo (`occurrences.item_chains`, a regra do linker e do JSON).
+    `has_relations` so vale para cadeias sem campo declarado (modo legado).
+    """
     headers = [
         "bibref",
         "from_code",
@@ -428,8 +438,8 @@ def _build_chains_table(linked: LinkedProject, has_relations: bool = False) -> C
     rows: List[Dict[str, Any]] = []
     for source in linked.sources.values():
         for item in source.items:
-            for chain in item.chains:
-                for from_code, relation, to_code in chain.to_triples(has_relations=has_relations):
+            for chain, qualified in item_chains(item, template, has_relations):
+                for from_code, relation, to_code in chain.to_triples(has_relations=qualified):
                     location = chain.location
                     row = {
                         "bibref": item.bibref,

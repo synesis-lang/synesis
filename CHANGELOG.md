@@ -6,6 +6,130 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+
+## [0.14.0] - 2026-11-16
+
+Valor de campo por ocorrência. Os nós guardavam os valores fundidos por nome,
+e o linker os reinterpretava estendendo a lista do transformer. Por isso um
+CODE de nome livre repetido no mesmo ITEM (o padrão BUNDLE) saía duplicado, e a
+duplicação crescia a cada recompilação no mesmo processo.
+
+Verificação: os 51 `.synp` dos estudos de caso, compilados antes e depois nos
+dois modos de `check_codes`.
+- Diagnósticos, estatísticas e bibliografia saíram idênticos nos 51.
+- JSON, CSV, XLS e Alpaca saíram idênticos em 47.
+- Mudam 4, e só pelas correções abaixo:
+  - Erica, nos dois `.synp`, e Projeto_Davi: só a remoção das duplicatas;
+  - `posts`: só a tabela `chains` do CSV/XLS.
+
+### Added
+
+- **Exportação OKF v0.2 (experimental): `synesis compile projeto.synp --okf pasta/`.**
+  Gera um bundle [OKF](https://github.com/GoogleCloudPlatform/open-knowledge-format):
+  uma pasta de Markdown com frontmatter YAML, que um agente de IA lê
+  navegando, sem servidor.
+  - Conteúdo do bundle:
+    - `index.md` na raiz;
+    - `codebook.md` com o template;
+    - `concepts/`, um por ONTOLOGY;
+    - `codes/`, para códigos sem conceito, com `status: draft`;
+    - `topics/<campo>/`, para valores TOPIC de qualquer escopo;
+    - `sources/`, um por SOURCE, com cada ITEM numa seção com âncora.
+  - **Tudo vem do template.** Os campos aparecem na ordem do `.synt` e são
+    renderizados pelo tipo, em qualquer escopo. Os valores são lidos **por
+    ocorrência**, e o k-ésimo par de um BUNDLE junta a k-ésima ocorrência de
+    cada membro. Cada CHAIN segue o modo do próprio campo.
+  - **Proveniência:** `sources[].id` = bibref, com um rodapé por evidência.
+    `generated.by` = `synesis/<versão>`.
+  - **Valores sempre como texto literal.** O escape vale só onde o CommonMark
+    criaria estrutura: nenhum valor vira cabeçalho, lista, link, rodapé, HTML ou
+    tabela, e a prosa continua legível no arquivo cru.
+  - **Mesma entrada, mesmos bytes.** `generated.at` só entra com
+    `--okf-generated-at ISO` (com fuso).
+  - **Fica de fora de propósito:**
+    - `verified`, porque o Synesis não registra quem revisou;
+    - marcar uma relação como hierarquia, porque IS_A é uma decisão de
+      linguagem em aberto.
+  - A pasta de destino precisa estar vazia. A CLI segue a regra dos outros
+    formatos: não exporta projeto com erro, salvo com `--force`. No passo de
+    linkagem (vários projetos), `--okf` avisa e não gera nada.
+  - Na API: `CompilationResult.to_okf(pasta, generated_at=None)`,
+    `MemoryCompilationResult.to_okf_files(generated_at=None)` e
+    `synesis.exporters.build_okf_bundle(...)`. Não há dependência de execução
+    nova; os testes usam `pyyaml` e `markdown-it-py`, do extra `dev`.
+- **`FieldEntry` e `entries`.** `SourceNode`, `ItemNode` e `OntologyNode` passam
+  a ter `entries`: a lista ordenada das ocorrências escritas, cada uma com nome,
+  valor, localização e linhas brutas. Os atributos de sempre (`fields`,
+  `extra_fields`, `quote`, `notes`...) não mudam de forma.
+- **`synesis.semantic.occurrences`.**
+  - `field_occurrences(node, nome, template)` devolve um valor **por
+    ocorrência**, pelo tipo. CODE vira a lista de códigos daquela ocorrência,
+    em qualquer escopo; CHAIN vira `ChainNode`. É a leitura que preserva a
+    fronteira das ocorrências e o pareamento de BUNDLE.
+  - `item_field_value(item, nome)` e `ontology_field_value(ontologia, nome)`
+    leem pelo nome declarado.
+  - `item_chains(item, template, ...)` devolve as cadeias de todo campo CHAIN,
+    cada uma com o modo do seu campo. O linker e o JSON usam essa mesma regra.
+
+### Fixed
+
+- **CODE de nome livre duplicado.** Com `rotulos` escrito duas vezes no ITEM,
+  `X, Y` + `Z` saía como `['X, Y', 'Z', 'X', 'Y', 'Z']`. Agora sai
+  `['X', 'Y', 'Z']`.
+  - O `code_frequency` também inflava: no Erica, `dinamica` foi de 409 para 320
+    (−89 em 38 ITEMs); no Projeto_Davi, `ordem_2a` foi de 59.548 para 30.161
+    (−29.387 em 9.303 ITEMs).
+  - Os campos da ontologia que o JSON anexa a cada código do ITEM tinham
+    valores a mais pelo mesmo motivo.
+- **A recompilação no mesmo processo mudava o resultado.** O `parse_cache`
+  devolve os mesmos nós, e o linker os modificava no lugar. A cada compilação,
+  até um CODE escrito uma só vez ganhava mais uma cópia. O LSP é exatamente o
+  caso de recompilação no mesmo processo.
+  - Antes: 6 dos 51 projetos davam um JSON diferente na segunda compilação.
+    Agora: nenhum.
+  - O linker agora reconstrói o valor das ocorrências, de forma idempotente, e o
+    validador lê as ocorrências, e não o que o linker já reinterpretou.
+- **`note` e `memo` no mesmo ITEM recebiam os valores um do outro.** Os dois iam
+  para `item.notes`. O acessor agora lê o nome exato. O atributo fundido só
+  responde por um nome que não foi escrito, como antes.
+- **`quote` escrito duas vezes guardava só a última ocorrência.** O acessor
+  agora devolve as duas, como já fazia com um campo de nome livre.
+  `item.quote` mantém o comportamento antigo.
+- **JSON: CHAIN lido pelo tipo e no modo do próprio campo.** `_build_item_data`,
+  `_build_triples_index` e `_build_chain_usage` usavam um indicador de relação
+  global e só `item.chains`, ou seja, os campos chamados `chain`/`chains`.
+  - Num template com um CHAIN qualificado e outro simples, a cadeia simples
+    `Gama -> Delta -> Eps` virava a tripla `{from: Gama, relation: Delta, to: Eps}`.
+  - Cadeias de nome livre ficavam fora de `indices.triples`, `frequency`,
+    `source_count` e `code_frequency`.
+  - Agora o JSON usa a mesma regra do linker (`occurrences.item_chains`). Nos 51
+    projetos dos estudos de caso, o JSON sai idêntico: nenhum combina esses
+    casos.
+  - A frequência de um conceito usado em CHAIN conta **uma vez por ocorrência
+    na tripla**, não por ITEM. O nó do meio de `A -> B -> C` conta 2. É a regra
+    de antes, agora fixada em teste.
+- **CSV e XLS: CHAIN lido pelo tipo e no modo do próprio campo.** A tabela e a
+  planilha `chains` nem consultavam o template. Decidiam se a cadeia era
+  qualificada pela contagem de elementos (ímpar ≥ 3) e liam só `item.chains`.
+  - Uma cadeia simples de 3 elementos (`A -> B -> C`) virava a tripla
+    `{A, relação B, C}`.
+  - Uma cadeia de 2 elementos sumia.
+  - No `posts` (Quinto_Andar), a tabela tinha 1 linha errada e agora tem as 3
+    triplas corretas, iguais às do linker.
+  - Agora CSV e XLS usam `occurrences.item_chains`. Sem template, a heurística
+    continua como padrão do modo legado.
+- **CHAIN de ONTOLOGY chamada `is_a`/`parent` sumia das exportações tabulares.**
+  - O transformer a desvia por nome para `parent_chains`, e o acessor dos
+    exportadores (`_get_ontology_field_value`) devolvia vazio. O CSV, o XLS e o
+    Alpaca recebiam a coluna em branco.
+  - Agora o campo volta pelo nome declarado, como qualquer outro.
+  - O acesso não atribui sentido: o `hierarchy` continua formado só pelos nomes
+    `parent`/`parents`/`is_a`/`isa`. Qual campo significa IS_A é decisão de
+    linguagem, ainda em aberto.
+
+
 ## [0.13.4] - 2026-10-14
 
 Compilação de projetos grandes muito mais rápida, e códigos sem conceito na

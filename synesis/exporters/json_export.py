@@ -58,6 +58,7 @@ from synesis.exporters._helpers import (
 )
 from synesis.parser.bib_loader import BibEntry
 from synesis.semantic.linker import LinkedProject
+from synesis.semantic.occurrences import item_chains
 
 _ITEM_INDEX_WIDTH = 4
 
@@ -189,13 +190,14 @@ def _build_chain_usage(
 
     Necessario para corrigir frequency/source_count em projetos que usam
     conceitos exclusivamente via chains (sem campos CODE de scope ITEM).
+    Cadeias de todo campo CHAIN, pelo tipo, cada uma lida no modo do seu campo.
     """
     has_relations = _has_chain_relations(template)
     usage: Dict[str, List[ItemNode]] = {}
     for source in linked.sources.values():
         for item in source.items:
-            for chain in item.chains:
-                for from_c, _rel, to_c in chain.to_triples(has_relations):
+            for chain, qualified in item_chains(item, template, has_relations):
+                for from_c, _rel, to_c in chain.to_triples(qualified):
                     for concept in (from_c, to_c):
                         key = _normalize_code(concept)
                         usage.setdefault(key, []).append(item)
@@ -246,6 +248,9 @@ def _build_triples_index(
 ) -> List[Dict[str, Any]]:
     """
     Enriquece triplas com proveniencia (source_item, location).
+
+    Cadeias de todo campo CHAIN, pelo tipo, cada uma lida no modo do seu campo
+    (espelha linker.all_triples).
     """
     has_relations = _has_chain_relations(template)
     triples: List[Dict[str, Any]] = []
@@ -254,8 +259,8 @@ def _build_triples_index(
         for index, item in enumerate(source.items, start=1):
             item_id = _format_item_id(bibref, index)
 
-            for chain in item.chains:
-                for from_code, relation, to_code in chain.to_triples(has_relations):
+            for chain, qualified in item_chains(item, template, has_relations):
+                for from_code, relation, to_code in chain.to_triples(qualified):
                     triples.append({
                         "from": from_code,
                         "relation": relation,
@@ -521,14 +526,15 @@ def _build_item_data(
 
     data: Dict[str, Any] = {}
     item_fields = _get_field_names_for_scope(template, Scope.ITEM)
-    has_relations = _has_chain_relations(template)
 
     for name in item_fields:
         spec = template.field_specs.get(name)
         raw = _get_item_field_value(item, name)
         if spec and spec.type == FieldType.CHAIN:
-            # v3.0: chains como lista de {from, relation, to}
-            data[name] = _serialize_chain_as_triples(raw, has_relations)
+            # v3.0: chains como lista de {from, relation, to}, no modo DESTE
+            # campo: com um CHAIN qualificado e outro simples no template, o
+            # flag global lia a cadeia simples como qualificada.
+            data[name] = _serialize_chain_as_triples(raw, bool(spec.relations))
         else:
             data[name] = _clean_value(raw)
 

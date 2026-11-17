@@ -35,6 +35,7 @@ from lark import Token, Transformer, v_args
 
 from synesis.ast.nodes import (
     ChainNode,
+    FieldEntry,
     FieldSpec,
     FieldType,
     IncludeNode,
@@ -85,6 +86,37 @@ def _add_field(fields: Dict[str, Any], name: str, value: Any) -> None:
             fields[name] = [existing, value]
     else:
         fields[name] = value
+
+
+def _field_entry(
+    name: str, value: Any, location: SourceLocation, lines: Optional[List[Any]] = None
+) -> FieldEntry:
+    """Ocorrência escrita, com o valor na forma que `_add_field` guardaria.
+
+    O valor em lista é copiado: `_add_field` acumula por `append` e não pode
+    alterar o valor guardado na ocorrência. `lines` e as localizações dos
+    códigos são as listas do próprio transformer, compartilhadas (ninguém as
+    altera): copiá-las dobraria o custo de serializar os nós.
+    """
+    code_locations = None
+    if isinstance(value, TextBlockValue):
+        if lines is None:
+            lines = value.lines
+        value = value.text
+    elif isinstance(value, CodeListValue):
+        code_locations = value.locations or None
+        value = list(value.values)
+    elif isinstance(value, list):
+        value = list(value)
+    return FieldEntry(
+        name=name,
+        value=value,
+        file=location.file,
+        line=location.line,
+        column=location.column,
+        lines=lines,
+        code_locations=code_locations,
+    )
 
 
 def _field_type_from_kw(value: str | FieldType) -> FieldType:
@@ -651,12 +683,14 @@ class SynesisTransformer(Transformer):
         bibref = items[1]
         field_entries = items[2:-2]
         fields: Dict[str, Any] = {}
+        entries: List[FieldEntry] = []
         for entry in field_entries:
             if isinstance(entry, Token) and entry.type == "NEWLINE":
                 continue
             if not isinstance(entry, tuple):
                 continue
-            name, value, _location = entry
+            name, value, location = entry
+            entries.append(_field_entry(name, value, location))
             if isinstance(value, TextBlockValue):
                 value = value.text
             _add_field(fields, name, value)
@@ -665,6 +699,7 @@ class SynesisTransformer(Transformer):
             fields=fields,
             items=[],
             location=_source_location(self.file_path, meta),
+            entries=entries,
         )
 
     @v_args(tree=True)
@@ -681,15 +716,20 @@ class SynesisTransformer(Transformer):
         code_locations: Dict[str, List[SourceLocation]] = {}
         field_line_tokens: Dict[str, List[List[Any]]] = {}
         field_names: List[str] = []
+        entries: List[FieldEntry] = []
         for entry in field_entries:
             if isinstance(entry, Token) and entry.type == "NEWLINE":
                 continue
             if not isinstance(entry, tuple):
                 continue
-            name, value, _location = entry
+            name, value, location = entry
             if isinstance(value, TextBlockValue):
-                field_line_tokens.setdefault(name, []).append(list(value.lines))
+                token_lines = list(value.lines)
+                entries.append(_field_entry(name, value, location, token_lines))
+                field_line_tokens.setdefault(name, []).append(token_lines)
                 value = value.text
+            else:
+                entries.append(_field_entry(name, value, location))
             field_names.append(name)
             lname = name.lower()
             if lname in {"quote", "quotation"}:
@@ -737,6 +777,7 @@ class SynesisTransformer(Transformer):
             field_line_tokens=field_line_tokens,
             field_names=field_names,
             location=_source_location(self.file_path, meta),
+            entries=entries,
         )
 
     @v_args(tree=True)
@@ -749,12 +790,14 @@ class SynesisTransformer(Transformer):
         fields: Dict[str, Any] = {}
         parent_chains: List[ChainNode] = []
         field_names: List[str] = []
+        entries: List[FieldEntry] = []
         for entry in field_entries:
             if isinstance(entry, Token) and entry.type == "NEWLINE":
                 continue
             if not isinstance(entry, tuple):
                 continue
-            name, value, _location = entry
+            name, value, location = entry
+            entries.append(_field_entry(name, value, location))
             if isinstance(value, TextBlockValue):
                 value = value.text
             field_names.append(name)
@@ -776,6 +819,7 @@ class SynesisTransformer(Transformer):
             parent_chains=parent_chains,
             field_names=field_names,
             location=_source_location(self.file_path, meta),
+            entries=entries,
         )
 
     def concept_name(self, items: List[Any]) -> str:

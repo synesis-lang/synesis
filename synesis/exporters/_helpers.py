@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from synesis.ast.nodes import FieldType, ItemNode, OntologyNode, Scope, SourceNode, TemplateNode
+from synesis.semantic.occurrences import item_field_value, ontology_field_value
 
 
 def _get_field_names_for_scope(template: TemplateNode, scope: Scope) -> List[str]:
@@ -35,20 +36,12 @@ def _get_field_names_for_scope_and_types(
 
 
 def _get_item_field_value(item: ItemNode, name: str) -> Any:
-    value = item.extra_fields.get(name)
-    if value is not None:
-        return value
+    """Valor de um campo do ITEM pelo nome declarado (ver occurrences.item_field_value).
 
-    lname = name.lower()
-    if lname in {"quote", "quotation"}:
-        return item.quote
-    if lname in {"code", "codes"}:
-        return item.codes
-    if lname in {"note", "notes", "memo", "memos"}:
-        return item.notes
-    if lname in {"chain", "chains"}:
-        return item.chains
-    return ""
+    `note` e `memo` escritos no mesmo ITEM devolvem cada um as próprias
+    ocorrências; um nome roteado escrito mais de uma vez devolve todas.
+    """
+    return item_field_value(item, name, default="")
 
 
 def _chain_to_text(chain: Any) -> str:
@@ -113,13 +106,9 @@ def _get_source_field_value(
 
 
 def _get_ontology_field_value(ontology: OntologyNode, name: str) -> Any:
-    value = ontology.fields.get(name)
-    if value is not None:
-        return value
+    """Valor de um campo da ONTOLOGY pelo nome declarado (ver occurrences.ontology_field_value).
 
-    lname = name.lower()
-    if lname == "description":
-        return ontology.description
-    if lname == "concept":
-        return ontology.concept
-    return ""
+    Um CHAIN chamado `is_a`/`parent` volta pelo nome, como qualquer outro campo;
+    o acessor não lhe atribui sentido de hierarquia.
+    """
+    return ontology_field_value(ontology, name, default="")

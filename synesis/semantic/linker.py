@@ -30,8 +30,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from lark import Token
-
 from synesis.ast.nodes import (
     ChainNode,
     FieldType,
@@ -52,97 +50,13 @@ from synesis.ast.results import (
     SourceWithoutItems,
     ValidationResult,
 )
-
-
-def _token_location(file_path: Path, token: Token, offset: int = 0) -> SourceLocation:
-    return SourceLocation(
-        file=file_path,
-        line=getattr(token, "line", 1),
-        column=max(1, getattr(token, "column", 1) + offset),
-    )
-
-
-def _split_codes_from_line(file_path: Path, token: Token) -> Tuple[List[str], List[SourceLocation]]:
-    text = str(token)
-    values: List[str] = []
-    locations: List[SourceLocation] = []
-    start = 0
-    while start <= len(text):
-        comma_idx = text.find(",", start)
-        if comma_idx == -1:
-            segment = text[start:]
-        else:
-            segment = text[start:comma_idx]
-        trimmed = segment.strip()
-        if trimmed:
-            leading_ws = len(segment) - len(segment.lstrip())
-            offset = start + leading_ws
-            values.append(trimmed)
-            locations.append(_token_location(file_path, token, offset))
-        if comma_idx == -1:
-            break
-        start = comma_idx + 1
-    return values, locations
-
-
-def _split_chain_from_line(file_path: Path, token: Token) -> Tuple[List[str], List[SourceLocation]]:
-    text = str(token)
-    nodes: List[str] = []
-    locations: List[SourceLocation] = []
-    start = 0
-    while start <= len(text):
-        arrow_idx = text.find("->", start)
-        if arrow_idx == -1:
-            segment = text[start:]
-        else:
-            segment = text[start:arrow_idx]
-        trimmed = segment.strip()
-        if trimmed:
-            leading_ws = len(segment) - len(segment.lstrip())
-            offset = start + leading_ws
-            nodes.append(trimmed)
-            locations.append(_token_location(file_path, token, offset))
-        if arrow_idx == -1:
-            break
-        start = arrow_idx + 2
-    return nodes, locations
-
-
-def _parse_code_lines(file_path: Path, lines: List[Any]) -> Tuple[List[str], List[SourceLocation]]:
-    values: List[str] = []
-    locations: List[SourceLocation] = []
-    for line in lines:
-        if isinstance(line, Token):
-            parsed_values, parsed_locations = _split_codes_from_line(file_path, line)
-            values.extend(parsed_values)
-            locations.extend(parsed_locations)
-        else:
-            for part in str(line).split(","):
-                part = part.strip()
-                if part:
-                    values.append(part)
-    return values, locations
-
-
-def _parse_chain_lines(file_path: Path, lines: List[Any], location: SourceLocation) -> ChainNode:
-    nodes: List[str] = []
-    locations: List[SourceLocation] = []
-    for line in lines:
-        if isinstance(line, Token):
-            parsed_nodes, parsed_locations = _split_chain_from_line(file_path, line)
-            nodes.extend(parsed_nodes)
-            locations.extend(parsed_locations)
-        else:
-            for part in str(line).split("->"):
-                part = part.strip()
-                if part:
-                    nodes.append(part)
-    return ChainNode(
-        nodes=nodes,
-        relations=[],
-        location=location,
-        node_locations=locations if locations else None,
-    )
+from synesis.semantic.occurrences import (
+    _parse_chain_lines,
+    _parse_code_lines,
+    entries_named,
+    item_chains,
+    item_field_value,
+)
 
 
 def _merge_code_values(extra_fields: Dict[str, Any], field_name: str, values: List[str]) -> None:
@@ -388,38 +302,13 @@ class Linker:
         e, por eles, do LSP (relações, grafo) e da lista de conceitos do coder.
 
         Cada cadeia sai com o modo do SEU campo (qualificada se o campo declara
-        RELATIONS): com dois CHAIN de configurações diferentes, um flag global
-        leria a cadeia simples como qualificada. Sem template, ou sem campo
-        CHAIN declarado, o comportamento anterior é mantido.
+        RELATIONS); a regra mora em `occurrences.item_chains`, que o exportador
+        JSON também usa.
 
         Returns:
             Lista de (cadeia, qualificada), sem repetir a mesma cadeia.
         """
-        chain_fields = []
-        if self.template:
-            chain_fields = [
-                (name, spec)
-                for name, spec in self.template.field_specs.items()
-                if spec.scope == Scope.ITEM and spec.type == FieldType.CHAIN
-            ]
-        if not chain_fields:
-            return [(chain, default_qualified) for chain in item.chains]
-
-        out: List[Tuple[ChainNode, bool]] = []
-        seen: set = set()
-        for name, spec in chain_fields:
-            raw = self._get_item_field_value(item, name)
-            values = raw if isinstance(raw, list) else [raw]
-            for chain in values:
-                if isinstance(chain, ChainNode) and id(chain) not in seen:
-                    seen.add(id(chain))
-                    out.append((chain, bool(spec.relations)))
-        # Cadeia em item.chains que nenhum campo declarado cobriu: modo anterior.
-        for chain in item.chains:
-            if id(chain) not in seen:
-                seen.add(id(chain))
-                out.append((chain, default_qualified))
-        return out
+        return item_chains(item, self.template, default_qualified)
 
     def _collect_item_codes(self, item: ItemNode) -> List[str]:
         if not self.template:
@@ -452,6 +341,10 @@ class Linker:
         else:
             file_path = Path("<unknown>")
 
+        if item.entries:
+            self._rebuild_typed_item_fields(item, field_specs, file_path)
+            return
+
         for field_name, spec in field_specs.items():
             if spec.scope != Scope.ITEM:
                 continue
@@ -481,6 +374,69 @@ class Linker:
                 if chain_node.nodes:
                     _merge_chain_value(item.extra_fields, field_name, chain_node)
 
+    def _rebuild_typed_item_fields(
+        self, item: ItemNode, field_specs: Dict[str, Any], file_path: Path
+    ) -> None:
+        """Reinterpreta CODE/CHAIN de nome livre pelo tipo, a partir das ocorrências.
+
+        O transformer não conhece o template: um CODE de nome livre chega como
+        texto ("X, Y") e uma CHAIN escrita sem seta na 1a linha, como texto. O
+        valor tipado é RECONSTRUÍDO das ocorrências (`item.entries`) a cada
+        link, em vez de estender o que já está em `extra_fields`. Estender
+        duplicava os códigos de um campo escrito mais de uma vez no ITEM e, como
+        o parse_cache devolve os mesmos nós, multiplicava-os a cada recompilação
+        no mesmo processo (LSP). Reconstruir é idempotente.
+
+        Só reconstrói campos com alguma ocorrência em texto bruto (`lines`),
+        o mesmo gatilho de antes; a forma do valor é a de sempre (lista plana de
+        códigos; ChainNode, ou lista se o campo foi escrito mais de uma vez).
+        """
+        for field_name, spec in field_specs.items():
+            if spec.scope != Scope.ITEM:
+                continue
+            if spec.type not in {FieldType.CODE, FieldType.CHAIN}:
+                continue
+            occurrences = entries_named(item, field_name)
+            if not any(entry.lines for entry in occurrences):
+                continue
+
+            if spec.type == FieldType.CODE:
+                codes: List[Any] = []
+                base_locations: List[SourceLocation] = []
+                parsed_locations: List[SourceLocation] = []
+                for entry in occurrences:
+                    base_locations.extend(entry.code_locations or [])
+                    if entry.lines:
+                        values, locations = _parse_code_lines(file_path, entry.lines)
+                        codes.extend(values)
+                        parsed_locations.extend(locations)
+                    elif isinstance(entry.value, list):
+                        codes.extend(entry.value)
+                    else:
+                        codes.append(entry.value)
+                if codes:
+                    item.extra_fields[field_name] = codes
+                seen = {(loc.file, loc.line, loc.column) for loc in base_locations}
+                locations_out = list(base_locations)
+                for loc in parsed_locations:
+                    key = (loc.file, loc.line, loc.column)
+                    if key not in seen:
+                        seen.add(key)
+                        locations_out.append(loc)
+                if locations_out:
+                    item.code_locations[field_name] = locations_out
+                continue
+
+            chain_location = item.location or SourceLocation(file_path, 1, 1)
+            chains: List[Any] = []
+            for entry in occurrences:
+                if entry.lines and not isinstance(entry.value, ChainNode):
+                    chain_node = _parse_chain_lines(file_path, entry.lines, chain_location)
+                    chains.append(chain_node if chain_node.nodes else entry.value)
+                else:
+                    chains.append(entry.value)
+            item.extra_fields[field_name] = chains[0] if len(chains) == 1 else chains
+
     def _extract_code_values(self, value: Any) -> List[str]:
         if value is None:
             return []
@@ -500,20 +456,7 @@ class Linker:
         return []
 
     def _get_item_field_value(self, item: ItemNode, name: str) -> Any:
-        value = item.extra_fields.get(name)
-        if value is not None:
-            return value
-
-        lname = name.lower()
-        if lname in {"quote", "quotation"}:
-            return item.quote
-        if lname in {"code", "codes"}:
-            return item.codes
-        if lname in {"note", "notes", "memo", "memos"}:
-            return item.notes
-        if lname in {"chain", "chains"}:
-            return item.chains
-        return None
+        return item_field_value(item, name)
 
     def _check_duplicate_source_bibrefs(self) -> None:
         """Erro 70: mesma bibref declarada em mais de um bloco SOURCE."""

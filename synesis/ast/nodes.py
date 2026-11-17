@@ -8,7 +8,7 @@ Propósito:
 Componentes principais:
     - Nós de domínio: ProjectNode, SourceNode, ItemNode, OntologyNode
     - Nós de template: TemplateNode, FieldSpec, OrderedValue
-    - Auxiliares: SourceLocation, ChainNode, IncludeNode
+    - Auxiliares: SourceLocation, ChainNode, IncludeNode, FieldEntry
 
 Dependências críticas:
     - dataclasses: estruturação dos nós
@@ -207,12 +207,42 @@ class ProjectNode:
         }
 
 
+@dataclass(slots=True)
+class FieldEntry:
+    """Uma ocorrência de campo escrita num bloco, na ordem do arquivo.
+
+    `value` é o valor como o transformer o produziu — texto, ChainNode ou lista
+    de códigos já separada pela gramática —, antes de qualquer leitura pelo
+    tipo do template, que o transformer não conhece. `lines` guarda os tokens
+    brutos de um valor em texto (TEXT_LINE), para o linker reinterpretá-lo pelo
+    tipo com a posição de cada código. Os atributos agregados dos nós (`fields`,
+    `extra_fields`, `notes`...) fundem ocorrências; `entries` não.
+
+    Forma compacta (arquivo compartilhado + linha/coluna, sem um SourceLocation
+    por ocorrência): um projeto grande tem milhões de ocorrências, e os nós
+    voltam serializados dos processos de parse (ProcessPoolExecutor).
+    """
+
+    name: str
+    value: Any
+    file: Path
+    line: int
+    column: int
+    lines: Optional[List[Any]] = None
+    code_locations: Optional[List[SourceLocation]] = None
+
+    @property
+    def location(self) -> SourceLocation:
+        return SourceLocation(file=self.file, line=self.line, column=self.column)
+
+
 @dataclass
 class SourceNode:
     bibref: str
     fields: Dict[str, Any]
     items: List["ItemNode"] = field(default_factory=list)
     location: Optional[SourceLocation] = None
+    entries: List[FieldEntry] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -235,6 +265,7 @@ class ItemNode:
     field_line_tokens: Dict[str, List[List[Any]]] = field(default_factory=dict)
     field_names: List[str] = field(default_factory=list)
     location: Optional[SourceLocation] = None
+    entries: List[FieldEntry] = field(default_factory=list)
 
     def note_chain_pairs(self) -> List[Tuple[str, ChainNode]]:
         return list(zip(self.notes, self.chains))
@@ -259,6 +290,7 @@ class OntologyNode:
     parent_chains: List[ChainNode] = field(default_factory=list)
     field_names: List[str] = field(default_factory=list)
     location: Optional[SourceLocation] = None
+    entries: List[FieldEntry] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {

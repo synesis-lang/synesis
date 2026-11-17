@@ -57,6 +57,7 @@ from synesis.exporters._helpers import (
     _get_source_field_value,
 )
 from synesis.semantic.linker import LinkedProject
+from synesis.semantic.occurrences import item_chains
 
 
 def build_xls_workbook(
@@ -129,8 +130,8 @@ def build_xls_workbook(
 
     # Exporta chains apenas se houver dados de chains no projeto
     has_relations = _detect_chain_relations(linked)
-    if _has_chain_data(linked):
-        _write_chains_sheet(wb, linked, has_relations, prefix)
+    if _has_chain_data(linked, template):
+        _write_chains_sheet(wb, linked, has_relations, prefix, template)
 
     # Exporta codes apenas em modo legado
     if not template and linked.code_usage:
@@ -195,11 +196,11 @@ def _has_fields_for_scope(template: TemplateNode, scope: Scope) -> bool:
     return False
 
 
-def _has_chain_data(linked: LinkedProject) -> bool:
-    """Verifica se projeto tem chains."""
+def _has_chain_data(linked: LinkedProject, template: Optional[TemplateNode] = None) -> bool:
+    """Verifica se projeto tem chains (de todo campo CHAIN do template, pelo tipo)."""
     for source in linked.sources.values():
         for item in source.items:
-            if item.chains:
+            if item_chains(item, template, False):
                 return True
     return False
 
@@ -431,7 +432,19 @@ def _write_ontologies_sheet(wb: Workbook, linked: LinkedProject, template: Optio
     _auto_size_columns(ws)
 
 
-def _write_chains_sheet(wb: Workbook, linked: LinkedProject, has_relations: bool = False, prefix: str = "") -> None:
+def _write_chains_sheet(
+    wb: Workbook,
+    linked: LinkedProject,
+    has_relations: bool = False,
+    prefix: str = "",
+    template: Optional[TemplateNode] = None,
+) -> None:
+    """Planilha de chains.
+
+    Com template, cada cadeia vem de todo campo CHAIN (pelo tipo) e e lida no
+    modo do SEU campo (`occurrences.item_chains`, a regra do linker e do JSON).
+    `has_relations` so vale para cadeias sem campo declarado (modo legado).
+    """
     ws = wb.create_sheet(_sheet_name("chains", prefix))
 
     headers = [
@@ -450,8 +463,8 @@ def _write_chains_sheet(wb: Workbook, linked: LinkedProject, has_relations: bool
     # Escreve dados
     for source in linked.sources.values():
         for item in source.items:
-            for chain in item.chains:
-                for from_code, relation, to_code in chain.to_triples(has_relations=has_relations):
+            for chain, qualified in item_chains(item, template, has_relations):
+                for from_code, relation, to_code in chain.to_triples(has_relations=qualified):
                     location = chain.location
                     row = [
                         item.bibref,

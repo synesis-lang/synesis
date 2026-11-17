@@ -215,6 +215,30 @@ class MemoryCompilationResult:
 
         return build_alpaca_pairs(self.linked_project, self.template, self.bibliography)
 
+    def to_okf_files(self, generated_at: Optional[str] = None) -> Dict[str, str]:
+        """
+        Retorna o bundle OKF v0.2 (EXPERIMENTAL) em memoria: {caminho: texto}.
+
+        Args:
+            generated_at: data ISO 8601 com fuso para `generated.at`; omitida
+                por padrao (a mesma entrada da sempre os mesmos bytes).
+
+        Example:
+            >>> files = result.to_okf_files()
+            >>> print(files["index.md"])
+        """
+        if not self.linked_project or not self.template:
+            return {}
+        from synesis.exporters.okf_export import build_okf_bundle
+
+        return build_okf_bundle(
+            self.linked_project,
+            self.template,
+            self.bibliography,
+            getattr(self, "dataset", None),
+            generated_at=generated_at,
+        )
+
     def to_dataframes(self) -> Dict[str, Any]:
         """
         Retorna todas as tabelas como DataFrames.

@@ -45,6 +45,7 @@ from synesis.compiler import CompilationStats, SynesisCompiler
 from synesis.exporters.alpaca_export import export_alpaca
 from synesis.exporters.csv_export import export_csv
 from synesis.exporters.json_export import export_json
+from synesis.exporters.okf_export import export_okf
 from synesis.exporters.xls_export import export_xls
 from synesis.parser.lexer import SynesisSyntaxError, parse_file
 from synesis.parser.template_loader import TemplateLoadError, load_template
@@ -239,6 +240,9 @@ _EPILOG_COMPILE = _ex(
     "  # Export Alpaca JSONL for LLM fine-tuning",
     "  synesis compile project.synp --alpaca dataset.jsonl",
     "",
+    "  # Export an OKF knowledge bundle for AI agents (experimental, OKF v0.2)",
+    "  synesis compile project.synp --okf bundle/",
+    "",
     "  # Combine multiple export formats",
     "  synesis compile project.synp --json out.json --csv out_csv/ --alpaca dataset.jsonl",
     "",
@@ -419,22 +423,28 @@ def main(ctx: click.Context, verbose: int, quiet: int) -> None:
 @click.option("--csv", "csv_dir", type=click.Path(), help="Export CSV tables to directory")
 @click.option("--xls", "xls_path", type=click.Path(), help="Export Excel workbook (.xlsx)")
 @click.option("--alpaca", "alpaca_path", type=click.Path(), help="Export Alpaca JSONL for LLM fine-tuning")
+@click.option("--okf", "okf_dir", type=click.Path(),
+              help="Export an OKF v0.2 knowledge bundle to a new or empty directory (experimental)")
+@click.option("--okf-generated-at", "okf_generated_at", metavar="ISO",
+              help="Date for OKF generated.at (ISO 8601 with time zone); omitted by default")
 @click.option("--strict", is_flag=True, help="Treat warnings as errors (implies --check-codes)")
 @click.option("--check-codes", is_flag=True,
               help="List every code missing from the ontology, with suggestions (default: one-line summary)")
 @click.option("--stats", is_flag=True, help="Show compilation statistics")
 @click.option("--force", is_flag=True, help="Generate artifacts even with errors")
-def compile(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, check_codes: bool, stats: bool, force: bool) -> None:
+def compile(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, okf_dir: str | None, okf_generated_at: str | None, strict: bool, check_codes: bool, stats: bool, force: bool) -> None:
     """Compile one Synesis project, or link several (compile p1 p2 ...)."""
     # --strict e o portao: nao pode passar com codigos indefinidos escondidos.
     check_codes = check_codes or strict
     if len(projects) == 1:
-        _compile_single(projects[0], json_path, csv_dir, xls_path, alpaca_path, strict, stats, force, check_codes)
+        _compile_single(projects[0], json_path, csv_dir, xls_path, alpaca_path, strict, stats, force, check_codes,
+                        okf_dir=okf_dir, okf_generated_at=okf_generated_at)
     else:
-        _link_projects(projects, json_path, csv_dir, xls_path, alpaca_path, strict, stats, force, check_codes)
+        _link_projects(projects, json_path, csv_dir, xls_path, alpaca_path, strict, stats, force, check_codes,
+                       okf_dir=okf_dir)
 
 
-def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False) -> None:
+def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False, *, okf_dir: str | None = None, okf_generated_at: str | None = None) -> None:
     """Compile a single Synesis project (unchanged legacy path)."""
     click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + "  Compile seu pensamento.")
 
@@ -555,6 +565,8 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
                 export_xls(linked_project, template, Path(xls_path), bibliography, dataset)
             if alpaca_path:
                 export_alpaca(linked_project, Path(alpaca_path), template, bibliography)
+            if okf_dir:
+                _export_okf_cli(linked_project, Path(okf_dir), template, bibliography, dataset, okf_generated_at)
 
         raise SystemExit(exit_code)
 
@@ -570,6 +582,16 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
         if click.get_current_context().obj and click.get_current_context().obj.get("debug"):
             raise
         raise SystemExit(1)
+
+
+def _export_okf_cli(linked_project, path: Path, template, bibliography, dataset, generated_at: str | None) -> None:
+    """--okf: bundle OKF (experimental). Pasta com conteudo ou data invalida viram erro claro."""
+    try:
+        count = export_okf(linked_project, path, template, bibliography, dataset, generated_at=generated_at)
+    except (FileExistsError, ValueError) as exc:
+        click.echo(click.style(f"erro: --okf: {exc}", fg="red"), err=True)
+        raise SystemExit(1)
+    click.echo(f"OKF: {count} arquivo(s) em {path} (experimental, OKF v0.2)")
 
 
 def _member_label_field(template) -> str | None:
@@ -775,7 +797,7 @@ def _write_links_xlsx(link_result, members, member_results, path: Path) -> None:
     wb.save(path)
 
 
-def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False) -> None:
+def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False, *, okf_dir: str | None = None) -> None:
     """Link step: compila N projetos isolados e resolve IDENTIFIES/REFERS TO entre eles.
 
     Modelo do linker C/C++ (D2): a agregacao e modo de CLI, nunca de LSP. Cada
@@ -831,6 +853,13 @@ def _link_projects(projects: tuple[str, ...], json_path: str | None, csv_dir: st
         click.echo(click.style(
             "aviso: --alpaca ainda nao e suportado no passo de linkagem (multiplos projetos) "
             "— nenhum dataset foi gerado. Exporte cada projeto separadamente.",
+            fg="yellow",
+        ), err=True)
+
+    if okf_dir:
+        click.echo(click.style(
+            "aviso: --okf ainda nao e suportado no passo de linkagem (multiplos projetos) "
+            "— nenhum bundle foi gerado. Exporte cada projeto separadamente.",
             fg="yellow",
         ), err=True)
 
