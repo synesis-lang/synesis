@@ -72,7 +72,12 @@ from synesis.parser.bib_loader import (
     merge_bibliographies,
 )
 from synesis.parser.dataset_loader import SOURCE_FILE_KEY, DatasetError, load_dataset
-from synesis.parser.lexer import SynesisSyntaxError, parse_file, read_source_file
+from synesis.parser.lexer import (
+    SynesisSyntaxError,
+    is_blank_source_file,
+    parse_file,
+    read_source_file,
+)
 from synesis.parser.parse_cache import get_cached_nodes, put_cached_nodes
 from synesis.parser.paths import (
     INCLUDE_EXTENSIONS,
@@ -819,6 +824,9 @@ class SynesisCompiler:
                 tree = parse_file(path)
                 nodes = SynesisTransformer(path).transform(tree)
             except SynesisSyntaxError as exc:
+                if is_blank_source_file(path):
+                    # Arquivo vazio ou so com comentarios: nenhum bloco, sem erro.
+                    return [], result
                 result.add(UnreadableIncludedFile(
                     location=exc.location or SourceLocation(path, 1, 1),
                     filename=path.name,
@@ -852,13 +860,15 @@ def _parse_single_annotation(
     Roda em outro processo: devolve a falha como string (o chamador a converte em
     UnreadableIncludedFile) para nao depender de excecoes picklable.
     """
-    from synesis.parser.lexer import SynesisSyntaxError, parse_file
+    from synesis.parser.lexer import SynesisSyntaxError, is_blank_source_file, parse_file
     from synesis.parser.transformer import SynesisTransformer
 
     try:
         tree = parse_file(path)
         nodes = SynesisTransformer(path).transform(tree)
     except SynesisSyntaxError as exc:
+        if is_blank_source_file(path):
+            return [], [], None  # vazio ou so comentarios: nenhum bloco, sem erro
         return [], [], exc.message
     except (OSError, UnicodeDecodeError) as exc:
         return [], [], str(exc)

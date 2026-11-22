@@ -52,6 +52,30 @@ class SourceFileTooLarge(OSError):
     """Arquivo-fonte excede MAX_SOURCE_BYTES."""
 
 
+def is_blank_source(content: str) -> bool:
+    """Verdadeiro quando o conteudo nao tem texto Synesis: so espaco e comentarios `#`.
+
+    A gramatica exige ao menos um bloco, e um arquivo assim levanta
+    "Unexpected token <EOF>". Para anotacoes (.syn) e organizador (.syno) isso
+    nao e erro: um arquivo vazio nao declara nada. Os chamadores que leem esses
+    arquivos consultam esta funcao NO CAMINHO DE ERRO e devolvem "nenhum bloco";
+    template e projeto continuam exigindo conteudo.
+    """
+    for line in content.lstrip("﻿").splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            return False
+    return True
+
+
+def is_blank_source_file(path: Path | str) -> bool:
+    """`is_blank_source` aplicado a um arquivo; falso se ele nao puder ser lido."""
+    try:
+        return is_blank_source(read_source_file(path))
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def read_source_file(path: Path | str) -> str:
     """Le um arquivo-fonte UTF-8 recusando arquivos acima do teto de tamanho.
 

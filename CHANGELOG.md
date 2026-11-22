@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Changed — caminhos relativos à pasta do projeto em todas as saídas (C-3)
+
+- JSON, CSV e XLS gravavam caminhos absolutos da máquina de quem compilou
+  (`traceability.file`, localizações de template, campos, ontologia e, conforme a
+  invocação, do projeto e dos includes). Agora todo caminho é relativo à pasta do
+  `.synp`, com barras normais; arquivo fora dela (`INCLUDE SHARED`) sai com `../`.
+  O JSON declara `export_metadata.paths_relative_to = "project_folder"`.
+- **Mudança de contrato:** consumidores resolvem o caminho juntando a pasta do
+  projeto (não a do JSON) com o valor. Duas cópias do mesmo projeto passam a gerar
+  o mesmo JSON.
+
+### Fixed — identificador SPDX da licença (L-1)
+
+- `license` passa de `AGPL-3.0-only AND LicenseRef-Synesis-data-output-exception` para
+  `LicenseRef-Synesis-AGPL-3.0-with-Data-Output-Exception`. Em SPDX, `AND` significa duas
+  licenças cumulativas, não uma permissão adicional sobre a AGPL; uma exceção não
+  cadastrada se representa por um único `LicenseRef` com o conjunto dos termos
+  (`LICENSE` + `LICENSE.exception`). A licença em si não mudou. O `CITATION.cff` segue
+  `AGPL-3.0-only` (o CFF só aceita a lista SPDX).
+
+
+### Fixed — linhas de continuação descartadas em silêncio (C-1)
+
+- `campo: valor` seguido de uma linha mais recuada compilava **sem** a
+  continuação, sem erro nem aviso (0.13.4 a 0.15.0). O `SynesisTransformer` não
+  tinha regra para o nó `continuation_block`, que chegava a `field_entry` como
+  `Tree` e era ignorado. Agora texto, lista de códigos e cadeia continuados
+  compilam inteiros, e a forma continuada equivale à forma em bloco
+  (`campo:` sozinho, valor nas linhas abaixo).
+- **Mudança de comportamento:** projetos com valores continuados passam a ter o
+  texto completo no JSON, CSV, XLS e OKF. Em `case-studies`, só o `Basic` (o
+  modelo do `synesis init`, 6 linhas) tinha valores assim; a documentação em
+  português também os ensina.
+
+### Fixed — `.syn`/`.syno` vazio ou só com comentários (C-2)
+
+- Um arquivo de anotações ou de organizador vazio, ou só com comentários `#`,
+  levantava `Unexpected token <EOF>`. Agora não declara nenhum bloco e não é
+  erro: um projeto novo pode incluir um `.syno` vazio, e o `synesis-coder
+  ontology` consegue criar a primeira ontologia. Template e projeto vazios
+  continuam sendo erro.
+- O tratamento fica só no caminho de erro (`compile_string`, leitura de
+  anotações e de organizador no compilador, LSP); arquivos que compilavam seguem
+  o mesmo caminho de antes. Nova função `lexer.is_blank_source`.
+
+### Added — `synesis compile --diagnostics-json PATH` (C-4)
+
+- Grava todos os diagnósticos em JSON (`format: synesis-diagnostics`, versão 1):
+  severidade, código, arquivo, linha, coluna e mensagem, com contagens e o
+  código de saída. É gravado **em toda saída**: projeto com erros, `--strict`
+  bloqueando a exportação, template ausente, erro de sintaxe no `.synp` e falha
+  inesperada. Caminhos relativos à pasta do projeto. Uma falha ao gravar o
+  relatório não altera o código de saída.
+- No passo de ligação (vários projetos) ainda não é suportado: avisa em vez de
+  ignorar, como `--alpaca` e `--okf`.
+
+
 ## [0.15.0] - 2026-11-17
 
 ### Fixed — `GENERATED_AT` com `Z` no Python 3.10

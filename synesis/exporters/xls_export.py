@@ -55,6 +55,8 @@ from synesis.exporters._helpers import (
     _get_item_field_value,
     _get_ontology_field_value,
     _get_source_field_value,
+    project_base_dir,
+    relative_to_project,
 )
 from synesis.semantic.linker import LinkedProject
 from synesis.semantic.occurrences import item_chains
@@ -290,7 +292,7 @@ def _write_sources_sheet(
                 _get_source_field_value(source, name, template, bibliography, dataset)
             ))
         row.extend([
-            str(location.file) if location else "",
+            relative_to_project(location.file, project_base_dir(linked)) if location else "",
             location.line if location else "",
             location.column if location else "",
         ])
@@ -341,7 +343,7 @@ def _write_items_sheet(wb: Workbook, linked: LinkedProject, template: Optional[T
                     for name in field_names:
                         row.append(_stringify_value(row_fields.get(name, "")))
                     row.extend([
-                        str(location.file) if location else "",
+                        relative_to_project(location.file, project_base_dir(linked)) if location else "",
                         location.line if location else "",
                         location.column if location else "",
                     ])
@@ -356,7 +358,7 @@ def _write_items_sheet(wb: Workbook, linked: LinkedProject, template: Optional[T
                     len(item.chains),
                 ])
                 row.extend([
-                    str(location.file) if location else "",
+                    relative_to_project(location.file, project_base_dir(linked)) if location else "",
                     location.line if location else "",
                     location.column if location else "",
                 ])
@@ -422,7 +424,7 @@ def _write_ontologies_sheet(wb: Workbook, linked: LinkedProject, template: Optio
                 row.append(_stringify_value(ontology.fields.get(name, "")))
 
         row.extend([
-            str(location.file) if location else "",
+            relative_to_project(location.file, project_base_dir(linked)) if location else "",
             location.line if location else "",
             location.column if location else "",
         ])
@@ -471,7 +473,7 @@ def _write_chains_sheet(
                         from_code,
                         relation,
                         to_code,
-                        str(location.file),
+                        relative_to_project(location.file, project_base_dir(linked)),
                         location.line,
                         location.column,
                     ]

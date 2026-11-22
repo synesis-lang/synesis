@@ -53,7 +53,7 @@ from synesis.parser.bib_loader import (
     detect_malformed_entries,
     merge_bibliographies,
 )
-from synesis.parser.lexer import parse_string
+from synesis.parser.lexer import SynesisSyntaxError, is_blank_source, parse_string
 from synesis.parser.template_loader import load_template_from_string
 from synesis.parser.transformer import SynesisTransformer
 from synesis.semantic.linker import LinkedProject, Linker
@@ -483,7 +483,13 @@ def compile_string(content: str, filename: str = "<string>") -> List[Any]:
         >>> print(source.bibref)
         ref2020
     """
-    tree = parse_string(content, filename)
+    try:
+        tree = parse_string(content, filename)
+    except SynesisSyntaxError:
+        if is_blank_source(content):
+            # Vazio ou so comentarios: nenhum bloco (um .syno novo, por exemplo).
+            return []
+        raise
     transformer = SynesisTransformer(Path(filename))
     return transformer.transform(tree)
 

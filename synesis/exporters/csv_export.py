@@ -46,6 +46,8 @@ from synesis.exporters._helpers import (
     _get_item_field_value,
     _get_ontology_field_value,
     _get_source_field_value,
+    project_base_dir,
+    relative_to_project,
 )
 from synesis.semantic.linker import LinkedProject
 from synesis.semantic.occurrences import item_chains
@@ -251,7 +253,7 @@ def _build_sources_table(
         location = source.location
         row = {
             "bibref": source.bibref,
-            "source_file": str(location.file) if location else "",
+            "source_file": relative_to_project(location.file, project_base_dir(linked)) if location else "",
             "source_line": location.line if location else "",
             "source_column": location.column if location else "",
         }
@@ -307,7 +309,7 @@ def _build_items_table(linked: LinkedProject, template: Optional[TemplateNode]) 
             location = item.location
             base = {
                 "bibref": item.bibref,
-                "source_file": str(location.file) if location else "",
+                "source_file": relative_to_project(location.file, project_base_dir(linked)) if location else "",
                 "source_line": location.line if location else "",
                 "source_column": location.column if location else "",
             }
@@ -380,7 +382,7 @@ def _build_ontologies_table(linked: LinkedProject, template: Optional[TemplateNo
     for ontology in linked.ontology_index.values():
         location = ontology.location
         row: Dict[str, Any] = {
-            "source_file": str(location.file) if location else "",
+            "source_file": relative_to_project(location.file, project_base_dir(linked)) if location else "",
             "source_line": location.line if location else "",
             "source_column": location.column if location else "",
         }
@@ -446,7 +448,7 @@ def _build_chains_table(
                         "from_code": from_code,
                         "relation": relation,
                         "to_code": to_code,
-                        "source_file": str(location.file) if location else "",
+                        "source_file": relative_to_project(location.file, project_base_dir(linked)) if location else "",
                         "source_line": location.line if location else "",
                         "source_column": location.column if location else "",
                     }

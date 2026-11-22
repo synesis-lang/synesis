@@ -56,6 +56,8 @@ from synesis.exporters._helpers import (
     _get_field_names_for_scope_and_types,
     _get_item_field_value,
     _get_ontology_field_value,
+    project_base_dir,
+    relativize_location_files,
 )
 from synesis.parser.bib_loader import BibEntry
 from synesis.semantic.linker import LinkedProject
@@ -384,7 +386,7 @@ def build_json_payload(
     """
     chain_usage = _build_chain_usage(linked, template)
 
-    return {
+    payload = {
         "version": "3.1",
         "export_metadata": _build_export_metadata(linked, generated_at),
         "project": _build_project_section(linked),
@@ -395,6 +397,13 @@ def build_json_payload(
         "ontology": _build_ontology_schema(linked, template, chain_usage),
         "corpus": _build_corpus(linked, template),
     }
+    # C-3: todo caminho de localização relativo à pasta do .synp. A base vai
+    # declarada no próprio JSON para quem precisar resolver o caminho.
+    base = project_base_dir(linked)
+    if base is not None:
+        payload = relativize_location_files(payload, base)
+        payload["export_metadata"]["paths_relative_to"] = "project_folder"
+    return payload
 
 
 def export_json(

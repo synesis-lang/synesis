@@ -460,21 +460,31 @@ def main(ctx: click.Context, verbose: int, quiet: int) -> None:
               help="List every code missing from the ontology, with suggestions (default: one-line summary)")
 @click.option("--stats", is_flag=True, help="Show compilation statistics")
 @click.option("--force", is_flag=True, help="Generate artifacts even with errors")
-def compile(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, okf_dir: str | None, okf_generated_at: str | None, strict: bool, check_codes: bool, stats: bool, force: bool) -> None:
+@click.option("--diagnostics-json", "diagnostics_json", type=click.Path(), metavar="PATH",
+              help="Also write every diagnostic as JSON (written even when the project has errors)")
+def compile(projects: tuple[str, ...], json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, okf_dir: str | None, okf_generated_at: str | None, strict: bool, check_codes: bool, stats: bool, force: bool, diagnostics_json: str | None = None) -> None:
     """Compile one Synesis project, or link several (compile p1 p2 ...)."""
     # --strict e o portao: nao pode passar com codigos indefinidos escondidos.
     check_codes = check_codes or strict
     if len(projects) == 1:
         _compile_single(projects[0], json_path, csv_dir, xls_path, alpaca_path, strict, stats, force, check_codes,
-                        okf_dir=okf_dir, okf_generated_at=okf_generated_at)
+                        okf_dir=okf_dir, okf_generated_at=okf_generated_at,
+                        diagnostics_json=diagnostics_json)
     else:
+        if diagnostics_json:
+            click.echo(click.style(
+                "warning: --diagnostics-json is not yet supported in the linking step (multiple projects) "
+                "- no report was written. Compile each project separately.",
+                fg="yellow",
+            ), err=True)
         _link_projects(projects, json_path, csv_dir, xls_path, alpaca_path, strict, stats, force, check_codes,
                        okf_dir=okf_dir)
 
 
-def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False, *, okf_dir: str | None = None, okf_generated_at: str | None = None) -> None:
+def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xls_path: str | None, alpaca_path: str | None, strict: bool, stats: bool, force: bool, check_codes: bool = False, *, okf_dir: str | None = None, okf_generated_at: str | None = None, diagnostics_json: str | None = None) -> None:
     """Compile a single Synesis project (unchanged legacy path)."""
     click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + f" {_TAGLINE}")
+    report = _DiagnosticsReport(diagnostics_json, Path(project))
 
     spinner = _Spinner()
     project_path = Path(project)
@@ -502,6 +512,7 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
             compiler._merge(result_early, bib_validation)
             compiler._merge(result_early, bib_format_validation)
             _print_diagnostics(result_early.errors, "ERROR", project_dir)
+            report.write(result_early, exit_code=1)
             raise SystemExit(1)
         template_validation = validate_template(template)
         bibliography = compiler.load_bibliography(project_node)
@@ -607,6 +618,7 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
             if okf_dir:
                 _export_okf_cli(linked_project, Path(okf_dir), template, bibliography, dataset, okf_generated_at)
 
+        report.write(validation_result, exit_code=exit_code)
         raise SystemExit(exit_code)
 
     except SystemExit:
@@ -614,10 +626,12 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
     except SynesisSyntaxError as exc:
         spinner.fail()
         click.echo(click.style(str(exc), fg="red"), err=True)
+        report.write_failure("SynesisSyntaxError", str(exc), getattr(exc, "location", None))
         raise SystemExit(1)
     except Exception as exc:
         spinner.fail()
         click.echo(click.style(f"error: unexpected failure during compilation: {exc}", fg="red"), err=True)
+        report.write_failure("UnexpectedFailure", str(exc), None)
         if click.get_current_context().obj and click.get_current_context().obj.get("debug"):
             raise
         raise SystemExit(1)
@@ -1461,6 +1475,92 @@ _REPEAT_COLLAPSE_THRESHOLD = 4
 
 #: Quantos locais sao exibidos antes do "... e mais N".
 _REPEAT_LOCATIONS_SHOWN = 3
+
+
+class _DiagnosticsReport:
+    """`--diagnostics-json`: every diagnostic as JSON, written on every exit path.
+
+    Machine-readable twin of the terminal output, for tools that must show the
+    problems (dashboards, CI, the Claude skill). It is written even when the
+    project has errors or `--strict` blocks the exports, and never raises: a
+    failure to write the report must not change the compiler's exit code.
+    Paths are relative to the project folder.
+    """
+
+    FORMAT = "synesis-diagnostics"
+    VERSION = 1
+
+    def __init__(self, path: str | None, project_path: Path) -> None:
+        self.path = Path(path) if path else None
+        self.project_path = project_path
+        self.base = project_path.resolve().parent
+
+    def _rel(self, file) -> str | None:
+        if file is None:
+            return None
+        try:
+            return Path(file).resolve().relative_to(self.base).as_posix()
+        except (ValueError, OSError):
+            return Path(file).name
+
+    def _record(self, err, severity: str) -> dict:
+        loc = getattr(err, "location", None)
+        try:
+            message = err.to_diagnostic()
+        except Exception:
+            message = str(err)
+        return {
+            "severity": severity,
+            "code": type(err).__name__,
+            "file": self._rel(getattr(loc, "file", None)) if loc else None,
+            "line": getattr(loc, "line", None) if loc else None,
+            "column": getattr(loc, "column", None) if loc else None,
+            "message": message,
+        }
+
+    def _dump(self, records: list, exit_code: int) -> None:
+        if self.path is None:
+            return
+        import json
+
+        records.sort(key=lambda r: (r["file"] or "", r["line"] or 0, r["column"] or 0, r["code"]))
+        counts = {s: sum(1 for r in records if r["severity"] == s) for s in ("error", "warning", "info")}
+        payload = {
+            "format": self.FORMAT,
+            "version": self.VERSION,
+            "synesis": VERSION,
+            "project": self.project_path.name,
+            "exit_code": exit_code,
+            "errors": counts["error"],
+            "warnings": counts["warning"],
+            "info": counts["info"],
+            "diagnostics": records,
+        }
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.path, "w", encoding="utf-8", newline="\n") as fh:
+                json.dump(payload, fh, ensure_ascii=False, indent=2, sort_keys=True)
+                fh.write("\n")
+        except OSError as exc:
+            click.echo(click.style(f"warning: could not write --diagnostics-json: {exc}", fg="yellow"), err=True)
+
+    def write(self, validation_result, exit_code: int) -> None:
+        records = [self._record(e, sev) for sev, errs in (
+            ("error", validation_result.errors),
+            ("warning", validation_result.warnings),
+            ("info", validation_result.info),
+        ) for e in errs]
+        self._dump(records, exit_code)
+
+    def write_failure(self, code: str, message: str, location) -> None:
+        self._dump([{
+            "severity": "error",
+            "code": code,
+            "file": self._rel(getattr(location, "file", None)) if location else None,
+            "line": getattr(location, "line", None) if location else None,
+            "column": getattr(location, "column", None) if location else None,
+            "message": message,
+        }], exit_code=1)
 
 
 def _print_diagnostics(errors: Iterable, severity_label: str, base_dir: Path | None = None) -> None:

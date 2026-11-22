@@ -381,7 +381,7 @@ version 3 only (AGPL-3.0-only), with the Synesis Data-Output Exception** — see
 [LICENSE](https://github.com/synesis-lang/synesis/blob/main/LICENSE) and
 [LICENSE.exception](https://github.com/synesis-lang/synesis/blob/main/LICENSE.exception).
 
-SPDX identifier: `AGPL-3.0-only AND LicenseRef-Synesis-data-output-exception`
+SPDX identifier: `LicenseRef-Synesis-AGPL-3.0-with-Data-Output-Exception`
 
 **Your research data and compiled outputs are yours.** The files you feed to
 Synesis and the artifacts it produces from them — JSON, CSV, Excel, REFI-QDA,

@@ -1373,6 +1373,21 @@ class SynesisTransformer(Transformer):
             if not (isinstance(item, Token) and item.type == "NEWLINE")
         ]
 
+    def continuation_block(self, items: List[Any]) -> List[Any]:
+        """Linhas que continuam o valor de `campo: valor` (mais recuadas).
+
+        Sem esta regra o no chegava a `field_entry` como Tree, e nao como a lista
+        de `text_block`; o teste `isinstance(cleaned[1], list)` falhava e a
+        continuacao era descartada em silencio (synesis 0.13.4 a 0.15.0).
+        """
+        if len(items) == 1 and isinstance(items[0], list):
+            return items[0]
+        return [
+            item
+            for item in items
+            if not (isinstance(item, Token) and item.type == "NEWLINE")
+        ]
+
     @v_args(tree=True)
     def chain_expr(self, tree: Any) -> ChainNode:
         """

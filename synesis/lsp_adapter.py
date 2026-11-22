@@ -64,7 +64,12 @@ from synesis.ast.nodes import (
 from synesis.ast.normalize import normalize_bibref
 from synesis.ast.results import DuplicateSourceBibref, ValidationResult
 from synesis.parser.bib_loader import BibEntry, merge_bibliographies
-from synesis.parser.lexer import SynesisSyntaxError, parse_string, read_source_file
+from synesis.parser.lexer import (
+    SynesisSyntaxError,
+    is_blank_source,
+    parse_string,
+    read_source_file,
+)
 from synesis.parser.paths import INCLUDE_EXTENSIONS, expand_include, resolve_include, uri_to_path
 from synesis.parser.template_loader import load_template
 from synesis.parser.transformer import SynesisTransformer
@@ -250,6 +255,8 @@ def _parse_with_error_handling(
         return nodes, errors
 
     except SynesisSyntaxError as exc:
+        if is_blank_source(source):
+            return [], errors  # vazio ou so comentarios: nenhum bloco, sem erro
         # Converte SynesisSyntaxError em ValidationError personalizado
         syntax_error = SyntaxError(
             location=exc.location,

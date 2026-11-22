@@ -7,6 +7,8 @@ As quatro funcoes abaixo eram identicas nos tres exportadores.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from synesis.ast.nodes import FieldType, ItemNode, OntologyNode, Scope, SourceNode, TemplateNode
@@ -112,3 +114,58 @@ def _get_ontology_field_value(ontology: OntologyNode, name: str) -> Any:
     o acessor não lhe atribui sentido de hierarquia.
     """
     return ontology_field_value(ontology, name, default="")
+
+
+def project_base_dir(linked: Any) -> Optional[Path]:
+    """Pasta do .synp: a base dos caminhos em todas as saídas (C-3).
+
+    Caminhos relativos a ela não expõem a estrutura de pastas de quem exporta e
+    fazem duas cópias do mesmo projeto gerarem a mesma saída. Um JSON gravado
+    dentro da pasta do projeto encontra as anotações juntando a pasta do projeto
+    (não a do JSON) com o caminho.
+    """
+    project = getattr(linked, "project", None)
+    location = getattr(project, "location", None)
+    file = getattr(location, "file", None)
+    if not file:
+        return None
+    return Path(str(file)).resolve().parent
+
+
+def relative_to_project(file: Any, base: Optional[Path]) -> str:
+    """Caminho relativo à pasta do projeto, com barras normais.
+
+    Arquivo fora da pasta (INCLUDE SHARED) fica com `../`. Sem base, ou em outro
+    disco do Windows (não existe caminho relativo entre discos), o caminho segue
+    como veio, com barras normais.
+    """
+    if file is None or str(file) == "":
+        return ""
+    path = Path(str(file))
+    if base is None:
+        return path.as_posix()
+    try:
+        return Path(os.path.relpath(path.resolve(), base)).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def relativize_location_files(obj: Any, base: Optional[Path]) -> Any:
+    """Torna relativos à pasta do projeto todos os valores de chave `file` (C-3).
+
+    No JSON as chaves `file` são as de localização (`location`, `traceability`):
+    projeto, includes, template e campos, ontologia e corpus.
+    """
+    if base is None:
+        return obj
+    if isinstance(obj, dict):
+        return {
+            key: (relative_to_project(value, base)
+                  if key == "file" and isinstance(value, str) and value
+                  else relativize_location_files(value, base))
+            for key, value in obj.items()
+        }
+    if isinstance(obj, list):
+        return [relativize_location_files(value, base) for value in obj]
+    return obj
+

@@ -374,9 +374,13 @@ SOURCE @ref2024
         with pytest.raises(SynesisSyntaxError):
             parse(content)
 
-    def test_empty_content_raises_error(self):
-        with pytest.raises(Exception):
-            parse("")
+    def test_empty_content_has_no_blocks(self):
+        # Contrato desde a correcao C-2 (2026-11-20): vazio ou so comentarios nao
+        # declara nada e nao e erro em .syn/.syno. Antes levantava <EOF>, e o
+        # synesis-coder nao conseguia criar a primeira ontologia. Template e
+        # projeto vazios continuam com erro (test_continuation_and_blank_files.py).
+        assert parse("") == []
+        assert parse("# so um comentario\n") == []
 
     def test_invalid_keyword_raises_error(self):
         content = "INVALID_BLOCK @ref\nEND INVALID_BLOCK\n"
