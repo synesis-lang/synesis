@@ -614,6 +614,12 @@ def _compile_single(project: str, json_path: str | None, csv_dir: str | None, xl
             if xls_path:
                 export_xls(linked_project, template, Path(xls_path), bibliography, dataset)
             if alpaca_path:
+                from synesis.semantic.project_blocks import legacy_alpaca_notices
+
+                _print_diagnostics(
+                    legacy_alpaca_notices(template, "--alpaca", getattr(linked_project.project, "location", None)),
+                    "INFO", project_dir,
+                )
                 export_alpaca(linked_project, Path(alpaca_path), template, bibliography)
             if okf_dir:
                 _export_okf_cli(linked_project, Path(okf_dir), template, bibliography, dataset, okf_generated_at)
@@ -657,7 +663,11 @@ def export(project: str, selector: str | None, check_codes: bool, force: bool, p
     folder of the .synp.
     """
     from synesis.ast.results import ExportBlockError
-    from synesis.semantic.project_blocks import export_block_errors, select_exports
+    from synesis.semantic.project_blocks import (
+        export_block_errors,
+        export_block_notices,
+        select_exports,
+    )
 
     click.echo(click.style(f"SYNESIS v{VERSION}", bold=True) + f" {_TAGLINE}")
     project_path = Path(project)
@@ -706,6 +716,8 @@ def export(project: str, selector: str | None, check_codes: bool, force: bool, p
                    + _paint(f" ({project_path.name}:{block.location.line})", "dim"))
         errors: list = [e for e in local if e.block == block.label]
         errors += [e for e in export_block_errors(block, result.template) if e not in errors]
+        # Informativos (ExportBlockNotice) sao mostrados e nunca impedem o bloco.
+        _print_diagnostics(export_block_notices(block, result.template), "INFO", project_dir)
         if errors:
             _print_diagnostics(errors, "ERROR", project_dir)
             click.echo(_c(f"  ✖ {block.label}: not exported", fg="red"), err=True)
@@ -801,7 +813,14 @@ def _run_export_block(block, result, project_dir: Path, publish: bool = False):
         elif block.format == "XLS":
             export_xls(linked, template, output, bib, dataset)
         elif block.format == "ALPACA":
-            export_alpaca(linked, output, template, bib)
+            from synesis.semantic.project_blocks import is_alpaca_declared
+
+            if is_alpaca_declared(block):
+                from synesis.exporters.alpaca_mapped import export_alpaca_mapped
+
+                export_alpaca_mapped(linked, output, template, block)
+            else:
+                export_alpaca(linked, output, template, bib)
         else:  # pragma: no cover - formatos validados antes
             raise ValueError(f"format without an exporter: {block.format}")
     return output, details

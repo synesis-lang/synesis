@@ -32,7 +32,7 @@ from __future__ import annotations
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from synesis.ast.nodes import (
     ItemNode,
@@ -93,6 +93,9 @@ from synesis.parser.transformer import SynesisTransformer
 from synesis.semantic.linker import LinkedProject, Linker
 from synesis.semantic.validator import SemanticValidator
 
+if TYPE_CHECKING:  # pragma: no cover
+    from synesis.ast.nodes import ExportNode
+
 
 @dataclass
 class CompilationStats:
@@ -143,9 +146,18 @@ class CompilationResult:
             return
         export_xls(self.linked_project, self.template, path, self.bibliography, self.dataset)
 
-    def to_alpaca(self, path: Path) -> None:
+    def to_alpaca(self, path: Path, export: Optional[ExportNode] = None) -> None:
+        """Alpaca JSONL. Com `export` (bloco EXPORT ALPACA com MAP), a composicao declarada."""
         if self.has_errors() or not self.linked_project:
             return
+        if export is not None and self.template is not None:
+            from synesis.semantic.project_blocks import is_alpaca_declared
+
+            if is_alpaca_declared(export):
+                from synesis.exporters.alpaca_mapped import export_alpaca_mapped
+
+                export_alpaca_mapped(self.linked_project, path, self.template, export)
+                return
         export_alpaca(self.linked_project, path, self.template, self.bibliography)
 
     def to_okf(self, path: Path, generated_at: Optional[str] = None) -> None:

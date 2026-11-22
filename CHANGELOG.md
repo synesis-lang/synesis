@@ -8,6 +8,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — EXPORT ALPACA com composição declarada (`MAP <campos> TO INSTRUCTION/INPUT/OUTPUT`)
+
+- Um bloco `EXPORT ALPACA` pode declarar quais campos formam cada chave:
+
+  ```
+  EXPORT ALPACA mecanismo
+      OUTPUT "saida/mecanismo.jsonl"
+      INSTRUCTION Identifique a relação causal no trecho e como o texto a apresenta.
+      MAP trecho TO INPUT
+      MAP chain, estatuto, justificativa TO OUTPUT
+  END EXPORT
+  ```
+
+  - O formato Alpaca não muda: as três chaves são strings.
+  - **Unidade:** um BUNDLE no mapa define as linhas, uma por ocorrência. Os campos fora
+    dele são contexto, repetido inteiro em cada linha, e nunca multiplicam linhas. Sem
+    bundle, a unidade é uma linha por ITEM.
+  - **Texto:** com um campo na chave, sai só o valor. Com vários, um bloco por campo,
+    rotulado pelo nome, na ordem do `MAP`. A CHAIN entra com todas as triplas
+    (`A → REL → B`).
+  - **OUTPUT vazio** é avaliado sobre os valores, sem tamanho mínimo. Só a duplicata exata
+    do trio é removida, e a remoção é contada.
+- **Cartão do dataset** `<saída>.card.json`, sem data, gravado ao lado do JSONL. Registra:
+  - composição, hashes do `.synp` e do template;
+  - contagens (unidades, linhas, vazias, bundle ausente, duplicatas);
+  - contagem por valor dos ENUMERATED/ORDERED do OUTPUT;
+  - campos excluídos.
+- **Diagnósticos do bloco (impedem só o artefato):**
+  - `SYNESIS_E158`: OUTPUT ausente;
+  - `SYNESIS_E159`: nenhuma ou duas origens de instrução;
+  - `SYNESIS_E160`: campo inexistente, com sugestão;
+  - `SYNESIS_E161`: campo repetido no mesmo alvo;
+  - `SYNESIS_E162`: campo do OUTPUT também em INPUT ou INSTRUCTION (vazamento);
+  - `SYNESIS_E163`: campos de dois bundles;
+  - `SYNESIS_E164`: campo de ONTOLOGY, ou SOURCE com ON BIBLIOGRAPHY/ON DATASET, ainda não
+    suportado;
+  - `SYNESIS_E165`: alvo inválido, ou `FROM`.
+- **Informativos (nunca impedem o artefato), nova base `ExportBlockNotice`:**
+  - `SYNESIS_I166`: parceiro qualificador do bundle fora do mapa;
+  - `SYNESIS_I167`: os pares embutidos descartam o qualificador de um bundle com CHAIN.
+    É o caso do estatuto no UFG Phishing: 399 das 2.186 cadeias são exportadas como
+    afirmação.
+- `CompilationResult.to_alpaca(path, export=None)` aceita o bloco.
+- **Sem `MAP` nem `INSTRUCTION`,** a saída é idêntica à anterior: o bloco sem mapa e
+  `synesis compile --alpaca` mantêm os pares embutidos e o defeito acima, agora avisado.
+  O `synesis-coder finetune --project` também continua com os pares embutidos.
+
 ### Changed — caminhos relativos à pasta do projeto em todas as saídas (C-3)
 
 - JSON, CSV e XLS gravavam caminhos absolutos da máquina de quem compilou

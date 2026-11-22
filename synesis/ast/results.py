@@ -2640,8 +2640,8 @@ class MapNotSupported(ExportBlockError):
     def to_diagnostic(self) -> str:
         return (
             f"`{self.block}`: this format does not use `MAP` lines.\n"
-            f"  `MAP RELATIONS` is accepted in SKOS and `MAP <fields> TO` will be in CNA, when\n"
-            f"  that format is available. Remove the line."
+            f"  `MAP RELATIONS` is accepted in SKOS and `MAP <fields> TO` in ALPACA (and in CNA,\n"
+            f"  when that format is available). Remove the line."
         )
 
     def to_cli_line(self) -> str:
@@ -3349,6 +3349,227 @@ class SkosQualityNotice(ExportBlockError):
     def cli_group(self) -> tuple[str, str]:
         examples = f" — e.g. {self.examples[0]}" if self.examples else ""
         return "SKOS quality notices", f"{self.condition}: {self.count}{examples}"
+
+
+# ---------------------------------------------------------------------------
+# EXPORT ALPACA com composicao declarada (MAP <campos> TO INSTRUCTION/INPUT/OUTPUT)
+# Estudo: synesis-planning/synesis/Estudo_Alpaca_Composicao_Declarada_MAP_TO.md
+# ---------------------------------------------------------------------------
+
+_ALPACA_DOC = "Each key of the Alpaca line comes from `MAP <fields> TO INSTRUCTION | INPUT | OUTPUT`."
+
+
+@dataclass(frozen=True)
+class AlpacaOutputMapMissing(ExportBlockError):
+    """Modo declarado (MAP de campos ou INSTRUCTION) sem `MAP ... TO OUTPUT`."""
+
+    CODE: ClassVar[str] = "SYNESIS_E158"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"`{self.block}`: no `MAP <fields> TO OUTPUT`. The output is what the model learns\n"
+            f"  to produce, so it must be declared. {_ALPACA_DOC}\n"
+            f"  Without any MAP or INSTRUCTION the block keeps the built-in Alpaca pairs."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"{self.block}: missing `MAP <fields> TO OUTPUT`"
+
+
+@dataclass(frozen=True)
+class AlpacaInstructionSource(ExportBlockError):
+    """Nenhuma origem de instrucao, ou propriedade INSTRUCTION e MAP TO INSTRUCTION juntas."""
+
+    both: bool = False
+    CODE: ClassVar[str] = "SYNESIS_E159"
+
+    def to_diagnostic(self) -> str:
+        if self.both:
+            return (
+                f"`{self.block}`: the instruction is declared twice — the `INSTRUCTION` property\n"
+                f"  and `MAP ... TO INSTRUCTION`. Keep one: a fixed text or a field."
+            )
+        return (
+            f"`{self.block}`: no instruction. Write `INSTRUCTION <text>` (same instruction on\n"
+            f"  every line) or `MAP <field> TO INSTRUCTION` (instruction taken from a field)."
+        )
+
+    def to_cli_line(self) -> str:
+        if self.both:
+            return f"{self.block}: INSTRUCTION and MAP TO INSTRUCTION together; keep one"
+        return f"{self.block}: no instruction (INSTRUCTION <text> or MAP <field> TO INSTRUCTION)"
+
+
+@dataclass(frozen=True)
+class AlpacaUnknownField(ExportBlockError):
+    """Campo do MAP ausente do template."""
+
+    field_name: str
+    suggestion: str = ""
+    CODE: ClassVar[str] = "SYNESIS_E160"
+
+    def to_diagnostic(self) -> str:
+        hint = f" Did you mean `{self.suggestion}`?" if self.suggestion else ""
+        return (
+            f"`{self.block}`: the field `{self.field_name}` is not declared in the template.{hint}\n"
+            f"  Use the field name exactly as in the template."
+        )
+
+    def to_cli_line(self) -> str:
+        hint = f" (did you mean `{self.suggestion}`?)" if self.suggestion else ""
+        return f"{self.block}: unknown field `{self.field_name}`{hint}"
+
+
+@dataclass(frozen=True)
+class AlpacaDuplicateField(ExportBlockError):
+    """O mesmo campo duas vezes no mesmo alvo."""
+
+    field_name: str
+    target: str
+    CODE: ClassVar[str] = "SYNESIS_E161"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"`{self.block}`: the field `{self.field_name}` is mapped twice to {self.target}.\n"
+            f"  Each field enters a key once."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"{self.block}: `{self.field_name}` mapped twice to {self.target}"
+
+
+@dataclass(frozen=True)
+class AlpacaFieldLeak(ExportBlockError):
+    """Campo do OUTPUT tambem em INPUT ou INSTRUCTION: a resposta vazaria no prompt."""
+
+    field_name: str
+    target: str
+    CODE: ClassVar[str] = "SYNESIS_E162"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"`{self.block}`: the field `{self.field_name}` is in OUTPUT and also in {self.target}.\n"
+            f"  The answer would be in the prompt, and the model would learn to copy it.\n"
+            f"  Instruction and input are joined into the prompt at training time."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"{self.block}: `{self.field_name}` in OUTPUT and in {self.target} (answer leaks into the prompt)"
+
+
+@dataclass(frozen=True)
+class AlpacaMultipleBundles(ExportBlockError):
+    """Campos de dois bundles diferentes: nao ha uma unidade unica por linha."""
+
+    bundles: tuple = ()
+    CODE: ClassVar[str] = "SYNESIS_E163"
+
+    def to_diagnostic(self) -> str:
+        shown = "; ".join("(" + ", ".join(b) + ")" for b in self.bundles)
+        return (
+            f"`{self.block}`: the fields come from more than one BUNDLE: {shown}.\n"
+            f"  One BUNDLE sets the lines (one line per occurrence); fields outside it are\n"
+            f"  context. Fields of two bundles would pair occurrences that do not belong together."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"{self.block}: fields from {len(self.bundles)} bundles; use fields of one BUNDLE"
+
+
+@dataclass(frozen=True)
+class AlpacaFieldNotSupported(ExportBlockError):
+    """Campo de ONTOLOGY, ou de SOURCE com valor fora do .syn (ON BIBLIOGRAPHY/ON DATASET)."""
+
+    field_name: str
+    reason: str
+    CODE: ClassVar[str] = "SYNESIS_E164"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"`{self.block}`: the field `{self.field_name}` cannot enter an Alpaca key yet\n"
+            f"  ({self.reason}). Planned for a later version; use ITEM fields and SOURCE fields\n"
+            f"  written in the annotation files."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"{self.block}: `{self.field_name}` not supported yet ({self.reason})"
+
+
+@dataclass(frozen=True)
+class AlpacaMapTarget(ExportBlockError):
+    """Alvo de MAP fora de INSTRUCTION/INPUT/OUTPUT, ou FROM nesses alvos."""
+
+    target: str
+    with_from: bool = False
+    CODE: ClassVar[str] = "SYNESIS_E165"
+
+    def to_diagnostic(self) -> str:
+        if self.with_from:
+            return (
+                f"`{self.block}`: `FROM` is not used with the target {self.target}.\n"
+                f"  In EXPORT ALPACA, `MAP` names fields: `MAP <fields> TO {self.target}`."
+            )
+        return (
+            f"`{self.block}`: `{self.target}` is not a target of EXPORT ALPACA.\n"
+            f"  Accepted targets: INSTRUCTION, INPUT and OUTPUT."
+        )
+
+    def to_cli_line(self) -> str:
+        if self.with_from:
+            return f"{self.block}: FROM not accepted in MAP ... TO {self.target}"
+        return f"{self.block}: target `{self.target}` not accepted (INSTRUCTION, INPUT, OUTPUT)"
+
+
+@dataclass(frozen=True)
+class ExportBlockNotice(ValidationError):
+    """Base dos informativos de um bloco EXPORT.
+
+    NAO herda de ExportBlockError de proposito: `synesis export` bloqueia o
+    artefato com qualquer ExportBlockError. Um informativo e mostrado e o
+    artefato e gerado.
+    """
+
+    block: str
+    DEFAULT_SEVERITY: ClassVar[ErrorSeverity] = ErrorSeverity.INFO
+
+
+@dataclass(frozen=True)
+class AlpacaBundlePartnerOmitted(ExportBlockNotice):
+    """Parceiro qualificador (ENUMERATED/ORDERED/SCALE) do bundle iterador fora do mapa."""
+
+    field_name: str
+    partner_of: str
+    CODE: ClassVar[str] = "SYNESIS_I166"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"`{self.block}`: `{self.field_name}` qualifies `{self.partner_of}` in the BUNDLE and does\n"
+            f"  not enter the dataset. If that is intended (for instance, a dataset already\n"
+            f"  filtered), ignore this note; otherwise add it to a MAP."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"{self.block}: `{self.field_name}` qualifies `{self.partner_of}` in the BUNDLE and is not in the dataset"
+
+
+@dataclass(frozen=True)
+class AlpacaLegacyDropsQualifier(ExportBlockNotice):
+    """Modo Alpaca embutido com template cujo bundle de CHAIN tem qualificador."""
+
+    field_name: str
+    chain_field: str
+    CODE: ClassVar[str] = "SYNESIS_I167"
+
+    def to_diagnostic(self) -> str:
+        return (
+            f"`{self.block}`: the built-in Alpaca pairs do not carry `{self.field_name}`, which\n"
+            f"  qualifies `{self.chain_field}` in a BUNDLE: every relation is exported as if asserted.\n"
+            f"  Declare the composition with `EXPORT ALPACA` and `MAP {self.chain_field}, "
+            f"{self.field_name} TO OUTPUT`."
+        )
+
+    def to_cli_line(self) -> str:
+        return f"{self.block}: built-in pairs drop `{self.field_name}` (qualifies `{self.chain_field}`); declare MAP ... TO OUTPUT"
 
 
 @dataclass

@@ -9,6 +9,8 @@ Componentes principais:
     - EXPORT_FORMATS: formatos disponiveis, com propriedades obrigatorias e aceitas
     - validate_project_blocks: diagnosticos de QUESTIONS e de EXPORT
     - export_block_errors: diagnosticos de um bloco (para `synesis export`)
+    - export_block_notices: informativos de um bloco (nunca impedem o artefato)
+    - alpaca_plan: composicao declarada de um EXPORT ALPACA (fonte unica)
     - select_exports: escolha dos blocos por formato ou por nome
 
 Notas:
@@ -20,13 +22,24 @@ Notas:
 
 from __future__ import annotations
 
+import difflib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Sequence
 
 from synesis.ast.nodes import ExportNode, FieldType, ProjectNode, Scope, TemplateNode
 from synesis.ast.results import (
+    AlpacaBundlePartnerOmitted,
+    AlpacaDuplicateField,
+    AlpacaFieldLeak,
+    AlpacaFieldNotSupported,
+    AlpacaInstructionSource,
+    AlpacaLegacyDropsQualifier,
+    AlpacaMapTarget,
+    AlpacaMultipleBundles,
+    AlpacaOutputMapMissing,
+    AlpacaUnknownField,
     AmbiguousExportName,
     AmbiguousRelation,
     DuplicateExportProperty,
@@ -66,7 +79,7 @@ EXPORT_FORMATS: Dict[str, ExportFormat] = {
     "JSON": ExportFormat("JSON", ("OUTPUT",), ("GENERATED_AT",)),
     "CSV": ExportFormat("CSV", ("OUTPUT",)),
     "XLS": ExportFormat("XLS", ("OUTPUT",)),
-    "ALPACA": ExportFormat("ALPACA", ("OUTPUT",)),
+    "ALPACA": ExportFormat("ALPACA", ("OUTPUT",), ("INSTRUCTION",)),
     "OKF": ExportFormat("OKF", ("OUTPUT",), ("GENERATED_AT",)),
     "SKOS": ExportFormat("SKOS", ("OUTPUT", "NAMESPACE", "LANGUAGE"),
                          ("GENERATED_AT", "MIN_SOURCES", "ALIAS_LABEL", "REGISTRY")),
@@ -78,6 +91,12 @@ PLANNED_FORMATS = frozenset({"CNA"})
 # Formatos que aceitam `MAP RELATIONS` (visao de artefato) e alvos aceitos.
 MAP_RELATIONS_FORMATS = frozenset({"SKOS"})
 MAP_RELATIONS_TARGETS = ("HIERARCHY KIND", "HIERARCHY PART", "HIERARCHY INSTANCE", "RELATED")
+
+# Formatos que aceitam `MAP <campos> TO <alvo>` e alvos aceitos (EXPORT ALPACA).
+MAP_FIELDS_FORMATS = frozenset({"ALPACA"})
+ALPACA_TARGETS = ("INSTRUCTION", "INPUT", "OUTPUT")
+# Tipos que qualificam o parceiro de bundle (estatuto, grau...): omiti-los gera aviso.
+QUALIFIER_TYPES = (FieldType.ENUMERATED, FieldType.ORDERED, FieldType.SCALE)
 
 _BCP47 = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
 
@@ -92,6 +111,8 @@ def validate_project_blocks(
     for export in project.exports:
         for error in export_block_errors(export, template):
             result.add(error)
+        for notice in export_block_notices(export, template):
+            result.add(notice)
     for error in _export_name_errors(project.exports):
         result.add(error)
     for error in phase_errors(project, template):
@@ -280,9 +301,13 @@ def export_block_errors(
     for map_node in export.maps:
         if map_node.kind == "relations" and export.format in MAP_RELATIONS_FORMATS:
             continue
+        if map_node.kind == "fields" and export.format in MAP_FIELDS_FORMATS:
+            continue
         errors.append(MapNotSupported(location=map_node.location, block=block))
     if export.format in MAP_RELATIONS_FORMATS:
         errors.extend(_map_relations_errors(export, template))
+    if export.format == "ALPACA":
+        errors.extend(_alpaca_map_errors(export, template))
     if export.format == "SKOS":
         errors.extend(_skos_property_errors(export))
 
@@ -291,6 +316,185 @@ def export_block_errors(
         errors.append(InvalidGeneratedAt(location=export.location, block=block, value=generated_at))
     return errors
 
+
+# ---------------------------------------------------------------------------
+# EXPORT ALPACA: composicao declarada
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AlpacaPlan:
+    """Composicao de um EXPORT ALPACA no modo declarado.
+
+    targets: campos por chave (INSTRUCTION/INPUT/OUTPUT), na ordem do bloco.
+    instruction: texto fixo (propriedade INSTRUCTION) ou None.
+    iterator: o BUNDLE de ITEM que define as linhas (uma por ocorrencia) ou None
+              (uma linha por ITEM).
+    context: campos do mapa fora do iterador (repetidos em cada linha do ITEM).
+    """
+
+    targets: Dict[str, List[str]] = field(default_factory=dict)
+    instruction: Optional[str] = None
+    iterator: Optional[tuple] = None
+    context: List[str] = field(default_factory=list)
+
+    def fields(self) -> List[str]:
+        """Todos os campos do mapa, sem repeticao, na ordem INSTRUCTION, INPUT, OUTPUT."""
+        out: List[str] = []
+        for target in ALPACA_TARGETS:
+            for name in self.targets.get(target, []):
+                if name not in out:
+                    out.append(name)
+        return out
+
+
+def _strip_quotes(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        value = value[1:-1]
+    return value
+
+
+def is_alpaca_declared(export: ExportNode) -> bool:
+    """Modo declarado: algum `MAP <campos>` ou a propriedade INSTRUCTION."""
+    if export.format != "ALPACA":
+        return False
+    return export.prop("INSTRUCTION") is not None or any(m.kind == "fields" for m in export.maps)
+
+
+def _item_bundles(template: Optional[TemplateNode]) -> List[tuple]:
+    if template is None:
+        return []
+    bundles = [tuple(b) for b in template.bundled_fields.get(Scope.ITEM, [])]
+    for bundle in template.optional_bundles.get(Scope.ITEM, []):
+        if tuple(bundle) not in bundles:
+            bundles.append(tuple(bundle))
+    return bundles
+
+
+def alpaca_plan(export: ExportNode, template: Optional[TemplateNode]) -> Optional[AlpacaPlan]:
+    """Composicao declarada do bloco, ou None no modo embutido (sem MAP nem INSTRUCTION).
+
+    Fonte unica: a validacao e o exportador leem o mesmo plano, entao nunca
+    divergem sobre qual BUNDLE define as linhas.
+    """
+    if not is_alpaca_declared(export):
+        return None
+    plan = AlpacaPlan(instruction=_strip_quotes(export.prop("INSTRUCTION")))
+    for node in export.maps:
+        if node.kind != "fields" or node.target not in ALPACA_TARGETS:
+            continue
+        names = plan.targets.setdefault(node.target, [])
+        names.extend(n for n in node.names if n not in names)
+    mapped = set(plan.fields())
+    hit = [b for b in _item_bundles(template) if mapped & set(b)]
+    if len(hit) == 1:
+        plan.iterator = hit[0]
+    iterator = set(plan.iterator or ())
+    plan.context = [n for n in plan.fields() if n not in iterator]
+    return plan
+
+
+def _alpaca_map_errors(export: ExportNode, template: Optional[TemplateNode]) -> List[ValidationError]:
+    """Regras impeditivas do modo declarado (estudo MAP TO, §2)."""
+    if not is_alpaca_declared(export):
+        return []
+    block = export.label
+    errors: List[ValidationError] = []
+    per_target: Dict[str, List[str]] = {}
+    for node in export.maps:
+        if node.kind != "fields":
+            continue
+        if node.target not in ALPACA_TARGETS:
+            errors.append(AlpacaMapTarget(location=node.location, block=block, target=node.target))
+            continue
+        if node.from_field:
+            errors.append(AlpacaMapTarget(
+                location=node.location, block=block, target=node.target, with_from=True))
+        names = per_target.setdefault(node.target, [])
+        for name in node.names:
+            if name in names:
+                errors.append(AlpacaDuplicateField(
+                    location=node.location, block=block, field_name=name, target=node.target))
+                continue
+            names.append(name)
+            if template is None:
+                continue
+            spec = template.field_specs.get(name)
+            if spec is None:
+                close = difflib.get_close_matches(name, list(template.field_specs), n=1)
+                errors.append(AlpacaUnknownField(
+                    location=node.location, block=block, field_name=name,
+                    suggestion=close[0] if close else ""))
+            elif spec.scope == Scope.ONTOLOGY:
+                errors.append(AlpacaFieldNotSupported(
+                    location=node.location, block=block, field_name=name, reason="ONTOLOGY field"))
+            elif spec.value_origin != "document":
+                origin = "ON BIBLIOGRAPHY" if spec.value_origin == "bibliography" else "ON DATASET"
+                errors.append(AlpacaFieldNotSupported(
+                    location=node.location, block=block, field_name=name,
+                    reason=f"SOURCE field with {origin}: no written occurrence"))
+
+    if not per_target.get("OUTPUT"):
+        errors.append(AlpacaOutputMapMissing(location=export.location, block=block))
+    has_prop = export.prop("INSTRUCTION") is not None
+    has_map = bool(per_target.get("INSTRUCTION"))
+    if has_prop == has_map:
+        errors.append(AlpacaInstructionSource(location=export.location, block=block, both=has_prop))
+
+    prompt: Dict[str, str] = {}
+    for target in ("INSTRUCTION", "INPUT"):
+        for name in per_target.get(target, []):
+            prompt.setdefault(name, target)
+    for name in per_target.get("OUTPUT", []):
+        if name in prompt:
+            errors.append(AlpacaFieldLeak(
+                location=export.location, block=block, field_name=name, target=prompt[name]))
+
+    mapped = {n for names in per_target.values() for n in names}
+    hit = [b for b in _item_bundles(template) if mapped & set(b)]
+    if len(hit) > 1:
+        errors.append(AlpacaMultipleBundles(location=export.location, block=block, bundles=tuple(hit)))
+    return errors
+
+
+def export_block_notices(export: ExportNode, template: Optional[TemplateNode]) -> List[ValidationError]:
+    """Informativos do bloco: mostrados, nunca impedem o artefato (ExportBlockNotice)."""
+    if export.format != "ALPACA" or template is None:
+        return []
+    plan = alpaca_plan(export, template)
+    if plan is None:
+        return legacy_alpaca_notices(template, export.label, export.location)
+    if plan.iterator is None:
+        return []
+    mapped = set(plan.fields())
+    present = [n for n in plan.iterator if n in mapped]
+    notices: List[ValidationError] = []
+    for name in plan.iterator:
+        spec = template.field_specs.get(name)
+        if name in mapped or spec is None or spec.type not in QUALIFIER_TYPES or not present:
+            continue
+        notices.append(AlpacaBundlePartnerOmitted(
+            location=export.location, block=export.label, field_name=name, partner_of=present[0]))
+    return notices
+
+
+def legacy_alpaca_notices(template: Optional[TemplateNode], block: str, location) -> List[ValidationError]:
+    """Aviso do modo embutido: qualificador de bundle com CHAIN que os pares nao levam."""
+    if template is None or location is None:
+        return []
+    notices: List[ValidationError] = []
+    for bundle in _item_bundles(template):
+        specs = [(n, template.field_specs.get(n)) for n in bundle]
+        chains = [n for n, s in specs if s is not None and s.type == FieldType.CHAIN]
+        if not chains:
+            continue
+        for name, spec in specs:
+            if spec is not None and spec.type in QUALIFIER_TYPES:
+                notices.append(AlpacaLegacyDropsQualifier(
+                    location=location, block=block, field_name=name, chain_field=chains[0]))
+    return notices
 
 def chain_relations(template: Optional[TemplateNode]) -> Dict[str, List[str]]:
     """{relacao: [campos CHAIN do ITEM que a declaram]}, pela caixa escrita."""
