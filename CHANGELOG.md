@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-23
+
 ### Added — EXPORT ALPACA com composição declarada (`MAP <campos> TO INSTRUCTION/INPUT/OUTPUT`)
 
 - Um bloco `EXPORT ALPACA` pode declarar quais campos formam cada chave:
